@@ -1,0 +1,21 @@
+{
+  "name": "@onboarding-assistant/sdk",
+  "version": "1.0.0",
+  "description": "SDK oficial para integración de asistencia de voz en tiempo real y automatización del DOM",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "tsc --noEmit"
+  },
+  "keywords": [
+    "onboarding",
+    "voice-ai",
+    "realtime",
+    "dom-automation",
+    "gemini-live",
+    "qwen-omni"
+  ],
+  "author": "Onboarding Assistant Team",
+  "license": "UNLICENSED",
+  "private": true
+}
