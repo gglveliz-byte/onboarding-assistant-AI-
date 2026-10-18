@@ -214,7 +214,16 @@ export function bootstrapBackendSystem(options: BootstrapOptions = {}): Bootstra
   assemblyTimingsMs['06-superadmin-governance'] = Date.now() - afterGovernanceMs;
 
   const afterPublicMs = Date.now();
-  registerPublicCommercialModule(container, httpRouter, options.publicCommercialOptions ?? { isProduction: environment.NODE_ENV === 'production' });
+  registerPublicCommercialModule(
+    container,
+    httpRouter,
+    options.publicCommercialOptions ?? {
+      isProduction: environment.NODE_ENV === 'production',
+      // Sin URL publica configurada, la demo entrega un destino de ejemplo; con ella, el socket de
+      // la demostracion apunta al gateway de voz real del despliegue (ws:// o wss://).
+      ...(environment.PUBLIC_VOICE_WS_URL === undefined ? {} : { websocketBaseUrl: environment.PUBLIC_VOICE_WS_URL }),
+    }
+  );
   assemblyTimingsMs['07-public-commercial-and-sandbox'] = Date.now() - afterPublicMs;
 
   // 3. Verificacion de la cadena completa ANTES de aceptar trafico.

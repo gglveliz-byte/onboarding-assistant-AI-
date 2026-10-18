@@ -20,6 +20,7 @@
  *   - `openVoiceWebSocketSession()` (`src/modules/05-voice-realtime-gateway/application/handle-voice-websocket.use-case.ts`).
  *   - `VOICE_REALTIME_CHANNEL_PATH` (`src/modules/05-voice-realtime-gateway/voice-gateway.ws-routes.ts`).
  *   - `VOICE_CLOSE_CODES` (`src/modules/05-voice-realtime-gateway/infrastructure/voice-frame.protocol.ts`).
+ *   - `createPublicDemoVoiceIntegration()` (`./public-demo-voice-support.ts`).
  *
  * @dependencias_externas
  *   - `node:http` y `ws` (Servidor nativo de sockets: unico autorizado por el proyecto).
@@ -48,6 +49,11 @@ import { buildDualProviderOrchestrator, type VoiceGatewayControlAdapter } from '
 import { createLazyBillingPort } from '../modules/05-voice-realtime-gateway/infrastructure/billing-port.lazy-proxy';
 import { DI_TOKENS } from '../shared/container/di-container';
 import type { IVisualRagAndPromptPort } from '../shared/ports/core-modules.ports';
+import {
+  createPublicDemoVoiceIntegration,
+  PUBLIC_DEMO_TIMEUP_MESSAGE,
+  type PublicDemoVoiceIntegration,
+} from './public-demo-voice-support';
 
 /** Rol del pool que ejecuta este entrypoint. */
 const POOL_ROLE = 'VOICE_REALTIME_GATEWAY';
@@ -85,6 +91,9 @@ export async function startVoiceRealtimeGateway(portOverride?: number): Promise<
   log(describeAssembly(system));
   const registry = new VoicePoolSessionRegistry();
   const ports = buildVoiceSessionPorts(system);
+  // La integracion demo reutiliza los puertos reales de voz y solo sustituye handshake, RAG y
+  // facturacion: el camino SDK conserva sus puertos intactos.
+  const publicDemo = createPublicDemoVoiceIntegration(system, ports);
 
   const httpServer: Server = createServer((_request, response) => {
     // El pool de voz no expone APIs REST: solo un endpoint de salud para el balanceador, que le
@@ -102,6 +111,7 @@ export async function startVoiceRealtimeGateway(portOverride?: number): Promise<
       request.url ?? '',
       portOverride ?? port,
       ports,
+      publicDemo,
       registry,
       log,
       system.voiceGatewayControl
@@ -236,7 +246,8 @@ function buildVoiceSessionPorts(system: BootstrappedSystem): VoiceWebSocketPorts
  * @param socket - Socket del navegador del usuario final.
  * @param requestUrl - URL de la peticion de upgrade.
  * @param port - Puerto del servidor, usado por las pruebas.
- * @param ports - Puertos y casos de uso del gateway.
+ * @param ports - Puertos y casos de uso del gateway en el camino SDK normal.
+ * @param publicDemo - Integracion de la demostracion publica: puerta de validacion y puertos demo.
  * @param registry - Registro de sesiones vivas.
  * @param log - Escritor de bitacora del proceso.
  */
@@ -245,15 +256,27 @@ async function handleIncomingVoiceConnection(
   requestUrl: string,
   port: number,
   ports: VoiceWebSocketPorts,
+  publicDemo: PublicDemoVoiceIntegration,
   registry: VoicePoolSessionRegistry,
   log: (message: string, metadata?: Readonly<Record<string, unknown>>) => void,
   voiceGatewayControl?: VoiceGatewayControlAdapter
 ): Promise<void> {
   const parsedUrl = new URL(requestUrl, `http://localhost:${port}`);
+  const isPublicDemo = parsedUrl.searchParams.get('demo') === 'true';
+  // La puerta demo valida el token efimero contra Redis ANTES de consumirlo: una conexion
+  // rechazada aqui no quema el token que el visitante aun puede usar.
+  const demoOpening = isPublicDemo ? await publicDemo.resolveOpening(parsedUrl) : null;
+  if (isPublicDemo && demoOpening === null) {
+    socket.close(VOICE_CLOSE_CODES.UNAUTHORIZED, 'La demostración pública expiró o ya fue utilizada.');
+    return;
+  }
+  const effectivePorts = demoOpening === null ? ports : publicDemo.ports;
   const nonceId = parsedUrl.searchParams.get('nonce') ?? '';
-  const projectId = parsedUrl.searchParams.get('projectId') ?? '';
-  const organizationId = parsedUrl.searchParams.get('organizationId') ?? '';
-  const voiceSessionId = parsedUrl.searchParams.get('voiceSessionId') ?? '';
+  // En el camino demo la identidad anonima es sintetica: proyecto, organizacion y sesion los
+  // resuelve la puerta desde el descriptor de Redis, jamas el query string del visitante.
+  const projectId = demoOpening?.projectId ?? parsedUrl.searchParams.get('projectId') ?? '';
+  const organizationId = demoOpening?.organizationId ?? parsedUrl.searchParams.get('organizationId') ?? '';
+  const voiceSessionId = demoOpening?.voiceSessionId ?? parsedUrl.searchParams.get('voiceSessionId') ?? '';
 
   if (nonceId.length === 0 || projectId.length === 0 || organizationId.length === 0 || voiceSessionId.length === 0) {
     // Sin estos cuatro datos no hay forma de autorizar ni de facturar: se rechaza antes de abrir el
@@ -280,7 +303,7 @@ async function handleIncomingVoiceConnection(
 
   try {
     const session = await openVoiceWebSocketSession(
-      ports,
+      effectivePorts,
       {
         nonceId,
         projectId,
@@ -323,6 +346,18 @@ async function handleIncomingVoiceConnection(
       });
     }
     log('Sesion de voz abierta.', { voiceSessionId, organizationId: canonicalOrgId });
+
+    if (demoOpening !== null) {
+      // Tope duro de la demostracion publica: aunque el visitante no cierre el canal, la sesion se
+      // clausura sola al agotar su duracion y el navegador recibe el aviso por el mismo protocolo.
+      const demoExpiryTimer = setTimeout(() => {
+        void registry.closeSession(voiceSessionId, NORMAL_CLOSURE_CODE, PUBLIC_DEMO_TIMEUP_MESSAGE);
+      }, demoOpening.maxDurationSeconds * 1000);
+      demoExpiryTimer.unref();
+      socket.once('close', () => {
+        clearTimeout(demoExpiryTimer);
+      });
+    }
 
     socket.on('message', (data: Buffer) => {
       void session.handleIncomingBytes(Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer));

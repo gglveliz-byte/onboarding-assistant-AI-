@@ -169,8 +169,8 @@ export const rawEnvironmentSchema = z.object({
   // --- Aplicacion y Node Pool -------------------------------------------------
   NODE_ENV: z.enum(NODE_ENVIRONMENTS).default('development'),
   PORT: networkPortSchema.default(3000),
-  VOICE_WS_PORT: networkPortSchema.default(3001),
-  TRAINER_WS_PORT: networkPortSchema.default(3002),
+  VOICE_WS_PORT: networkPortSchema.default(3002),
+  TRAINER_WS_PORT: networkPortSchema.default(3003),
   NODE_POOL_ROLE: z.enum(NODE_POOL_ROLES).default('API_CONTROL_PLANE'),
   LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
   SERVICE_INSTANCE_ID: z.string().trim().min(1).default(`node-${process.pid}`),
@@ -299,6 +299,8 @@ export const rawEnvironmentSchema = z.object({
 
   // --- Endpoints publicos y limites de cuota ---------------------------------
   PUBLIC_API_BASE_URL: absoluteUrlSchema.default('http://127.0.0.1:3000'),
+  // URL publica del gateway de voz (ws:// o wss://) que la demostracion anonima entrega a su socket.
+  PUBLIC_VOICE_WS_URL: webSocketUrlSchema.optional(),
   PUBLIC_DEMO_SESSION_MAX_SECONDS: z.coerce.number().int().min(15).max(600).default(120),
   PUBLIC_DEMO_RATE_LIMIT_PER_HOUR: z.coerce.number().int().min(1).max(1000).default(20),
   CORS_ALLOWED_ORIGINS: z

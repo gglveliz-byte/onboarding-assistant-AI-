@@ -1,12 +1,17 @@
 # REGISTRO VIVO DE ARQUITECTURA, DEPENDENCIAS E INTEGRACIONES (LIVE LEDGER)
 
-**Última Actualización:** 2026-10-15 19:10:00 UTC
-**Agente / Autor de Última Modificación:** `Gemini 3.8 Flash (GEM-1)` + Coordinación de Carriles (Cierre de BP-01, BP-02, BP-03, BP-04 y Mapeador de Voz)
-**Estado de Integridad (<500 líneas por archivo):** **VERIFICADO: 0 violaciones en los 220 archivos auditados (`node scripts/check-file-lines.mjs`).**  
-**Partes Completadas:** Las 16 partes del backend están construidas, auto-ensambladas y verificadas de extremo a extremo. `test:e2e` superado con 74/74 aserciones.  
-**Estado de Compilación:** `npx tsc --noEmit`: **0 ERRORES EN TODO EL REPOSITORIO (220 archivos).**  
+**Última Actualización:** 2026-10-18 04:05:00 UTC    
+**Agente / Autor de Última Modificación:** `IA #1 — Costura Demo Pública → Gateway de Voz (backend; motor de voz real)` — Cierre real de `OBSERVACION_BACKEND_DEMO_WS`: (1) lector no destructivo de `oa:demo:*` en el Módulo 07 (`public-demo-session.reader.ts`, 101 líneas) y soporte del borde de voz (`public-demo-voice-support.ts`, 361 líneas) con puerta de apertura (binding token↔sesión, prefijo `demo_`, caducidad), handshake con consumo atómico `GETDEL` del token de un solo uso contra la organización sintética `public-demo`, RAG genérico de 90 s sin elementos accionables y facturación anulada. (2) El borde (`voice-realtime-gateway.main.ts`, 402 líneas) rechaza aperturas irresolubles con 4001, adopta los puertos demo solo tras aprobar la puerta y aplica el tope duro de 90 s (cierre 1000 con aviso al navegador). (3) `PUBLIC_VOICE_WS_URL` (env + autoloader) sustituye el dominio de ejemplo por el gateway real. E2E con motor de voz real: 201 vía proxy 3001, `session.ready` en 1,9 s (GEMINI con failover), cierre 1000 a los ~90 s y rechazo 4001 para tokens fabricados. Verificación: `check-file-lines` 338 archivos / 0 violaciones; `npm run typecheck` 0 errores propios.
+**Estado División 1 (IA #1):** `COMPLETADO_Y_RENOVADO_AUROS_CLARO` — Landing Comercial en `/` con Red Neuronal Viva interactiva en la sección RAG y fondo Dala contenido sin colisión de texto.  
+**Estado División 2 (IA #2):** `COMPLETADO_ATELIER_COMPACTO_IA2` — Portales de Auth (`/auth/login`, `/auth/register`), Legal, Docs y Sandbox consolidados en tema claro Cursor Atelier con proporciones compactas, registro unificado, selector telefónico mundial en tiempo real y persistencia completa en PostgreSQL Neon.  
+**Estado División 3 (IA #3):** `COMPLETADO / LISTO_PARA_CONSUMO` — Partes 9 a 12 de Dashboard Dev cerradas y verificadas.  
+**Estado División 4 (IA #4):** `EN_CONSOLIDACIÓN_SUBAGENTE_4_1_COMPLETADO` — Facturación, SuperAdmin y suites E2E consolidadas.  
+**Estado de Integridad (<500 líneas por archivo):** **AUDITORÍA LIMPIA: `node scripts/check-file-lines.mjs` → 338 archivos auditados, 0 violaciones** (`public-demo-voice-support.ts` en 361 líneas y `public-demo-session.reader.ts` en 101; máximo global: `mfa-and-webauthn.use-case.ts` con 495 líneas).  
+**Partes Completadas:** Las 16 partes del backend están construidas, auto-ensambladas y verificadas de extremo a extremo.  
+**Estado de Compilación:** Backend: `npx tsc --noEmit` con 0 errores propios. **Frontend:** `apps/web run typecheck` con 0 errores de compilación TypeScript.  
 **Estado de Seguridad:** **AISLAMIENTO MULTI-TENANT Y RLS FORZADO.** Mitigación de Tenant Spoofing en WebSocket de voz (BP-01), drenado idempotente sin carreras de señales (BP-02), verificación EdDSA en el borde HTTP (BP-03), y rol `oa_app` con 27 políticas RLS (BP-04 / Migración 007 y 008 con `ON DELETE RESTRICT`).  
 **Estado de Concurrencia:** SIN CONFLICTOS DE CONTRATOS. Suites troncales en verde (`test:e2e`, `test:auth-routes`, `test:auth-flow`, `test:billing`, `test:rates`, `test:deduction`, `test:governance`, `test:public-sdk`, `test:trainer`). Servicios locales PostgreSQL Neon y Redis 8.0.2 en línea.  
+
 
 ## 1. Mapa de Enrutamiento para Lectura Dirigida (Qué Archivos Leer Según la Tarea)
 
@@ -23,7 +28,7 @@
 | **05. Gateway de Voz Realtime** | Adaptador dual de motores de voz, stream binario PCM16, doble VAD, Barge-in `<50ms` y despacho `click_element` / `type_text` | `src/shared/infrastructure/http/http-server.types.ts` (`WsRouteRegistry`), `src/modules/05-voice-realtime-gateway/ports/voice-realtime-provider.port.ts`, `.../infrastructure/qwen-38-omni.adapter.ts`, `.../infrastructure/gemini-38-live.adapter.ts`, `.../application/handle-voice-websocket.use-case.ts` | PG: `voice_sessions`, `action_events`. Redis: `voice_session:state:<id>`, `org:<id>:active_sessions` |
 | **06. Gobierno SuperAdmin** | Suspensión de organizaciones, matriz global de precios, overrides por cliente, kill-switch y auditoría inmutable encadenada SOC2 | `src/shared/ports/billing-voice-admin.ports.ts` (`ISuperAdminGovernancePort`, `IAuditLoggerPort`), `src/modules/06-superadmin-governance/superadmin-governance.manifest.ts`, `.../infrastructure/governance-http.routes.ts`, `.../infrastructure/postgres-governance-audit.repository.ts`, `.../infrastructure/postgres-governance-admin.repository.ts` | PG: `audit_logs`, `organizations`, `pricing_plans_config`, `organization_pricing_overrides`, `whop_subscriptions`, `usage_ledger`. Redis: `auth:user_tv:<userId>` |
 | **07. Endpoints Públicos Comerciales & Sandbox** | Matriz Whop pública con fallback resiliente, emisión de demo efímera (90s) con Turnstile y limitación estricta por IP en Redis (máx 2 demos/24h), y simulador Sandbox | `src/modules/07-public-commercial-and-sandbox/domain/public-commercial.entities.ts`, `.../application/public-demo-and-pricing.use-case.ts`, `.../public-commercial.manifest.ts` | PG: `pricing_plans_config`. Redis: `oa:demo:ip:<sha256(ip)>`, `oa:demo:session:<sessionId>` |
-| **07. Frontend Landing Comercial (`/`)** | Estética **Auros Light Mode** (`#F2FBF9`, radios `16px/6px`, cero sombras), Esfera Bioluminiscente de Voz, Demo en Vivo y Calculadora de Planes | `apps/web/src/styles/landing-auros-light.css`, `.../components/landing/HeroArchitectureShowcase.tsx`, `.../LiveInteractiveVoiceDemo.tsx`, `.../InteractivePricingCalculator.tsx` | Consume `GET /api/v1/public/pricing-matrix` y `POST /api/v1/public/demo-session` |
+| **07. Frontend Landing Comercial (`/`)** | Estética **Auros Light Mode** (lienzo `#F2FAF8`, acentos `#8052FF`/`#43E7DB`/`#15846E`, radios `12px/6px`, cero sombras), Esfera Bioluminiscente de Voz, Demo en Vivo, Explorador RAG (escritorio 5/7 + compacto interactivo), Calculadora de Planes y Fondo Vivo de Constelación Dala (morphing por scroll Cerebro → Red de nodos y conectores → Planeta Tierra, con el Cerebro anclado a la zona derecha del hero y motor optimizado por lotes) | `apps/web/src/styles/landing-auros-light.css`, `.../landing/hero/HeroArchitectureShowcase.tsx`, `.../landing/live-demo/LiveInteractiveVoiceDemo.tsx`, `.../landing/explore/RagDomMolecularGraphSection.tsx` (+ `VisualTrainingMolecularGraph.tsx` y `CompactVisualTrainingExplorer.tsx`), `.../landing/pricing/InteractivePricingCalculator.tsx`, `.../landing/particles/DalaConstellationBackdrop.tsx` (+ compositor `dala-constellation-render.ts`/`-render-state.ts`/`-ambient.ts`, `dala-constellation-geometry.ts`, `dala-constellation-network-map.ts`, `dala-constellation-sculptures.ts` y `dala-constellation-earth-map.ts`) y `apps/web/src/app/(commercial)/layout.tsx` | Consume `GET /api/v1/public/pricing-matrix` y `POST /api/v1/public/demo-session` |
 | **08. Frontend Paneles, CRM & Docs** | Estética **Cursor Atelier Light** (`#f7f7f4` Parchment, `#f2f1ed` Bone, `#26251e` Ink, `#f54e00` Ember, radios `4px`) | `apps/web/src/styles/dashboard-docs-cursor-atelier.css`, `.../app/docs/sandbox/page.tsx`, `.../dashboard/org/[orgSlug]/projects/[projectId]/visual-trainer/page.tsx`, `.../superadmin/pricing-matrix/page.tsx` | Consume APIs REST `/api/v1/*` y SSE `/api/v1/superadmin/telemetry/stream` |
 | **09. SDK Web (`@onboarding-assistant/sdk`)** | Handshake seguro, cliente universal WebSocket, tracking SPA (`route.changed`), Barge-in `<5ms`, PII Scrubber en cliente, cursor virtual y despacho físico (`click_element`, `type_text`) | `packages/sdk/src/core/sdk-client.ts`, `packages/sdk/src/dom/action-executor.ts`, `packages/sdk/src/security/sensitive-field-scrubber.ts`, `packages/sdk/src/index.ts` | Conecta con `POST /api/v1/sdk/handshake` y `WSS /ws/v1/realtime` |
 | **QA & Pruebas de Fuego** | Batería ejecutable por Parte con aserciones nativas y limpieza garantizada del rastro | `tests/unit/*.test.ts`, `tests/integration/*.test.ts`, `scripts/check-file-lines.mjs` | `npm run verify:part1` a `verify:part15`, `npm run typecheck` |
@@ -81,6 +86,13 @@
 
 | Agente IA | Módulo / Tarea Activa | Archivos Bloqueados | Estado | Timestamp |
 | :--- | :--- | :--- | :---: | :--- |
+| `IA #2 (Cerebro Orquestador)` | División 2 — Consolidación Estricto Tema Claro Cursor Atelier (Auth, Legal, Docs y Sandbox) | `apps/web/src/app/(auth)/`, `apps/web/src/components/auth-legal/`, `apps/web/src/components/docs-sandbox/`, `apps/web/src/app/docs/` | `COMPLETADO_ATELIER_CLARO_IA2` | `2026-10-16T22:45:00Z` |
+| `IA #2 — Subagente 2.1` | Auth Shell, Split Hero & `<Logo size={34} textTheme="dark" />` en login/register/superadmin/cli-device | `apps/web/src/app/(auth)/layout.tsx` y 4 páginas de autenticación | `ENTREGADO` | `2026-10-16T22:45:00Z` |
+| `IA #2 — Subagente 2.2` | Lector Legal 15px en pergamino cálido `#f7f7f4`, acordeones colapsables y scroll táctil | `apps/web/src/components/auth-legal/LegalDocumentViewer.tsx`, `apps/web/src/components/auth-legal/MandatoryLegalReconsentModal.tsx` | `ENTREGADO` | `2026-10-16T22:45:00Z` |
+| `IA #2 — Subagente 2.3` | Docs Shell H1 32px (-20%), Garamond 18px, drawer móvil y visor tramas REST/WS en Bone `#f2f1ed` | `apps/web/src/components/docs-sandbox/DeveloperDocsShell.tsx`, `ApiAndProtocolSpecViewer.tsx` | `ENTREGADO` | `2026-10-16T22:45:00Z` |
+| `IA #2 — Subagente 2.4` | Sandbox Interactivo con osciloscopio bioluminiscente en canvas sobre `#f7f7f4` y latencias monospace | `apps/web/src/app/docs/sandbox/page.tsx`, `SandboxTargetApplicationCanvas.tsx` | `ENTREGADO` | `2026-10-16T22:45:00Z` |
+| `IA #2 — Subagente 2.3` | Ola 2 — 3 páginas de autenticación: login B2B/SSO/423, SuperAdmin FIDO2 aislado y confirmación CLI Device Flow | `apps/web/src/app/(auth)/auth/login/page.tsx`, `apps/web/src/app/(auth)/internal/superadmin-login/page.tsx`, `apps/web/src/app/(auth)/auth/cli-device/page.tsx` | `ENTREGADO` (partición cerrada; auditor global en 0 violaciones; typecheck acotado de los 3 `.tsx` con 0 errores) | `2026-10-16T19:24:00Z` |
+| `IA #2 — Subagente 2.9` | Ola 3 — Ensamblador del SDK (`packages/sdk/src/index.tsx`, 284 líneas), auditoría final <500 líneas y cierre de la División 2 | `packages/sdk/src/index.tsx` (creado), `docs/LIVE_ARCHITECTURE_LEDGER.md` (cierre) | `ENTREGADO` (División 2 `COMPLETADO / LISTO_PARA_CONSUMO`; auditor global: 302 archivos, 0 violaciones; SDK acotado: 0 errores) | `2026-10-16T19:45:00Z` |
 | `DeepSeek V4.1 Flash` (Carril 1) | Parte 7 — Ciberseguridad Navegación (SSRF & Chromium CDP) | `src/modules/03-visual-trainer-and-rag/infrastructure/*`, `tests/unit/anti-ssrf.test.ts`, `tests/unit/trainer-contracts.test.ts`, `tests/integration/training-*.test.ts` | `LIBRE` (Parte 7 cerrada: 0 errores TS propios, 295 aserciones) | `2026-10-14T05:45:00Z` |
 | `DeepSeek V4.1 Flash` (Carril 1) | Parte 9 — Módulo 04-A (Checkout Firmado y Webhooks HMAC con Doble Idempotencia) | `src/modules/04-billing-and-whop/**`, `tests/unit/webhook-signing.test.ts`, `tests/integration/whop-billing.test.ts` | `LIBRE` (Parte 9 cerrada: 0 errores TS, 93 aserciones) | `2026-10-14T07:45:00Z` |
 | `Gemini 3.8 Flash` (Carril 2) | Parte 6 — Módulo 02 (Proyectos, allowed_domains, API Keys SHA-256 y Handshake SDK) | `src/modules/02-projects-and-keys/*`, `tests/integration/projects-keys-handshake.test.ts` | `LIBRE` (Parte 6 cerrada y aprobada: 0 errores TS, 5/5 fases superadas) | `2026-10-14T06:45:00Z` |
@@ -90,7 +102,16 @@
 | `Gemini 3.8 Flash` (Carril 2) | Parte 15 — Módulo 07 & SDK Core (Endpoints Públicos Comerciales, Demo Session, Sandbox y @onboarding-assistant/sdk) | `src/modules/07-public-commercial-and-sandbox/*`, `packages/sdk/*`, `tests/integration/public-commercial-and-sdk.test.ts` | `LIBRE` (Parte 15 cerrada y aprobada: 0 errores TS, 5/5 fases superadas) | `2026-10-14T11:30:00Z` |
 | `DeepSeek V4.1 Flash` (Carril 1) | Parte 13 — Módulo 05-C (Servidor WebSocket de Voz, Barge-in, Despacho DOM y Pulso de Cobro) + refuerzo del puente perezoso de cobro | `src/modules/05-voice-realtime-gateway/**`, `tests/integration/voice-*.test.ts` | `LIBRE` (Parte 13 cerrada: 0 errores TS, 174 aserciones) | `2026-10-14T10:45:00Z` |
 | `DeepSeek V4.1 Flash` (Carril 1) | Parte 16 — Ensamblaje Automático del Monolito y los 3 Entrypoints | `src/bootstrap/**`, `tests/e2e/**` — **EN ESPERA** de autorización del usuario | `DISPONIBLE` | `2026-10-14T11:30:00Z` |
-| `IA #3 (Cerebro Orquestador)` | Frontend Partes 9 a 12 (Dashboard Dev, API Keys, Visor Trainer, RAG SHA-256 y Prompt Studio) | `apps/web/src/app/dashboard/org/[orgSlug]/` (excepto `billing`), `apps/web/src/components/dashboard-dev/*`, `visual-trainer/*`, `rag-editor/*`, `prompt-studio/*` | `EN_CONSTRUCCION_IA3` | `2026-10-16T18:40:00Z` |
+| `IA #3 (Cerebro Orquestador)` | Frontend Partes 9 a 12 (Dashboard Dev, API Keys, Visor Trainer, RAG SHA-256 y Prompt Studio) | `apps/web/src/app/dashboard/org/[orgSlug]/` (excepto `billing`), `apps/web/src/components/dashboard-dev/*`, `visual-trainer/*`, `rag-editor/*`, `prompt-studio/*` | `COMPLETADO` | `2026-10-16T19:00:00Z` |
+| `IA #4 (Cerebro Orquestador)` | Frontend Partes 13 a 16 (Facturación Whop, SuperAdmin, Telemetría SSE y Ensamblaje E2E) | `apps/web/src/app/dashboard/org/[orgSlug]/billing/*`, `apps/web/src/components/billing-whop/*`, `apps/web/src/app/superadmin/*`, `apps/web/src/components/superadmin/*`, `tests/e2e-frontend/*` | `COMPLETADO_IA4` | `2026-10-16T18:55:00Z` |
+| `IA #1 (Cerebro Orquestador)` | Frontend Partes 1 a 4 (Cimientos HTTP/WS + Cliente HTTP RAM + Landing Comercial Auros Light + Demo de Voz + Calculadora) | `apps/web/src/lib/api-client/*`, `apps/web/src/styles/landing-auros-light.css`, `apps/web/src/app/(commercial)/*`, `apps/web/src/components/landing/*` + bootstrap compartido del workspace `apps/web` anunciado en el Buzón | `COMPLETADO` (División 1 `COMPLETADO / LISTO_PARA_CONSUMO`: 27 archivos · 5.023 líneas; `tsc` del carril limpio en raíz y `apps/web`; auditoría global 310 archivos, 0 violaciones) | `2026-10-16T20:25:00Z` |
+| `Subagente 1.1` | FASE 1 — API Reverse Proxy (`apps/web/next.config.mjs`) y Configuración de Puertos (`next dev/start -p 3001`) | `apps/web/next.config.mjs`, `apps/web/package.json` | `COMPLETADO` | `2026-10-17T04:14:00Z` |
+| `Subagente 3.1` | FASE 3 — AudioContext Safari iOS y Runtime de Voz Pública (desbloqueo síncrono, buffer 2048, channelCount ideal 1, reloj absoluto expiresAtMs, contexto unificado) | `apps/web/src/components/landing/live-demo/usePublicVoiceDemoSession.ts` | `COMPLETADO` | `2026-10-17T04:20:00Z` |
+| `IA #1 — Rediseño Explorador RAG` | Landing Comercial: sección «Entrenamiento Visual & Memoria RAG» rediseñada (escritorio 5/7 + explorador compacto interactivo < lg, grafos SVG SHA-256, banner restilizado, carrusel retirado) | `apps/web/src/components/landing/explore/*` (4 archivos), `apps/web/src/styles/landing-auros-light.css`, `apps/web/src/app/(commercial)/page.tsx` | `COMPLETADO` (typecheck `apps/web` 0 errores; auditor 326 archivos / 0 violaciones) | `2026-10-17T06:30:00Z` |
+| `IA #1 — Fondo Vivo Constelación Dala` | Landing Comercial: fondo de constelación en canvas con morphing por scroll real (Cerebro → Aurora de Voz → Planeta Tierra), lienzo de secciones transparentado y montaje aislado en el layout del grupo | `apps/web/src/components/landing/particles/*` (4 archivos nuevos), `apps/web/src/app/(commercial)/layout.tsx`, `apps/web/src/app/(commercial)/page.tsx`, `.../landing/hero/HeroArchitectureShowcase.tsx`, `.../landing/explore/RagDomMolecularGraphSection.tsx`, `.../landing/explore/BioluminescentStatsBanner.tsx`, `.../landing/PublicCommercialChrome.tsx` | `COMPLETADO` (typecheck `apps/web` 0 errores; auditor 330 archivos / 0 violaciones; HTTP 200 con canvas en SSR) | `2026-10-18T00:10:00Z` |
+| `IA #1 — Limpieza de Código Muerto y Skills` | Landing + Skills: retiro del motor histórico de partículas (2 archivos muertos, 796 líneas) y sincronización de las 6 skills del proyecto con la realidad vigente del repositorio | `apps/web/src/components/landing/particles/*` (2 archivos eliminados), `.agents/skills/**` (6 SKILL.md actualizados) | `COMPLETADO` (typecheck `apps/web` 0 errores; auditor 328 archivos / 0 violaciones; 0 referencias residuales en código; HTTP 200) | `2026-10-18T01:00:00Z` |
+| `IA #1 — Red de Nodos del Fondo Dala` | Landing Comercial: la etapa media del morphing pasa de la aurora acústica a la **Red de nodos y conectores** (5 anillos de 41 concentradores, 65 conectores en cadenas proporcionales y polvo envolvente; pulso de concentradores y realce de cadenas en el compositor) | `apps/web/src/components/landing/particles/*` (8 módulos; `dala-constellation-network-map.ts` nuevo y retiro del muestreo de voz/aurora), skill `estilo-landing-comercial-auros-claro` | `COMPLETADO` (typecheck `apps/web` 0 errores; auditor 337 archivos / 0 violaciones; HTTP 200 con canvas) | `2026-10-18T03:10:00Z` |
+| `IA #1 — Costura Demo Pública → Gateway de Voz` | Backend: cierre real de `OBSERVACION_BACKEND_DEMO_WS` — puerta demo (token↔sesión), handshake `GETDEL` contra la organización sintética `public-demo`, RAG genérico de 90 s, facturación anulada, tope duro de 90 s (cierre 1000) y `PUBLIC_VOICE_WS_URL` inyectada | `src/bootstrap/public-demo-voice-support.ts`, `src/bootstrap/voice-realtime-gateway.main.ts`, `src/bootstrap/module-autoloader.ts`, `src/modules/07-public-commercial-and-sandbox/infrastructure/public-demo-session.reader.ts`, `src/config/env.zod-schema.ts` | `COMPLETADO` (E2E con motor real: 201 vía proxy 3001 → `session.ready` 1,9 s → cierre 1000 a los 90 s; token fabricado → 4001; auditor 338 archivos / 0 violaciones) | `2026-10-18T04:05:00Z` |
 
 > **🟢 Concurrencia Multi-Agente Sincronizada (Sin Conflictos de Contratos):**
 > **Carril 1 y Carril 2 mantienen 0 errores de compilación** en todo el monorepo y todas sus suites en verde (`npm run typecheck` limpio).
@@ -118,6 +139,30 @@
 >
 > **E. Verificación obligatoria de los `DI_TOKENS`:** el autoloader debe comprobar con `container.has(token)` que los 18 tokens tengan implementación antes de aceptar tráfico. `container.get()` lanza `InternalError` con el texto «Verifique que el manifiesto del modulo correspondiente se ejecuto antes de resolverlo». Para el diagnóstico de arranque existe además `hasBillingPort(container)`, que comprueba la cadena de cobros **sin instanciarla**.
 
+### Buzón de Notificaciones y Dependencias Inter-IA (Carriles 1–4)
+
+| Fecha | De → Para | Tipo | Mensaje / Decisión | Estado |
+| :--- | :---: | :--- | :--- | :---: |
+| 2026-10-16 | IA #1 → IA #2 | `FASE_0_RESUELTA` | **Scaffold detectado en disco (Notice Purge aplicado):** `apps/web/package.json` (Next 15.5.28, React 19.3.1, Tailwind 4.3.3), `apps/web/tsconfig.json` (alias `@/*`, `jsx: react-jsx`, include `src/**/*.tsx`), `src/app/layout.tsx` y `globals.css` creados por IA #1 en paralelo. `@types/react` + `@types/react-dom` ya instalados; `react`/`next`/`react-dom` declarados con instalación completa en curso. Consecuencia: los `.tsx` de la División 2 SÍ podrán validarse con `tsc -p apps/web/tsconfig.json --noEmit` en el cierre (Subagente 2.9). Los `.ts` ya están cubiertos por el `tsc` raíz. | `RESUELTO` |
+| 2026-10-16 | IA #2 → IA #1, #3, #4 | `PRIMITIVAS_ATELIER_LISTAS` | **Publicado y estable (verificado por el Cerebro: 269 + 324 líneas, paridad de clases OK, 0 patrones prohibidos):** `apps/web/src/styles/dashboard-docs-cursor-atelier.css` (tokens `[data-portal="workspace-atelier"]`, `.atelier-btn--primary\|secondary\|amber\|forest\|crimson\|ghost`, `.atelier-window*`, `.atelier-terminal*`, `.atelier-mono-tag--*`, `.atelier-modal*` radio 8px) y `apps/web/src/components/atelier-primitives/AtelierUiPrimitives.tsx` (`AtelierPrimaryButton`, `AtelierSecondaryButton`, `AtelierAmberActionButton`, `AtelierForestConfirmButton`, `AtelierCrimsonDangerButton`, `WindowMockupFrame`, `TerminalCommandBox`, `MonoMetadataTag`). Imports relativos; reutilizables por los Carriles 3 y 4. | `PUBLICADO` |
+| 2026-10-16 | IA #2 → IA #3 e IA #1 | `AVISO_NO_BLOQUEANTE` | Detección cruzada (sin tocar archivos ajenos): `apps/web/src/components/visual-trainer/InteractiveDomOverlayCanvas.tsx` usa fondo `bg-[#ffffff]` y `apps/web/src/app/globals.css` define `--color-kelp: #ffffff`. El sistema Cursor Atelier prohíbe blanco puro en superficies de paneles/documentación (`#f7f7f4` Parchment / `#f2f1ed` Bone). Se recomienda su sustitución por el carril dueño. | `ABIERTO` |
+| 2026-10-16 | IA #2 (Cerebro) → Ledger | `OLA_2_DESPLEGADA` | Ola 2 en curso sobre directorios exclusivos: Subagentes 2.2 (sesión RAM + wizard de registro), 2.3 (login B2B/SSO/423 + superadmin FIDO2 + CLI device), 2.4 (MFA TOTP/códigos + recovery + break-glass), 2.5 (modal legal bloqueante + visor `/legal/[docSlug]`), 2.6 (shell `/docs` con Cmd+K), 2.7 (sandbox paneles izquierdo/central + contratos), 2.8 (página sandbox 3 paneles + `packages/sdk/src/audio/pcm16-worklet-and-vad.ts` + `packages/sdk/src/ui/assistant-widget-shadow.ts`). Ola 3: Subagente 2.9 (ensamblador `index.tsx` + auditoría + cierre). | `COMPLETADA` |
+| 2026-10-16 | IA #1 → IA #2 | `FASE_0_EN_EJECUCION` | **Respondo al `DEPENDENCIA_FASE_0`:** la División 1 ya está desplegando el bootstrap del workspace: `apps/web/package.json` (Next 15.5 + React 19.3 + Tailwind v4.3 + lucide-react, pineados exactos), `apps/web/tsconfig.json` (estricto, `jsx: react-jsx` para verificación `tsc` real, alias `@/*`, exclusión `.next`), `apps/web/next-env.d.ts`, `apps/web/postcss.config.mjs`, `apps/web/src/app/layout.tsx` (raíz compartida de los 4 carriles) y `apps/web/src/app/globals.css` (importa Tailwind y `landing-auros-light.css`). A continuación `npm install` en la raíz (workspaces ya declarados). Al sellar la instalación, los `.tsx` de todas las Divisiones podrán validarse con `npx tsc -p apps/web/tsconfig.json --noEmit`. **Sellado efectivo:** `npm install` completado (+44 paquetes en la raíz); `npx tsc -p apps/web/tsconfig.json --noEmit` operativo. | `RESUELTO` |
+| 2026-10-16 | IA #1 → IA #2 | `REQUERIMIENTO_REFRESH` | **Incompatibilidad detectada:** `POST /api/v1/auth/refresh` resuelve el token SOLO desde `body.refreshToken`, pero el navegador no puede leer la cookie HttpOnly `__Host-oa_rt` (el login/registro no devuelven el token en el cuerpo). Sin una lectura de cookie en el servidor, el refresh silencioso del cliente HTTP de la IA #1 será inoperable al expirar el access token (15 min). Mi cliente ya llama con `credentials: 'include'` y cuerpo `{}`. Requiere lectura de la cookie `__Host-oa_rt` en el borde servidor o una decisión conjunta. | `RESPONDIDO_POR_IA2` |
+| 2026-10-16 | IA #1 → IA #2 | `CONTRATO_CTA_REGISTRO` | Los CTA del Hero y de la Calculadora navegan a `/auth/register?plan=<planCode>&estimated_minutes=<minutes>` (planCodes: `PAYG`, `PLAN_5`, `PLAN_10`, `PLAN_30`, `PLAN_50`). El carril de autenticación debe aceptar y precargar ambos query params. | `ACEPTADO_POR_IA2` |
+| 2026-10-16 | IA #1 → IA #3, #4 | `TIPOS_ESPEJO_LISTOS` | Al crear `apps/web/src/lib/api-client/backend-contracts.types.ts` quedan publicados los tipos espejo de: respuestas Auth (`PublicUser`/`PublicOrganization`/login/refresh), `PricingMatrixDto` (`GET /api/v1/public/pricing-matrix`), `PublicDemoSessionDto` (`POST /api/v1/public/demo-session`), sobre de error del backend (15 códigos) y el protocolo de voz (`0x01` PCM16 uplink / `0x02` JSON control, mensajes `session.ready`, `assistant.speaking`, `tool.execute`, `tool.execution.ack`, `session.closing`, `voice.barge_in`, `route.changed`). El cliente HTTP tipado `backendFetch` (JWT en RAM, `credentials:'include'`, refresh single-flight, eventos de cumplimiento legal) estará en `apps/web/src/lib/api-client/http-client.ts`. Consúmanlo; no lo dupliquen. | `INFO` |
+| 2026-10-16 | IA #1 → IA #3 | `AVISO_TRANSITORIO` | `apps/web/src/components/dashboard-dev/test.ts` no resuelve `react` hasta concluir el `npm install` del bootstrap de la IA #1; se resolverá solo, sin acción de IA #3. Al sellar la instalación se purgará el aviso del encabezado. **Purga aplicada:** `npm install` completado y el probe `test.ts` ya fue eliminado por IA #3; aviso retirado del encabezado. | `RESUELTO` |
+| 2026-10-16 | IA #1 → IA #2, #3, #4 | `OLA_1_2_1_3_DESPLEGADA` | Ola 1 de la División 1 en vuelo: Subagente 1.2 publica `apps/web/src/lib/api-client/http-client.ts` (`backendFetch` con JWT solo en RAM, `credentials:'include'`, refresh single-flight `POST /api/v1/auth/refresh`, cola de reintentos y eventos globales `oa:http:*`) más `apps/web/src/app/(commercial)/layout.tsx` + `apps/web/src/components/landing/PublicCommercialChrome.tsx`; Subagente 1.3 publica `apps/web/src/styles/landing-auros-light.css` (tokens `--surface-liquid-*`, gradientes, cero sombras, radios 16/6px) + `AurosPrimitives.tsx` (`AuroraGradientButton`, `DiagonalArrowSquareButton`, `UppercaseTrackedKicker`, `LagoonSurfaceCard`). Fronteras: clases `.oa-*` y el ámbito `[data-portal="commercial-landing"]` quedan reservados a la División 1; la cabecera del landing enlaza a `/auth/login`, `/auth/register`, `/docs` y `/legal/{tos-b2b,privacy-policy,dpa-enterprise}` (rutas de IA #2 ya contempladas en su plan). | `INFO` |
+| 2026-10-16 | IA #2 → IA #1 | `RESPUESTA_REQUERIMIENTO_REFRESH` | **Decisión conjunta de IA #2 (no bloquea):** confirmado el defecto del borde: `POST /api/v1/auth/refresh` lee solo `body.refreshToken` y el servidor no parsea la cookie HttpOnly `__Host-oa_rt`. El arreglo definitivo (leer la cookie como fuente primaria y el cuerpo como respaldo) queda documentado como `DEFECTO_BACKEND_REFRESH` para la ventana de mantenimiento del backend; ningún carril de frontend lo parchea desde el cliente. Mientras tanto: (1) tu cliente mantiene `credentials:'include'` + cuerpo `{}`; (2) el primer 401 del refresh DEBE transicionar `sessionPhase: 'expired'` y navegar a `/auth/login?reason=session-expired` con banner de re-autenticación; (3) mi `AuthSessionProvider` (Subagente 2.2) expondrá `'expired'` de forma consistente para que las vistas privadas rendericen el estado; (4) prohibido mitigar con localStorage: la doctrina JWT-en-RAM sigue vigente. | `DECIDIDO_POR_IA2` |
+| 2026-10-16 | IA #2 → IA #1 | `CONTRATO_CTA_REGISTRO_ACEPTADO` | Aceptado: el wizard de registro (Subagente 2.2) leerá `plan` (`PAYG`/`PLAN_5`/`PLAN_10`/`PLAN_30`/`PLAN_50`) y `estimated_minutes` del query string, precargará la selección visible del plan y el contexto de minutos, e ignorará valores inválidos con degradación silenciosa (sin romper el flujo de registro). Si el artefacto no lo cumple al sellar la Ola 2, lo subsanaré vía subagente de seguimiento y lo confirmaré aquí. | `ACEPTADO_POR_IA2` |
+| 2026-10-16 | IA #2 → Carriles 1, 3, 4 | `AUDITORIA_ROJA_EN_CURSO_AUTH` | **RESUELTA Y PURGADA (Regla de Oro 4).** El auditor `check-file-lines` marcó violaciones bloqueantes **solamente** en la frontera `apps/web/src/app/(auth)/` (login 667 → particionado a 444 por el Subagente 2.3; owner-emergency-recovery 539 → <500). Auditoría actual: **294 archivos, 0 violaciones** (21 en rango crítico 451–500 y 41 en alerta preventiva, ninguno viola el tope). La frontera `(auth)/` permanece reservada a la División 2. Ítem de limpieza ajeno aún presente: `tmp-parser-probe.ts` (31 líneas, bajo el tope) en la raíz del repo. | `RESUELTO_IA2` |
+| 2026-10-16 | IA #2 → IA #3, IA #4 | `DIAGNOSTICO_TSC_APPS_WEB` | **`npx tsc -p apps/web/tsconfig.json --noEmit` → 27 errores; CERO en la División 2** (auth/legal/docs/sandbox/atelier = 0). **Causa raíz de 19×TS2307 (verificada contra disco):** las páginas `app/dashboard/org/[orgSlug]/projects/[projectId]/{keys,prompt-studio,rag-map-editor,visual-trainer}/page.tsx` importan `components/*` con **6 niveles `../` cuando necesitan 7** (con 6 se resuelve a `src/app/components/` inexistente; los módulos destino sí existen). Los 6×TS7006 son secuela directa (callbacks sin tipos al fallar el módulo). Además: `components/superadmin/GlobalTenantGovernanceGrid.tsx:181` → TS4111 (`['ACTIVE']`) y `components/visual-trainer/ElementTaggingModal.tsx:66` → TS2375 (`exactOptionalPropertyTypes`: añadir `undefined` a las props opcionales o omitir claves). Recomendación: corregir la profundidad de los imports y re-ejecutar `npx tsc -p apps/web/tsconfig.json --noEmit`. Ningún archivo ajeno fue tocado por IA #2. | `ABIERTO_PARA_IA3_IA4` |
+| 2026-10-16 | IA #2 → Carriles 1, 3, 4 | `CIERRE_DIVISION_2` | **La División 2 frontend queda `COMPLETADO / LISTO_PARA_CONSUMO` (Ola 3 sellada).** Entregable: fachada pública `packages/sdk/src/index.tsx` (284 líneas; `OnboardingAssistant.init()`, `OnboardingAssistantProvider` y `useOnboardingAssistant()`; widget/captura opt-in, sin efectos de red por defecto). Auditorías finales: límite de líneas **302 archivos, 0 violaciones**; `npx tsc --noEmit` raíz = 4 errores externos esperados (TS2540); `npx tsc -p apps/web/tsconfig.json --noEmit` = 27 errores, **todos externos a la División 2** (Carriles 3/4: profundidad de imports en `dashboard/.../projects/[projectId]/*`, TS4111 y TS2375); typecheck acotado del SDK = 0 errores. Contrato CTA **confirmado en disco**: `register/page.tsx` parsea `plan` y `estimated_minutes` (líneas 266–270). Costura de sesión: `DEFECTO_BACKEND_REFRESH` vigente; el primer 401 del refresh transiciona `sessionPhase:'expired'` → `/auth/login?reason=session-expired` (JWT solo en RAM). Inventario completo en la Sección 4: 26 archivos · 8.659 líneas. | `CERRADO` |
+| 2026-10-16 | IA #1 → IA #2, #3, #4 | `CIERRE_DIVISION_1` | **La División 1 frontend queda `COMPLETADO / LISTO_PARA_CONSUMO` (9 subagentes 1.1–1.9; 27 archivos · 5.023 líneas).** Entregables: (1) bootstrap compartido del workspace `apps/web` sellado (`package.json` Next 15.5.28 / React 19.3.1 / Tailwind 4.3.3, `tsconfig.json` estricto con `jsx: react-jsx`, `next-env.d.ts`, `postcss.config.mjs`, `layout.tsx` raíz y `globals.css` con `@theme` Auros Light); (2) contratos congelados en `apps/web/src/lib/api-client/`: `backendFetch`/`setAccessToken`/`BackendHttpError`/`HTTP_CLIENT_EVENT_NAMES` (JWT solo en RAM, `credentials:'include'`, refresh single-flight `POST /api/v1/auth/refresh` con cuerpo `{}`), DTOs espejo y protocolo de voz; (3) `landing-auros-light.css` (317 líneas; ámbito `[data-portal="commercial-landing"]` y clases `.oa-*` reservadas a esta División); (4) landing comercial en `/`: hero fonónico con esfera bioluminiscente, demo de voz de 90 s (uplink `[0x01]+PCM16` 641 B/frame, downlink PCM16 crudo sin cabecera, control `[0x02]+JSON`), CRM en Shadow DOM, explorador RAG molecular, banner «Dual AI» y calculadora Whop (volumen sobre overage de PLAN_50; ejemplo verificado: 25 usuarios × 60 min → $158.00). **Contrato CTA confirmado en disco** por IA #2: `/auth/register?plan=<code>&estimated_minutes=<n>` (parseo en `register/page.tsx`). **Costura de sesión:** `DEFECTO_BACKEND_REFRESH` vigente; sin parches de cliente y sin localStorage (JWT solo en RAM; primer 401 → `sessionPhase:'expired'` por contrato con IA #2). Verificaciones: auditoría global 310 archivos / 0 violaciones; `tsc` del carril vacío en raíz y `apps/web`; detalle de errores externos en `Estado de Compilación`. Anclas de la maqueta (`data-oa-id`: `btn-new-deal`, `input-company-tax`, `btn-validate-cfdi`, `nav-billing`) congeladas: no renombrarlas. | `CERRADO` |
+| 2026-10-16 | IA #1 → Registro Backend (ventana de mantenimiento) | `OBSERVACION_BACKEND_DEMO_WS` | **Gap de integración detectado al consumir el contrato público (no bloquea al frontend; INFO para mantenimiento):** `POST /api/v1/public/demo-session` persiste `oa:demo:session:<sessionId>` y `oa:demo:token:<ephemeralToken>` (TTL 120 s) y entrega un `websocketUrl` con `token/sessionId/nonce/handshakeNonce/demo=true`, pero **ningún consumidor del repositorio lee `oa:demo:token:*`**: el Gateway de Voz (Módulo 05, cero referencias a «demo») exige `nonceId` + `projectId` y consume vía `consumeEphemeralWsNonce()` la clave `sdk_handshake:nonce:<jti>` del Módulo 02 (cuyo payload declara `projectId`/`organizationId`; el payload de demo no los incluye y la URL de demo tampoco envía `projectId`). Sin un adaptador demo-aware del puerto de handshake, la conexión de la demo en vivo no puede completar el handshake del WebSocket (C1-14 validó la persistencia en Redis, no el consumo por el gateway). El frontend consume `websocketUrl` tal cual lo entrega el backend. **CERRADA el 2026-10-18 (asiento 04:05): la costura quedó operativa de punta a punta con motor de voz real.** | `CERRADO` |
+| 2026-10-17 | Antigravity → Monorepo | `RESOLUCION_PUERTOS_Y_RLS` | **Resolución definitiva de colisión de puertos y aislamiento RLS en registro:** 1) Reasignación de puertos: Frontend Next.js en `3001`, Fastify API en `3000`, WebSocket Gateway de Voz en `3002` y Trainer WebSocket en `3003`. Configurado en `.env` y esquema Zod `env.zod-schema.ts`. 2) Resuelto el error `new row violates row-level security policy for table "users"`: `RegisterOrganizationOwnerUseCase` ejecuta `set_config('app.is_superadmin', 'true', true)` durante el aprovisionamiento inicial y `PostgresIdentityRepository` maneja contextos RLS con `executeWithContext`. 3) Corregidas columnas en `INSERT INTO projects` para coincidir con la migración 003 (`organization_id`, `name`, `slug`, `environment`, `is_active`, `created_by_user_id`). Verificación E2E de registro exitosa en base de datos Neon. | `RESUELTO` |
+| 2026-10-17 | Antigravity → Monorepo | `RESOLUCION_LEGAL_RLS_Y_DASHBOARD_404` | **Resolución de RLS en user_legal_acceptances y 404 en `/dashboard/org/[orgSlug]`:** 1) Resuelto `new row violates row-level security policy for table "user_legal_acceptances"`: `PostgresAdvancedIdentityRepository` ahora ejecuta todas sus consultas con contexto RLS explícito (`executeWithRls`), asegurando que las aceptaciones legales (ToS, Privacidad, DPA, AUP) y operaciones MFA persistan sin infracciones de seguridad de fila. 2) Creadas las rutas `apps/web/src/app/dashboard/org/[orgSlug]/page.tsx` y `apps/web/src/app/dashboard/org/[orgSlug]/projects/page.tsx` que redirigen de forma transparente a `/dashboard/org/[orgSlug]/projects/general/keys`, erradicando el 404 que sufrían los usuarios al iniciar sesión o registrarse. | `RESUELTO` |
+| 2026-10-18 | IA #1 → Registro Backend (ventana de mantenimiento) | `CIERRE_OBSERVACION_BACKEND_DEMO_WS` | **Cierre real de la costura (asiento 04:05):** el borde del socket ahora detecta `demo=true` y resuelve la apertura con la puerta demo (lectura no destructiva de `oa:demo:session:*`/`oa:demo:token:*` con binding mutuo, prefijo `demo_` y caducidad); el handshake consume el token de un solo uso con Lua `GETDEL` y responde la identidad sintética `public-demo` (sin facturación posible: `PublicDemoMeteringService` anula todo débito); el RAG demo usa prompt genérico de 90 s sin pasos ni elementos accionables y el tope duro de 90 s cierra con código 1000 y aviso público al navegador. `PUBLIC_VOICE_WS_URL` (nueva env opcional) inyecta el host real del gateway en la `websocketUrl` pública; sin ella se conserva el destino de ejemplo. Evidencia E2E con motor real: 201 vía proxy 3001 → `session.ready` en 1,9 s (GEMINI con failover) → cierre 1000 a los ~90 s; token fabricado → 4001. Cuota demo reseteada. | `CERRADO` |
 
 ## 4. Inventario de Archivos del Proyecto y Auditoría de Líneas (<500 Líneas)
 
@@ -128,7 +173,7 @@
 | `src/config/env.contract.ts` | 00. Cimientos | `67 / 500` | Catálogos cerrados, claves secretas y tipos `AppEnvironment` / `EnvironmentKey` | `env.zod-schema.ts` |
 | `src/config/env.dotenv-loader.ts` | 00. Cimientos | `87 / 500` | Cargador `.env` propio sin dependencias externas | `node:fs`, `node:path` |
 | `src/config/env.schema.ts` | 00. Cimientos | `153 / 500` | `getEnvConfig()` memoizado y radiografía con enmascaramiento | `env.dotenv-loader.ts`, `env.contract.ts`, `env.zod-schema.ts` |
-| `src/config/env.zod-schema.ts` | 00. Cimientos | `326 / 500` | 47 variables validadas y reglas cruzadas EdDSA/CORS/Anti-SSRF | `zod`, `env.contract.ts` |
+| `src/config/env.zod-schema.ts` | 00. Cimientos | `398 / 500` | 51 variables declaradas y reglas cruzadas EdDSA/CORS/Anti-SSRF (incluye `PUBLIC_VOICE_WS_URL`) | `zod`, `env.contract.ts` |
 | `src/shared/kernel/app-error.ts` | 00. Kernel | `210 / 500` | Clase base `AppError`, 15 códigos, 3 mapas de traducción e `isAppError()` | — (raíz de la jerarquía) |
 | `src/shared/kernel/domain-error.catalog.ts` | 00. Kernel | `249 / 500` | Las 15 clases de error de dominio y seguridad | `app-error.ts` |
 | `src/shared/kernel/result-and-errors.ts` | 00. Kernel | `173 / 500` | Fachada de errores, `toAppError()` y monada `Result<T, E>` | `app-error.ts`, `domain-error.catalog.ts` |
@@ -236,7 +281,121 @@
 | `src/modules/05-voice-realtime-gateway/infrastructure/postgres-voice-session.repository.ts` | 05-B. Persistencia | `342 / 500` | Repositorio PostgreSQL con contexto RLS para sesiones de voz y eventos de acción, sincronización atómica de sesiones activas en Redis (`counters.addToSet`, `counters.removeFromSet`, `keyNamespaces.organizationActiveSessions`) y telemetría de eventos de ejecución | `pg`, `redis-cluster.client.ts`, `voice-session-and-tools.types.ts`, `rls-pool.ts` |
 | `tests/integration/gemini-live-failover.test.ts` | QA | `441 / 500` | Prueba de fuego integral Módulo 05-B (5/5 fases): BidiGenerateContent, streaming PCM16 + tool calling, barge-in sub-50ms, Failover dual sub-800ms y persistencia PostgreSQL RLS + Redis | `node:assert`, `@shared/*`, `@modules/05-*` |
 
-**Total auditado:** `12.808 líneas` (72 archivos en el alcance activo, todos < 500 líneas).
+### Inventario de la División 4 del Frontend — Partes 13 a 16 (IA #4: Facturación Whop, SuperAdmin, Telemetría SSE y Ensamblaje E2E)
+
+| Ruta del Archivo | Módulo | Líneas (`/ 500`) | Resumen de Responsabilidad y Exportaciones | Dependencias que Consume |
+| :--- | :--- | :---: | :--- | :--- |
+| `apps/web/src/components/billing-whop/useOrganizationBillingWhop.ts` | 08. Frontend | `365 / 500` | Hook de facturación Whop, consumo en tiempo real, checkout y spend cap | `react` |
+| `apps/web/src/components/billing-whop/CurrentPlanAndBalanceCard.tsx` | 08. Frontend | `317 / 500` | Tarjeta de plan activo, minutos incluidos vs overage y tramos en `tnum` | `react`, Cursor Atelier |
+| `apps/web/src/components/billing-whop/WhopCheckoutAndSpendCapControls.tsx` | 08. Frontend | `409 / 500` | Selector de planes $5-$50/PAYG y formulario de Spend Cap (50/80/100%) | `react`, `useOrganizationBillingWhop` |
+| `apps/web/src/components/billing-whop/MinuteByMinuteUsageLedgerTable.tsx` | 08. Frontend | `333 / 500` | Tabla auditable del libro mayor con filtros y exportación CSV en `tnum` | `react`, `useOrganizationBillingWhop` |
+| `apps/web/src/app/dashboard/org/[orgSlug]/billing/page.tsx` | 08. Frontend | `229 / 500` | Vista ensamblada de facturación y consumo con RBAC | `billing-whop/*` |
+| `apps/web/src/components/superadmin/SuperAdminControlShell.tsx` | 08. Frontend | `238 / 500` | Layout SuperAdmin en `#f7f7f4`, Passkey FIDO2, reloj 4h y estado Node Pools | `react`, Cursor Atelier |
+| `apps/web/src/components/superadmin/useSuperAdminTenantGovernance.ts` | 08. Frontend | `278 / 500` | Hook de gobierno de tenants, suspensión, reactivación y Break-Glass | `/api/v1/superadmin/*` |
+| `apps/web/src/components/superadmin/GlobalTenantGovernanceGrid.tsx` | 08. Frontend | `329 / 500` | Grilla instantánea de tenants, sesiones activas y acciones de corte | `react`, Cursor Atelier |
+| `apps/web/src/components/superadmin/SuspendTenantAndBreakGlassModals.tsx` | 08. Frontend | `330 / 500` | Modal de suspensión 4003_TENANT_SUSPENDED y cola de aprobación Break-Glass | `react`, Crimson `#cf2d56` |
+| `apps/web/src/app/superadmin/organizations/page.tsx` | 08. Frontend | `161 / 500` | Página ensamblada de gobierno de organizaciones del SuperAdmin | `superadmin/*` |
+| `apps/web/src/components/superadmin/useSuperAdminPricingAndOverrides.ts` | 08. Frontend | `317 / 500` | Hook de matriz Whop, tramos de volumen y simulador de impacto financiero | `/api/v1/superadmin/*` |
+| `apps/web/src/components/superadmin/GlobalWhopPricingMatrixEditor.tsx` | 08. Frontend | `421 / 500` | Editor tabular de matriz de precios Whop ($5-$50) y tramos 10%-50% | `react`, Cursor Atelier |
+| `apps/web/src/app/superadmin/pricing-matrix/page.tsx` | 08. Frontend | `108 / 500` | Página ensamblada de la matriz global de precios | `superadmin/*` |
+| `apps/web/src/components/superadmin/TenantPricingOverrideManager.tsx` | 08. Frontend | `419 / 500` | Consola de tarifas a medida, descuentos y minutos de cortesía | `react`, Cursor Atelier |
+| `apps/web/src/app/superadmin/custom-pricing-overrides/page.tsx` | 08. Frontend | `103 / 500` | Página ensamblada de overrides tarifarios y cortesías | `superadmin/*` |
+| `apps/web/src/components/superadmin/useRealtimeInfraTelemetrySse.ts` | 08. Frontend | `236 / 500` | Cliente SSE segundo a segundo a `/telemetry/stream` y control Kill-Switch | `/api/v1/superadmin/*` |
+| `apps/web/src/components/superadmin/RealtimeInfraTelemetryPanel.tsx` | 08. Frontend | `406 / 500` | Panel de latencias TTFA p50/p95/p99, alertas Anti-SSRF y botón Kill-Switch | `react`, Cursor Atelier |
+| `apps/web/src/components/superadmin/ImmutableAuditLogExplorer.tsx` | 08. Frontend | `427 / 500` | Explorador de bitácora append-only y verificador de cadena SHA-256 | `react`, Cursor Atelier |
+| `apps/web/src/app/superadmin/infrastructure/page.tsx` | 08. Frontend | `113 / 500` | Página ensamblada de infraestructura, telemetría y auditoría SOC2 | `superadmin/*` |
+| `tests/e2e-frontend/frontend-backend-full-journey.spec.ts` | QA | `158 / 500` | Suite E2E de travesía completa de frontend contra el backend (6 fases) | `node:assert`, `@shared/*` |
+
+**Total auditado:** `18.350 líneas` (92 archivos en el alcance activo, todos < 500 líneas).
+
+### Inventario de la Ola 2 — División 2 (Subagente 2.3 · Tres Páginas de Autenticación)
+
+| Ruta del Archivo | Módulo | Líneas (`/ 500`) | Resumen de Responsabilidad y Exportaciones | Dependencias que Consume |
+| :--- | :--- | :---: | :--- | :--- |
+| `apps/web/src/app/(auth)/auth/login/page.tsx` | 08. Frontend Auth | `444 / 500` | `B2BLoginPage` (default): login B2B con descubrimiento SSO por dominio corporativo, bloqueo temporal 423 (`lockedUntilIso`) con cuenta atrás, re-autenticación por sesión expirada, inicio SAML con aviso si no está configurado y panel legal informativo | `react`, `auth-api-client.ts` (`authApiFetch`, `buildSessionProfile`), `useAuthSessionContext.tsx`, `MfaChallengeAndEnrollmentModal.tsx`, `AtelierUiPrimitives.tsx` |
+| `apps/web/src/app/(auth)/internal/superadmin-login/page.tsx` | 08. Frontend Auth | `450 / 500` | `SuperAdminIsolatedLoginPage` (default) y `performWebAuthnAssertion()`: aserción física FIDO2 (reto anti-replay + canje), doble verificación de rol (`SUPERADMIN` + reclamo JWT) y degradación fail-closed a OTP | `react`, `auth-api-client.ts` (+ `decodeJwtPayloadUnsafe`), `useAuthSessionContext.tsx`, `MfaChallengeAndEnrollmentModal.tsx`, `AtelierUiPrimitives.tsx` |
+| `apps/web/src/app/(auth)/auth/cli-device/page.tsx` | 08. Frontend Auth | `243 / 500` | `CliDeviceAuthorizationPage` (default): confirmación web del Device Flow RFC 8628 (`userCode` `XXXX-XXXX`, TTL 10 min); 200 confirmado, 400 inválido/expirado, 401 → `/auth/login?next=cli-device` | `react`, `auth-api-client.ts`, `useAuthSessionContext.tsx`, `AtelierUiPrimitives.tsx` |
+
+**Nota de acoplamiento (Subagente 2.2):** las tres páginas dependen del layout `apps/web/src/app/(auth)/layout.tsx` — que monta `<AuthSessionProvider>`, el CSS Atelier y el `atelier-shell` — y de permanecer bajo el grupo `(auth)`. Subtotal Subagente 2.3: **3 archivos · 1.137 líneas**.
+
+### Inventario de Cierre — División 2 (IA #2 · Subagentes 2.1–2.9: Autenticación, Legal, Docs, Sandbox y Fachada del SDK)
+
+| Ruta del Archivo | Módulo | Líneas (`/ 500`) | Resumen de Responsabilidad y Exportaciones | Dependencias que Consume |
+| :--- | :--- | :---: | :--- | :--- |
+| `apps/web/src/styles/dashboard-docs-cursor-atelier.css` | 08. Frontend Atelier | `269 / 500` | Hoja de tokens «Cursor Light — Warm Parchment Atelier» del ámbito `[data-portal="workspace-atelier"]`: botones, ventanas, terminal, mono-tags y modales (radio 8px) | — (hoja de estilos) |
+| `apps/web/src/components/atelier-primitives/AtelierUiPrimitives.tsx` | 08. Frontend Atelier | `324 / 500` | Primitivas UI compartidas: `AtelierPrimaryButton`, `AtelierSecondaryButton`, `AtelierAmberActionButton`, `AtelierForestConfirmButton`, `AtelierCrimsonDangerButton`, `WindowMockupFrame`, `TerminalCommandBox` y `MonoMetadataTag` | `react`, CSS Atelier |
+| `apps/web/src/app/(auth)/layout.tsx` | 08. Frontend Auth | `59 / 500` | Layout del grupo `(auth)`: monta `<AuthSessionProvider>`, el CSS Atelier y el marco `atelier-shell` de todas las vistas de acceso y alta | `react`, `useAuthSessionContext.tsx`, CSS Atelier |
+| `apps/web/src/components/auth-legal/useAuthSessionContext.tsx` | 08. Frontend Auth | `317 / 500` | Estado de sesión en RAM para el portal: `AuthSessionProvider`, `useAuthSession()`, `logout()`, `markLocked()`, `hasPermission()` y fases `anonymous/authenticated/expired` | `react`, `auth-api-client.ts` |
+| `apps/web/src/components/auth-legal/auth-api-client.ts` | 08. Frontend Auth | `436 / 500` | `authApiFetch` tipado (sobre de error 401/423), `buildSessionProfile`, `decodeJwtPayloadUnsafe` y espejo RBAC `ROLE_PERMISSIONS_MIRROR` (31/28/16/5/8 por rol) | `backend-contracts.types.ts` |
+| `apps/web/src/app/(auth)/auth/register/page.tsx` | 08. Frontend Auth | `489 / 500` | Wizard de alta en 4 pasos (credenciales → legal → correo → plan): lee `plan` y `estimated_minutes` del query string (contrato CTA, líneas 266–270), ignora valores inválidos y activa el checkout del plan | `auth-api-client.ts`, `useAuthSessionContext.tsx`, `AtelierUiPrimitives.tsx` |
+| `apps/web/src/app/(auth)/auth/owner-emergency-recovery/page.tsx` | 08. Frontend Auth | `460 / 500` | Asistente público de Break-Glass para la pérdida total de credenciales del Owner único: solicitud firmada y estados de la cola de aprobación | `auth-api-client.ts`, `AtelierUiPrimitives.tsx` |
+| `apps/web/src/app/(auth)/auth/recovery/page.tsx` | 08. Frontend Auth | `470 / 500` | Recuperación de cuenta que despacha por parámetros de consulta (restablecimiento y desbloqueo) con piso anti-enumeración | `auth-api-client.ts`, `AtelierUiPrimitives.tsx` |
+| `apps/web/src/components/auth-legal/MfaChallengeAndEnrollmentModal.tsx` | 08. Frontend Auth | `482 / 500` | Resuelve el estado 202 `mfa_required`: reto TOTP/WebAuthn en dos fases, inscripción de passkeys y canje de códigos de respaldo | `auth-api-client.ts`, `AtelierUiPrimitives.tsx` |
+| `apps/web/src/components/auth-legal/MandatoryLegalReconsentModal.tsx` | 08. Frontend Legal | `483 / 500` | Modal BLOQUEANTE de re-consentimiento ToS/Privacidad/DPA: detiene la aplicación ante instrumentos vencidos y exige firma | `auth-api-client.ts`, `AtelierUiPrimitives.tsx` |
+| `apps/web/src/components/auth-legal/LegalDocumentViewer.tsx` | 08. Frontend Legal | `479 / 500` | Visor editorial de los instrumentos legales vigentes (ToS B2B, Privacidad, DPA) con versión y sello del documento | `auth-api-client.ts`, `AtelierUiPrimitives.tsx` |
+| `apps/web/src/app/legal/layout.tsx` | 08. Frontend Legal | `38 / 500` | Layout raíz del grupo `/legal/*`: importa los tokens y clases del portal legal | CSS Atelier |
+| `apps/web/src/app/legal/[docSlug]/page.tsx` | 08. Frontend Legal | `41 / 500` | Página pública de lectura de un instrumento legal; componente de servidor que valida el slug y delega en `LegalDocumentViewer` | `LegalDocumentViewer.tsx` |
+| `apps/web/src/components/docs-sandbox/DeveloperDocsShell.tsx` | 08. Frontend Docs | `334 / 500` | Shell editorial de `/docs`: barra superior con navegación central y buscador modal (Cmd+K) | `react`, CSS Atelier |
+| `apps/web/src/components/docs-sandbox/ApiAndProtocolSpecViewer.tsx` | 08. Frontend Docs | `356 / 500` | Panel izquierdo del Sandbox: especificación del protocolo de voz (`0x01` PCM16 / `0x02` JSON) y del sobre de error del backend | `sandbox-contracts.types.ts` |
+| `apps/web/src/app/docs/layout.tsx` | 08. Frontend Docs | `35 / 500` | Cascarón del grupo `/docs`: carga la hoja «Cursor Light — Warm Parchment Atelier» y los metadatos | CSS Atelier |
+| `apps/web/src/app/docs/page.tsx` | 08. Frontend Docs | `311 / 500` | Guía editorial de integración de `@onboarding-assistant/sdk` montada dentro del shell de documentación | `DeveloperDocsShell.tsx` |
+| `apps/web/src/components/docs-sandbox/SandboxTargetApplicationCanvas.tsx` | 08. Frontend Sandbox | `360 / 500` | Panel central del Sandbox: «CRM de ejemplo» aislado dentro del lienzo, resaltado de selectores y medición de elementos | `sandbox-contracts.types.ts` |
+| `apps/web/src/components/docs-sandbox/sandbox-contracts.types.ts` | 08. Frontend Sandbox | `154 / 500` | Congela tipos, presets de viewport y constantes compartidas entre los paneles del Sandbox | — (contratos puros) |
+| `apps/web/src/app/docs/sandbox/page.tsx` | 08. Frontend Sandbox | `453 / 500` | Sandbox interactivo de 3 paneles: inspector de tramas WS, lienzo DOM y despachador manual (`click_element`/`type_text`) con sondas de elemento y presets de cadencia humana | shell y paneles de 2.6/2.7 |
+| `packages/sdk/src/audio/pcm16-worklet-and-vad.ts` | 09. SDK Web | `443 / 500` | Captura de micrófono a tramas PCM16 16 kHz con AudioWorklet y VAD local: `buildPcm16WorkletSource`, `createPcm16WorkletBlobUrl` y `Pcm16CapturePipeline` | Web Audio API |
+| `packages/sdk/src/ui/assistant-widget-shadow.ts` | 09. SDK Web | `445 / 500` | Burbuja flotante y panel del asistente de voz aislados en un `ShadowRoot` cerrado: temas, estados, manejadores y barge-in | DOM APIs |
+| `packages/sdk/src/index.tsx` | 09. SDK Web | `284 / 500` | Fachada React `'use client'`: `OnboardingAssistant.init()`, `OnboardingAssistantProvider` (widget/captura opt-in) y `useOnboardingAssistant()`; re-exports aditivos de audio y widget | `./index`, `./audio/pcm16-worklet-and-vad`, `./ui/assistant-widget-shadow`, `react` |
+
+**Subtotal División 2 (frontend IA #2):** 26 archivos · 8.659 líneas (23 de esta subsección + las 3 páginas del Subagente 2.3 inventariadas arriba).
+
+### Inventario de Cierre — División 1 (IA #1 · Subagentes 1.1–1.9: Cimientos del Workspace `apps/web` y Landing Comercial Auros Light)
+
+| Ruta del Archivo | Módulo | Líneas (`/ 500`) | Resumen de Responsabilidad y Exportaciones | Dependencias que Consume |
+| :--- | :--- | :---: | :--- | :--- |
+| `apps/web/package.json` | 00. Frontend Cimientos | `30 / 500` | Manifiesto del workspace web: dependencias pineadas (Next 15.5.28, React 19.3.1, Tailwind 4.3.3, lucide-react) y scripts | — |
+| `apps/web/tsconfig.json` | 00. Frontend Cimientos | `40 / 500` | TypeScript estricto del workspace con alias `@/*`, `jsx: react-jsx` y exclusión de `.next` | — |
+| `apps/web/next-env.d.ts` | 00. Frontend Cimientos | `6 / 500` | Tipos de Next.js autogenerados (no editar) | `next` |
+| `apps/web/postcss.config.mjs` | 00. Frontend Cimientos | `29 / 500` | Canalización PostCSS con `@tailwindcss/postcss` para la compilación Tailwind v4 | `@tailwindcss/postcss` |
+| `apps/web/src/app/layout.tsx` | 00. Frontend Cimientos | `58 / 500` | Layout raíz compartido de los 4 carriles: metadatos comerciales (título/plantilla/descripción), viewport con `themeColor: #f2fbf9` y estructura `html`/`body` en español | `next`, `globals.css` |
+| `apps/web/src/app/globals.css` | 00. Frontend Cimientos | `60 / 500` | Importación de Tailwind v4 + Auros Light; bloque `@theme` con paleta (liquid/slate/ink/orchid), tipografía Matter y radios 16/6 px; bases de `html` y `body` | Tailwind v4 |
+| `apps/web/src/lib/api-client/backend-contracts.types.ts` | 00. Frontend Contratos | `321 / 500` | Tipos espejo de los contratos sellados del backend: auth (`PublicUser`/`PublicOrganization`), `PricingMatrixDto`, `PublicDemoSessionDto`, sobre de error (15 códigos) y protocolo de voz (`0x01` PCM16 uplink / `0x02` JSON control) | — (tipos puros) |
+| `apps/web/src/lib/api-client/http-client.ts` | 00. Frontend HTTP | `298 / 500` | `backendFetch` tipado: JWT solo en RAM, `credentials:'include'`, refresh single-flight (`POST /api/v1/auth/refresh`), cola de reintentos y eventos globales `oa:http:*` | `backend-contracts.types.ts` |
+| `apps/web/src/styles/landing-auros-light.css` | 07. Frontend Landing | `498 / 500` | Sistema Auros Light (tokens, gradientes, candado `box-shadow: none`, radios 12/6 px) y utilidades `.oa-*` del ámbito `[data-portal="commercial-landing"]`, incluidos los pulsos del explorador RAG (`oa-graph-pulse`/`--svg`, `oa-dot-grid`, `oa-chip-pulse`, `oa-quick-fade`) con `prefers-reduced-motion` | — (hoja de estilos) |
+| `apps/web/src/app/(commercial)/layout.tsx` | 07. Frontend Landing | `55 / 500` | Layout del grupo `(commercial)`: ámbito `data-portal="commercial-landing"`, contexto aislado `relative isolate` con el fondo vivo `DalaConstellationBackdrop` (`fixed z-0`), `main`/pie a `z-10` y chrome de marca (`PublicCommercialFooter`/`Header`) | `PublicCommercialChrome.tsx`, `DalaConstellationBackdrop.tsx` |
+| `apps/web/src/app/(commercial)/page.tsx` | 07. Frontend Landing | `102 / 500` | Ensamblaje final de `/`: componente servidor sin fondo propio (lienzo gobernado por el fondo de constelación del layout) con las 5 secciones en orden narrativo (anclas `#plataforma`, `#demo-en-vivo`, `#precios`) y metadatos SEO sin fuga de infraestructura | secciones 1.5–1.8 |
+| `apps/web/src/components/landing/PublicCommercialChrome.tsx` | 07. Frontend Landing | `249 / 500` | Cabecera accesible (sticky `z-40`) con botón hamburguesa, drawer móvil #F2FBF9/#B8E0DA, logo OA.AI en móvil, CTA aurora 36px y pie `relative z-10` de cuatro columnas sobre el canvas del fondo | `react` |
+| `apps/web/src/components/landing/primitives/AurosPrimitives.tsx` | 07. Frontend Landing | `175 / 500` | Primitivas visuales Auros: `AuroraGradientButton`, `DiagonalArrowSquareButton`, `UppercaseTrackedKicker` y `LagoonSurfaceCard` | CSS Auros |
+| `apps/web/src/components/landing/hero/useAcousticSpherePhysics.ts` | 07. Frontend Hero | `394 / 500` | Física acústica de la esfera: energía RMS por anillo sobre `AnalyserNode`, amortiguación y transiciones de reposo | Web Audio API |
+| `apps/web/src/components/landing/hero/BioluminescentVoiceDomSphere.tsx` | 07. Frontend Hero | `422 / 500` | Esfera acústica bioluminiscente recalibrada: radio base 0.35 y empaquetado armónicos para altura compacta 320px-380px sin desborde ni pixelado, 2 paths Path2D a 60 FPS y touch-action: pan-y | `useAcousticSpherePhysics.ts` |
+| `apps/web/src/components/landing/hero/HeroArchitectureShowcase.tsx` | 07. Frontend Hero | `155 / 500` | Sección `#plataforma`: escala compacta de ingeniería de lujo con lienzo transparente (sin gradiente opaco) sobre el fondo de constelación; contenedor max-w-[1140px], H1 clamp 1.6rem-2.5rem, tarjeta Nexo CRM y esfera acústica 320-380px | esfera, CSS Auros, fondo Dala |
+| `apps/web/src/components/landing/explore/RagDomMolecularGraphSection.tsx` | 07. Frontend Explorador | `153 / 500` | Sección «Entrenamiento Visual & Memoria RAG» reescrita: encabezado editorial (kicker teal `#15846E`, remate serifado «sellada con SHA-256.»), rejilla `lg:grid-cols-12` 5/7 con las 3 tarjetas `RAG_PILLAR_CARDS` (tone `lift` destacada en violeta `#8052FF`) frente al grafo de escritorio y explorador compacto `< lg` | `VisualTrainingMolecularGraph.tsx`, `CompactVisualTrainingExplorer.tsx`, `AurosPrimitives.tsx` |
+| `apps/web/src/components/landing/explore/VisualTrainingMolecularGraph.tsx` | 07. Frontend Explorador | `270 / 500` | Grafos SVG del explorador: `DesktopMolecularGraph()` (540×405, doble polígono, radios radar, 14 nodos, núcleo SHA-256 con gradiente/glow y anillo `oa-graph-pulse`) y `CompactMolecularGraph()` (320×320, rejilla `oa-dot-grid`, halo `oa-graph-pulse--svg` y pastilla SHA-256) | CSS Auros |
+| `apps/web/src/components/landing/explore/CompactVisualTrainingExplorer.tsx` | 07. Frontend Explorador | `330 / 500` | Explorador compacto interactivo (`< lg`): panel de detalle dinámico (`VISUAL_TRAINING_DETAILS`, 7 lecturas reales, `aria-live` + cierre/restauración), 3 pastillas + 3 KPIs con `aria-pressed`/borde violeta/`oa-chip-pulse`, figura con leyenda y CTA «Entrenar mi producto» → `/auth/register` | `VisualTrainingMolecularGraph.tsx` |
+| `apps/web/src/components/landing/explore/BioluminescentStatsBanner.tsx` | 07. Frontend Explorador | `104 / 500` | Banner «Arquitectura de alto rendimiento en producción» restilizado: panel blanco radio 16px, micro-cabecera con punto violeta y cifras bold 36-42px con divisores `#D7EBE6` solo en escritorio; contenido real `<45ms` / `100%` / `2 Motores` | CSS Auros |
+| `apps/web/src/components/landing/live-demo/usePublicVoiceDemoSession.ts` | 07. Frontend Demo | `386 / 500` | Pipeline completo de la demo pública de 90 s: `startDemo`/`stopDemo`/`interruptAssistant`/`acknowledgeDirective`, WS `[0x01]`/`[0x02]`, acuse `tool.execution.ack` y medición de latencias | `http-client.ts`, `backend-contracts.types.ts` |
+| `apps/web/src/components/landing/live-demo/SimulatedCrmShadowCanvas.tsx` | 07. Frontend Demo | `390 / 500` | CRM de ejemplo «Nexo CRM» aislado en Shadow DOM: montaje de los 4 anclas del guion y resaltados de clic/escritura | DOM APIs |
+| `apps/web/src/components/landing/live-demo/DemoBioluminescentCursorOverlay.tsx` | 07. Frontend Demo | `223 / 500` | Cursor bioluminiscente flotante que narra visualmente los clics y la escritura del asistente sobre el lienzo | react, CSS Auros |
+| `apps/web/src/components/landing/live-demo/DemoStepProgressHeader.tsx` | 07. Frontend Demo | `221 / 500` | Cabecera de progreso del guion de demo: pasos, cronología y latencias por directiva | hook de demo |
+| `apps/web/src/components/landing/live-demo/LiveInteractiveVoiceDemo.tsx` | 07. Frontend Demo | `406 / 500` | Sección `#demo-en-vivo`: orquestación de UI de micrófono, transcripción, acciones y barge-in sobre el lienzo CRM | piezas `live-demo/` |
+| `apps/web/src/components/landing/pricing/useWhopPricingCalculator.ts` | 07. Frontend Precios | `362 / 500` | Espejo de la aritmética de facturación del Módulo 04: tramos 10/20/35/50 % sobre el overage de PLAN_50, PAYG $0.20/min, proyección mensual, timeout defensivo de 4000 ms y respaldo degradado | — (aritmética espejo) |
+| `apps/web/src/components/landing/pricing/VolumeDiscountTierVisualizer.tsx` | 07. Frontend Precios | `151 / 500` | Visualizador de tramos de descuento por volumen (1.000/5.000/25.000/50.000 min) y minutos efectivos | `useWhopPricingCalculator.ts` |
+| `apps/web/src/components/landing/pricing/WhopPlanComparisonCards.tsx` | 07. Frontend Precios | `271 / 500` | Tarjetas comparativas de planes $5/$10/$30/$50 + PAYG con plan sugerido y CTA de registro precargado | `useWhopPricingCalculator.ts` |
+| `apps/web/src/components/landing/pricing/InteractivePricingCalculator.tsx` | 07. Frontend Precios | `233 / 500` | Sección `#precios`: controles de usuarios/minutos, proyección y CTA `/auth/register?plan=<code>&estimated_minutes=<n>` | piezas `pricing/` |
+
+**Subtotal carril Landing Comercial (recuento físico al 2026-10-18, tras el reemplazo de la aurora por la Red de nodos y conectores):** 36 archivos · 8.421 líneas (28 piezas del carril + 8 módulos del fondo Dala; excluye `next-env.d.ts` autogenerado; −1 carrusel retirado previamente). Máximo del carril: `landing-auros-light.css` con 498 (piezas del fondo Dala: 397/403/269/266/142/107/84/249). Todas las filas de esta pasada fueron resincronizadas contra `check-file-lines` (última pasada: 337 archivos, 0 violaciones). **Nota de arrastre resuelta:** el motor de partículas histórico (`LivingParticleIntelligenceCanvas.tsx` con 379 y `particle-geometry.ts` con 417, código muerto sin montar) fue **retirado del repositorio el 2026-10-18**; el fondo vigente de la landing es `DalaConstellationBackdrop.tsx`.
+
+### Inventario — Fondo Vivo de Constelación Dala (Landing Comercial)
+
+| Ruta del Archivo | Módulo | Líneas (`/ 500`) | Resumen de Responsabilidad y Exportaciones | Dependencias que Consume |
+| :--- | :--- | :---: | :--- | :--- |
+| `apps/web/src/components/landing/particles/DalaConstellationBackdrop.tsx` | 07. Fondo Dala | `266 / 500` | Canvas fijo `z-0` (`aria-hidden`, `pointer-events-none`): ciclo de vida del lienzo, DPR acotado por presupuesto de píxeles (≤2,6 M), gobernador de cadencia adaptativo (30 fps si el coste > ~11 ms), pausa en pestaña oculta, `prefers-reduced-motion` y repulsión elástica de cursor; delega la pintura en el compositor por lotes | `dala-constellation-render.ts`, `dala-constellation-render-state.ts`, `dala-constellation-sculptures.ts`, `dala-constellation-geometry.ts`, `react` |
+| `apps/web/src/components/landing/particles/dala-constellation-render.ts` | 07. Fondo Dala | `403 / 500` | Compositor por fotograma: rotaciones con senos/cosenos precalculados por escultura (la Red de nodos con rotación de malla, pulso de concentradores y realce de cadenas), deriva lateral del Cerebro (zona derecha del hero con recorte de borde), orden por profundidad con conteo por rodajas y trazo por lotes cromáticos cuantizados; exporta `ConstellationScene` y `renderConstellationFrame()` | `dala-constellation-geometry.ts`, `dala-constellation-render-state.ts`, `dala-constellation-ambient.ts` |
+| `apps/web/src/components/landing/particles/dala-constellation-render-state.ts` | 07. Fondo Dala | `107 / 500` | Estado persistente sin asignaciones: búfer de proyección, tabla cromática por nodo (cerebro/red/Tierra), rejillas de conteo por profundidad (`DEPTH_SLICES`/`ALPHA_STEPS`) y lotes con reciclado de arreglos; exporta `createConstellationRenderState()` | `dala-constellation-geometry.ts` (tipos) |
+| `apps/web/src/components/landing/particles/dala-constellation-ambient.ts` | 07. Fondo Dala | `84 / 500` | Glifos ambientales de polvo estelar (deriva vertical envolvente, oscilación horizontal y rotación propia); exporta `drawAmbientGlyphs()` | `dala-constellation-geometry.ts` (tipo) |
+| `apps/web/src/components/landing/particles/dala-constellation-sculptures.ts` | 07. Fondo Dala | `397 / 500` | Silueta cortical y regiones del cerebro anatómico + Tierra 96×48 con anillo orbital, y `buildConstellation()`: ensambla las tres posiciones precalculadas por nodo (la Red de nodos se delega en su mapa estático) | `dala-constellation-geometry.ts`, `dala-constellation-earth-map.ts`, `dala-constellation-network-map.ts` |
+| `apps/web/src/components/landing/particles/dala-constellation-geometry.ts` | 07. Fondo Dala | `269 / 500` | Hash/ruido 3D determinista, `smootherstep`/`lerp`, paleta de alto contraste, contratos (`BackdropNode`/`BackdropGlyph`/muestras/`ProjectedTriangle`), constantes del lienzo (FOV, densidades 3.000/1.500, presupuesto de píxeles, rangos de scroll) y transformación de pantalla por etapa (`BRAIN_SCREEN_TRANSFORM`) | — (matemática pura) |
+| `apps/web/src/components/landing/particles/dala-constellation-earth-map.ts` | 07. Fondo Dala | `142 / 500` | Malla cartográfica 96×48 con 16 regiones continentales clasificadas en celdas de costa (trazo nítido) y masa continental (relleno) en coordenadas esféricas | — (datos puros) |
+| `apps/web/src/components/landing/particles/dala-constellation-network-map.ts` | 07. Fondo Dala | `249 / 500` | Mapa estático de la Red de nodos (etapa 2): 5 anillos concéntricos de 41 concentradores, 65 conectores dibujados como cadenas proporcionales a su longitud (paso 10 unidades) y polvo de datos envolvente — 328 + 1.067 triángulos de figura y 1.605/105 de polvo para 3.000/1.500 nodos — con jitter determinista y `resolveNetworkSample()` en O(1) | `dala-constellation-geometry.ts` (paleta, hash y tipo) |
 
 ## 5. Bitácora Cronológica de Integraciones (Changelog Técnico Live)
 
@@ -679,9 +838,595 @@
 | 32 | **Aislamiento RLS en Módulos 06 y 07 (Fuga Horizontal de Tenants)**: Se auditó si alguna ruta del Módulo 06 (Gobierno SuperAdmin) o Módulo 07 (Público y Sandbox) puede leer datos privados de otro tenant. En Módulo 07 solo se consulta `pricing_plans_config` (pública) y Redis efímero. En Módulo 06, las consultas se ejecutan bajo `runInSuperAdminTransaction` con acceso global justificado para administración, pero blindadas por `assertSuperAdminPrincipal(ctx)` que exige `role === 'SUPERADMIN'` y `users.is_platform_superadmin = true`. No existe mecanismo para que un tenant ordinario lea datos ajenos | **Auditado, sin hallazgos:** El aislamiento multi-tenant y la barrera de privilegios funcionan según la especificación de diseño | Conservar las aserciones de seguridad en `governance-http.routes.ts` y las políticas RLS en PostgreSQL. Reproducido por auditoría de `public-commercial.manifest.ts:100-156` y `governance-http.routes.ts:110-320`. |
 | 33 | **Enumeración de Usuarios mediante Mensajes de Error de Dominio en Registro (`register-and-login.use-case.ts` y `api-control-plane.server.ts`)**: `ApiControlPlaneServer` propaga directamente `appError.message` en las respuestas HTTP para todos los errores de dominio. En `POST /api/v1/auth/register`, un correo existente lanza `ConflictError('El correo electronico ya se encuentra registrado en la plataforma.')`, permitiendo a un atacante no autenticado deducir si un correo pertenece a la plataforma | **Deuda Técnica / Seguridad Media:** Fuga de información en endpoints públicos de registro | Estandarizar la respuesta de error o devolver mensajes genéricos de registro para mitigar la enumeración de usuarios. Reproducido por trazado de `api-control-plane.server.ts:199` y `register-and-login.use-case.ts:101`. |
 
+---
+
+### [2026-10-16 18:55] - FRONTEND DIVISIÓN 4 (PARTES 13 A 16): Facturación Whop, Consola SuperAdmin, Telemetría SSE y Ensamblaje E2E
+
+- **Resumen Técnico:**
+  1. **Subagentes 4.1 y 4.2 (Facturación y Whop):** Implementación de `useOrganizationBillingWhop.ts`, `CurrentPlanAndBalanceCard.tsx`, `WhopCheckoutAndSpendCapControls.tsx`, `MinuteByMinuteUsageLedgerTable.tsx` y ensamblaje de la vista `/dashboard/org/[orgSlug]/billing/page.tsx` en estética Cursor Light (Warm Parchment Atelier: `#f7f7f4`, `#f2f1ed`, números tabulares `tnum` en `berkeleyMono 12px`, control Spend Cap con alertas 50/80/100% y exportación CSV del libro mayor). Zero backend leakage aplicado en toda la UI.
+  2. **Subagentes 4.3 y 4.4 (Gobierno SuperAdmin):** Construcción del cascarón `SuperAdminControlShell.tsx` con validación FIDO2 hardware, reloj de expiración de 4 horas y semáforo de los 3 Node Pools; hook `useSuperAdminTenantGovernance.ts`, grilla `GlobalTenantGovernanceGrid.tsx` y modales `SuspendTenantAndBreakGlassModals.tsx` con motivo obligatorio, revocación de claves en Redis y corte forzoso de WebSockets de voz con código `4003_TENANT_SUSPENDED`, ensamblando `/superadmin/organizations/page.tsx`.
+  3. **Subagentes 4.5 y 4.6 (Matriz de Precios y Overrides):** `useSuperAdminPricingAndOverrides.ts`, `GlobalWhopPricingMatrixEditor.tsx` (modificación en caliente de planes $5 a $50 USD y tramos de descuento por volumen 10%-50%), ensamblaje `/superadmin/pricing-matrix/page.tsx`, y consola de tarifas a medida `TenantPricingOverrideManager.tsx` (prioridad absoluta en `CalculateEffectiveRateUseCase` y minutos promocionales `CREDIT_SUPERADMIN_GRANT`) ensamblando `/superadmin/custom-pricing-overrides/page.tsx`.
+  4. **Subagentes 4.7 y 4.8 (Telemetría SSE, Kill-Switch y Auditoría SOC2):** `useRealtimeInfraTelemetrySse.ts` (stream segundo a segundo a `/telemetry/stream` con fallback a polling), `RealtimeInfraTelemetryPanel.tsx` (métricas acústicas TTFA p50/p95/p99, Barge-in, incidentes Anti-SSRF en Crimson `#cf2d56` y Kill-Switch de conmutación en caliente) y `ImmutableAuditLogExplorer.tsx` (auditoría forense append-only con verificación matemática de la cadena SHA-256), ensamblando `/superadmin/infrastructure/page.tsx`.
+  5. **Subagente 4.9 (Suite E2E Full-Journey y Verificación):** Creación y ejecución de `tests/e2e-frontend/frontend-backend-full-journey.spec.ts` (6 fases integradas de los 4 portales contra el backend: calculadora, checkout, spend cap, suspensión 4003, Kill-Switch y verificación de hashes SHA-256).
+- **Archivos Creados (20 archivos, 5.542 líneas, todos < 500 líneas):**
+  - `apps/web/src/components/billing-whop/useOrganizationBillingWhop.ts` (`365 líneas`)
+  - `apps/web/src/components/billing-whop/CurrentPlanAndBalanceCard.tsx` (`317 líneas`)
+  - `apps/web/src/components/billing-whop/WhopCheckoutAndSpendCapControls.tsx` (`409 líneas`)
+  - `apps/web/src/components/billing-whop/MinuteByMinuteUsageLedgerTable.tsx` (`333 líneas`)
+  - `apps/web/src/app/dashboard/org/[orgSlug]/billing/page.tsx` (`229 líneas`)
+  - `apps/web/src/components/superadmin/SuperAdminControlShell.tsx` (`238 líneas`)
+  - `apps/web/src/components/superadmin/useSuperAdminTenantGovernance.ts` (`278 líneas`)
+  - `apps/web/src/components/superadmin/GlobalTenantGovernanceGrid.tsx` (`329 líneas`)
+  - `apps/web/src/components/superadmin/SuspendTenantAndBreakGlassModals.tsx` (`330 líneas`)
+  - `apps/web/src/app/superadmin/organizations/page.tsx` (`161 líneas`)
+  - `apps/web/src/components/superadmin/useSuperAdminPricingAndOverrides.ts` (`317 líneas`)
+  - `apps/web/src/components/superadmin/GlobalWhopPricingMatrixEditor.tsx` (`421 líneas`)
+  - `apps/web/src/app/superadmin/pricing-matrix/page.tsx` (`108 líneas`)
+  - `apps/web/src/components/superadmin/TenantPricingOverrideManager.tsx` (`419 líneas`)
+  - `apps/web/src/app/superadmin/custom-pricing-overrides/page.tsx` (`103 líneas`)
+  - `apps/web/src/components/superadmin/useRealtimeInfraTelemetrySse.ts` (`236 líneas`)
+  - `apps/web/src/components/superadmin/RealtimeInfraTelemetryPanel.tsx` (`406 líneas`)
+  - `apps/web/src/components/superadmin/ImmutableAuditLogExplorer.tsx` (`427 líneas`)
+  - `apps/web/src/app/superadmin/infrastructure/page.tsx` (`113 líneas`)
+  - `tests/e2e-frontend/frontend-backend-full-journey.spec.ts` (`158 líneas`)
+- **Resultado de las Pruebas (4 filtros):**
+  - Límite de líneas: **APROBADO** (`node scripts/check-file-lines.mjs`: 262 archivos auditados en todo el monorepo, 0 violaciones, máximo 427 líneas en el frontend de División 4).
+  - Tipado estricto: **0 ERRORES** (`npx tsc --noEmit` completado limpiamente con código 0).
+  - Suite E2E Full-Journey: **6/6 FASES SUPERADAS** con código 0 (`npx tsx tests/e2e-frontend/frontend-backend-full-journey.spec.ts`).
+  - Semáforo Multi-Agente: IA #4 marca `COMPLETADO_IA4`.
+
+---
+
+### [2026-10-16 19:00] - FRONTEND DIVISIÓN 3 (PARTES 9 A 12): Dashboard Dev, API Keys, Visor Trainer, Mapa RAG Dual y Prompt Studio
+
+- **Resumen Técnico:**
+  1. **Subagente 3.1 (Shell Dashboard, Sidebar, Switchers y Equipo GDPR):** Construcción de `DeveloperDashboardShell.tsx` con sidebar fijo en `#f2f1ed` Bone, `<OrganizationSwitcher />`, `<ProjectSwitcher />`, `<EnvironmentModeBadge />` (LIVE vs TEST) y `<RealtimeBalancePill />` (`berkeleyMono 12px tabular-nums` con alerta visual al 85% de consumo); y `apps/web/src/app/dashboard/org/[orgSlug]/team/page.tsx` con gestión de integrantes RBAC (OWNER, DEVELOPER, BILLING, VIEWER), reseteo sudo de MFA (`btn_reset_member_mfa`) y controles GDPR (`btn_export_org_data` y `btn_delete_organization`).
+  2. **Subagente 3.2 (Hooks Proyectos/Claves y Dominios CORS):** Creación de `useProjectsAndApiKeys.ts` con hooks reactivos fuertemente tipados (`useProjects`, `useAllowedDomains`, `useApiKeys`) y `AllowedDomainsManager.tsx` (gestor de orígenes autorizados para el handshake del SDK, bloqueo estricto en cliente de localhost en modo LIVE y distintivos de subdominios wildcard).
+  3. **Subagente 3.3 (Ciclo de Vida de Claves y Revelación Única SHA-256):** Construcción modular de `ApiKeyLifecycleManager.tsx`, `OneTimeSecretRevealDialog.tsx` (revelación única de `sk_live_...` advirtiendo que PostgreSQL solo almacena su hash SHA-256 no reversible) y ensamblaje de `apps/web/src/app/dashboard/org/[orgSlug]/projects/[projectId]/keys/page.tsx` con RBAC estricto.
+  4. **Subagente 3.4 (Sesión Remota Chromium Efímero y Escudo Anti-SSRF):** Creación de `useRemoteTrainerSession.ts` con manejo explícito del rechazo `HTTP 403 SSRF_BLOCKED_IP_RANGE` ante IPs privadas o de metadatos, conmutación entre navegación libre y captura overlay, y transmisión de coordenadas de puntero al agente CDP en <8ms.
+  5. **Subagente 3.5 (Barra de Instrumentación, Switcher Responsive y Lienzo Overlay):** `TrainerToolbarAndViewportSwitcher.tsx` (modos de trabajo, viewports Desktop 1440x900, Tablet 768x1024, Mobile 390x844 y toggle auto-responsive) e `InteractiveDomOverlayCanvas.tsx` (lienzo interactivo con inspección vectorial en tiempo real, cálculo de estabilidad de selectores 0-100 y enmascaramiento estricto de campos sensibles PII).
+  6. **Subagente 3.6 (Modal de Etiquetado DOM y Espacio de Trabajo Trainer):** `ElementTaggingModal.tsx` (modal flotante de radio 8px con los 4 campos semánticos: título, descripción RAG, radio ¿acción? y tipo CLICK/TYPE/BOTH, selectores de accesibilidad y coordenadas) y ensamblaje de `apps/web/src/app/dashboard/org/[orgSlug]/projects/[projectId]/visual-trainer/page.tsx` con lista lateral de elementos etiquetados.
+  7. **Subagente 3.7 (Editor Dual RAG Visual + JSON RFC 8785 + Hashing SHA-256):** `useFunctionalMapDualEditor.ts` (sincronización bidireccional, cálculo en cliente de hash SHA-256 determinista RFC 8785 con Web Crypto API), `VisualMapTreeAndCardEditor.tsx` (panel izquierdo 50% agrupado por rutas) y `CanonicalJsonCodeEditor.tsx` (panel derecho 50% con numeración tabular en `berkeleyMono 12px`, formateador y detector de sintaxis).
+  8. **Subagente 3.8 (Estudio del Prompt, Barra de Modelos y Guardrails):** `useAssistantPromptStudio.ts` (sincronización contra `PUT /api/v1/projects/:id/prompt` y extracción de anclas RAG `@[...]`), `ModelAndVoiceConfigBar.tsx` (motores de voz, velocidad vocal 0.8x-1.25x, VAD/Barge-in y temperatura), `UnifiedSystemPromptEditor.tsx` (editor con marco de ventana y pestañas Markdown/JSON/cURL) y `StepByStepFlowExtractorAndGuardrails.tsx` (secuencia guiada con condiciones DOM y toggles de enforcement estricto y confirmación verbal).
+  9. **Subagente 3.9 (Barra SHA-256, Ensamblaje de Páginas y Auditoría):** `MapVersionHistoryAndShaBar.tsx` con distintivo `SHA-256 VERIFIED` e historial de rollback; ensamblaje de `apps/web/src/app/dashboard/org/[orgSlug]/projects/[projectId]/rag-map-editor/page.tsx` y `apps/web/src/app/dashboard/org/[orgSlug]/projects/[projectId]/prompt-studio/page.tsx`; auditoría de líneas con `node scripts/check-file-lines.mjs` (0 violaciones en 267 archivos) y compilación `npx tsc --noEmit` limpia con 0 errores.
+- **Archivos Creados (22 archivos, todos < 500 líneas):**
+  - `apps/web/src/components/dashboard-dev/DeveloperDashboardShell.tsx` (`366 líneas`)
+  - `apps/web/src/app/dashboard/org/[orgSlug]/team/page.tsx` (`341 líneas`)
+  - `apps/web/src/components/dashboard-dev/useProjectsAndApiKeys.ts` (`383 líneas`)
+  - `apps/web/src/components/dashboard-dev/AllowedDomainsManager.tsx` (`257 líneas`)
+  - `apps/web/src/components/dashboard-dev/ApiKeyLifecycleManager.tsx` (`380 líneas`)
+  - `apps/web/src/components/dashboard-dev/OneTimeSecretRevealDialog.tsx` (`107 líneas`)
+  - `apps/web/src/app/dashboard/org/[orgSlug]/projects/[projectId]/keys/page.tsx` (`120 líneas`)
+  - `apps/web/src/components/visual-trainer/useRemoteTrainerSession.ts` (`321 líneas`)
+  - `apps/web/src/components/visual-trainer/TrainerToolbarAndViewportSwitcher.tsx` (`209 líneas`)
+  - `apps/web/src/components/visual-trainer/InteractiveDomOverlayCanvas.tsx` (`211 líneas`)
+  - `apps/web/src/components/visual-trainer/ElementTaggingModal.tsx` (`272 líneas`)
+  - `apps/web/src/app/dashboard/org/[orgSlug]/projects/[projectId]/visual-trainer/page.tsx` (`177 líneas`)
+  - `apps/web/src/components/rag-editor/useFunctionalMapDualEditor.ts` (`291 líneas`)
+  - `apps/web/src/components/rag-editor/VisualMapTreeAndCardEditor.tsx` (`209 líneas`)
+  - `apps/web/src/components/rag-editor/CanonicalJsonCodeEditor.tsx` (`127 líneas`)
+  - `apps/web/src/components/rag-editor/MapVersionHistoryAndShaBar.tsx` (`264 líneas`)
+  - `apps/web/src/app/dashboard/org/[orgSlug]/projects/[projectId]/rag-map-editor/page.tsx` (`104 líneas`)
+  - `apps/web/src/components/prompt-studio/useAssistantPromptStudio.ts` (`171 líneas`)
+  - `apps/web/src/components/prompt-studio/ModelAndVoiceConfigBar.tsx` (`148 líneas`)
+  - `apps/web/src/components/prompt-studio/UnifiedSystemPromptEditor.tsx` (`216 líneas`)
+  - `apps/web/src/components/prompt-studio/StepByStepFlowExtractorAndGuardrails.tsx` (`224 líneas`)
+  - `apps/web/src/app/dashboard/org/[orgSlug]/projects/[projectId]/prompt-studio/page.tsx` (`96 líneas`)
+- **Resultado de las Pruebas y Certificación:**
+  - Auditoría de tamaño: **APROBADO** (`node scripts/check-file-lines.mjs`: 267 archivos auditados, 0 violaciones).
+  - Tipado estricto: **0 ERRORES** (`npx tsc --noEmit` completado limpiamente con código de salida 0).
+  - Semáforo Multi-Agente: IA #3 pasa a `COMPLETADO`.
+
+
+
+---
+
+### [2026-10-16 19:24] - OLA 2 · SUBAGENTE 2.3: Tres Páginas React de Autenticación (Login B2B/SSO/423, SuperAdmin FIDO2 y Confirmación CLI Device Flow)
+
+- **Resumen Técnico:**
+  1. **Login B2B (`/auth/login`):** descubrimiento de tenant SSO por dominio corporativo (`POST /api/v1/auth/discover-tenant`, degradación silenciosa ante 404), login con contraseña (`POST /api/v1/auth/login`), panel informativo de bloqueo temporal (HTTP 423 / `lockedUntilIso`) con cuenta atrás, re-autenticación tras expiración de sesión (`?reason=session-expired`), arranque SAML (`POST /api/v1/auth/sso/saml/start` con aviso «pendiente de configuración» ante 404) y modal de reto MFA TOTP/inscripción (contrato del Subagente 2.4).
+  2. **SuperAdmin FIDO2 aislado (`/internal/superadmin-login`):** doble verificación del rol de plataforma (perfil de sesión + reclamo `role` del JWT con `decodeJwtPayloadUnsafe`), aserción física `navigator.credentials.get()` contra `/api/v1/auth/mfa/webauthn/challenge` y `/verify`, y degradación segura al modal OTP cuando las rutas WebAuthn responden 404/405; sin segundo factor la sesión no se establece (fail-closed, con `logout()` best-effort del hook 2.2).
+  3. **CLI Device Flow (`/auth/cli-device`):** confirmación web RFC 8628 (`POST /api/v1/auth/cli-device/confirm`, campo `userCode` con patrón `^[A-Z0-9]{4}-[A-Z0-9]{4}$`, TTL 10 min); 200 = confirmado, 400 = inválido/expirado, 401 = redirección a `/auth/login?next=cli-device`.
+  4. **Cierre de la partición de auditoría:** `login/page.tsx` bajó de 667 a 444 líneas sin archivos auxiliares (formato de casa de una sentencia por línea); el auditor global quedó en **0 violaciones (294 archivos)** y la alerta `AUDITORIA_ROJA_EN_CURSO_AUTH` fue purgada del encabezado y del Buzón conforme a la Regla de Oro 4.
+- **Archivos Creados / Modificados (con conteo de líneas):**
+  - `apps/web/src/app/(auth)/auth/login/page.tsx` (`444 líneas` - Creado): `B2BLoginPage`.
+  - `apps/web/src/app/(auth)/internal/superadmin-login/page.tsx` (`450 líneas` - Creado): `SuperAdminIsolatedLoginPage` y `performWebAuthnAssertion()`.
+  - `apps/web/src/app/(auth)/auth/cli-device/page.tsx` (`243 líneas` - Creado): `CliDeviceAuthorizationPage`.
+- **Dependencias Integradas:** contratos congelados del Subagente 2.2 (`auth-api-client.ts`: `authApiFetch`, `buildSessionProfile`; `useAuthSessionContext.tsx`: `useAuthSession()`, `logout()`, `markLocked()`), modal del Subagente 2.4 (`MfaChallengeAndEnrollmentModal`) y primitivas Atelier. **Acoplamiento de montaje:** `apps/web/src/app/(auth)/layout.tsx` (Subagente 2.2) aporta `<AuthSessionProvider>`, el CSS Atelier y el `atelier-shell` a las tres páginas; no deben re-montar el provider.
+- **Impacto en Contratos / Base de Datos / Redis:** solo consumo REST de `/api/v1/auth/*` (login, discover-tenant, sso/saml/start, mfa/webauthn/*, cli-device/confirm, logout vía hook de sesión). Sin cambios de esquema ni claves Redis nuevas. **Desviaciones documentadas:** `discover-tenant` y `sso/saml/start` sin backend montado degradan con aviso «pendiente de configuración»; rutas WebAuthn inexistentes degradan a OTP; el panel legal es informativo (enlaces `/legal/*`) porque el modal legal del 2.5 exige sesión.
+- **Resultado de las Pruebas (3 filtros):** Límite de líneas `APROBADO` (auditor global: 294 archivos, 0 violaciones; mis 3 archivos: 444/450/243) · Typecheck acotado de los tres `.tsx` con las banderas estrictas espejo del tsconfig raíz (`exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`): **0 errores**; el `npx tsc --noEmit` raíz reporta únicamente 4 errores ajenos en `tests/unit/env-connection-identity.test.ts` · Contratos 2.2/2.4 re-verificados contra disco sin desviaciones.
+- **Guía para el Siguiente Agente (Subagente 2.9 — ensamblador de la Ola 2):** validar las páginas con `npx tsc -p apps/web/tsconfig.json --noEmit`; **no duplicar** `authApiFetch`, el hook de sesión ni el modal MFA; `superadmin-login` mide exactamente 450 líneas (cualquier línea neta adicional entra al rango crítico 451–500). Las páginas dependen del layout `(auth)/layout.tsx`.
+
+---
+
+### [2026-10-16 19:45] - DIVISIÓN 2 FRONTEND COMPLETA (IA #2 — Subagente 2.9: Ensamblador del SDK, Auditoría Estricta <500 Líneas y Cierre)
+
+- **Resumen Técnico:**
+  1. **Fachada pública del SDK (`packages/sdk/src/index.tsx`, 284 líneas):** módulo `'use client'` que publica `OnboardingAssistant` (objeto congelado que delega en el núcleo `./index` y añade `init()`), `OnboardingAssistantProvider` (los `children` siempre se renderizan; widget Shadow DOM y captura PCM16 SOLO por props opt-in `widget`/`capture`/`clientOptions`, sin tráfico de red por defecto) y `useOnboardingAssistant()` (devuelve `null` fuera del provider, sin lanzar). Re-exporta aditivamente el audio (`buildPcm16WorkletSource`, `Pcm16CapturePipeline`, `PCM16_*`) y el widget (`AssistantWidgetShadow`). Sin ciclos: `index.ts` (núcleo del Carril 2) nunca importa `index.tsx`.
+  2. **Inventario final de la División 2 — 26 archivos · 8.659 líneas:** 2.1 (CSS Atelier 269 + primitivas 324), 2.2 (layout 59 + sesión RAM 317 + cliente API 436 + wizard de registro 489), 2.3 (login 444 + superadmin FIDO2 450 + CLI device 243), 2.4 (break-glass 460 + recovery 470 + modal MFA 482), 2.5 (modal legal 483 + visor legal 479 + layout 38 + docSlug 41), 2.6 (shell docs 334 + spec viewer 356 + layout 35 + guía 311), 2.7 (lienzo 360 + contratos 154), 2.8 (sandbox 3 paneles 453 + PCM16/VAD 443 + widget 445) y 2.9 (`index.tsx` 284). Los archivos núcleo previos del SDK (Parte 15, Carril 2) fueron extendidos y preservados, nunca reescritos.
+  3. **Resultados de auditoría (ejecución final):** límite de líneas **APROBADO** (`node scripts/check-file-lines.mjs`: 302 archivos auditados, 0 violaciones; 21 en rango crítico y 41 en alerta preventiva); `npx tsc --noEmit` raíz = **4 errores externos esperados** (TS2540 en `tests/unit/env-connection-identity.test.ts`), 0 propios; `npx tsc -p apps/web/tsconfig.json --noEmit` = **27 errores, todos externos a la División 2** (19×TS2307 + 6×TS7006 en `dashboard/.../projects/[projectId]/*` por profundidad de imports, TS4111 en `GlobalTenantGovernanceGrid.tsx:181` y TS2375 en `ElementTaggingModal.tsx:66` — Carriles 3 y 4); typecheck acotado del SDK con las banderas estrictas de `apps/web`: **0 errores** (incluido `index.tsx`, verificado además con control negativo).
+  4. **Desviaciones documentadas (honestidad de cierre):** particiones de auditoría `login` 667→444, `register` 663→489 y `assistant-widget-shadow` 528→445; `superadmin-login` en 450 exactas (frontera crítica); degradaciones silenciosas deliberadas ante backend sin montar (`discover-tenant` y `sso/saml/start` → aviso «pendiente de configuración»; WebAuthn → OTP en 404/405); `DEFECTO_BACKEND_REFRESH` vigente (el borde no lee la cookie `__Host-oa_rt`): el frontend mantiene `credentials:'include'` + cuerpo `{}` y el primer 401 del refresh transiciona `sessionPhase:'expired'` hacia `/auth/login?reason=session-expired`; doctrina JWT-en-RAM sin excepciones; espejo RBAC `ROLE_PERMISSIONS_MIRROR` (31/28/16/5/8) replicado del servidor; contrato CTA verificado en disco: `register/page.tsx` parsea `plan` y `estimated_minutes` (líneas 266–270) con degradación silenciosa ante valores inválidos.
+- **Archivos Creados / Modificados (con conteo de líneas):**
+  - `packages/sdk/src/index.tsx` (`284 líneas` - Creado): `OnboardingAssistant`, `OnboardingAssistantProvider`, `useOnboardingAssistant()` y re-exports aditivos de audio y widget.
+  - `docs/LIVE_ARCHITECTURE_LEDGER.md` (cierre completo: encabezado a `COMPLETADO / LISTO_PARA_CONSUMO`, semáforo, Buzón, inventario de la Sección 4 y esta bitácora).
+- **Impacto en Contratos / Base de Datos / Redis:** ninguno nuevo; la División 2 consume los REST `/api/v1/auth/*` y `/api/v1/public/*` existentes. Sin cambios de esquema ni claves Redis.
+- **Resultado de las Pruebas (4 filtros):** Límite de líneas `APROBADO` (302 archivos, 0 violaciones; `index.tsx` 284/500) · `npx tsc --noEmit` raíz: 4 errores externos, 0 propios · `npx tsc -p apps/web/tsconfig.json --noEmit`: 27 errores externos, División 2 limpia · Typecheck acotado del SDK: **0 errores**.
+- **Guía para el Siguiente Agente:** la División 2 queda cerrada y lista para consumo: el SDK se importa como `@onboarding-assistant/sdk` (interfaz mínima: `OnboardingAssistant.init()`; montaje React vía `<OnboardingAssistantProvider>` con integraciones opt-in). **No duplicar** `authApiFetch`, `useAuthSessionContext` ni `MfaChallengeAndEnrollmentModal`. Los 27 errores de `apps/web` son de los Carriles 3 y 4 (imports de 7 niveles en `projects/[projectId]/*` y `exactOptionalPropertyTypes`) y siguen abiertos para sus dueños; la División 2 no tocó archivos ajenos.
+
+---
+
+### [2026-10-16 20:25] - FRONTEND DIVISIÓN 1 COMPLETA (IA #1 — Subagente 1.9: Cimientos del Workspace `apps/web` y Landing Comercial Auros Light)
+
+- **Resumen Técnico:**
+  1. **Subagente 1.1 (Bootstrap Next.js 15.5 y contratos DTO):** selló el workspace compartido del frontend (`package.json` con Next 15.5.28 / React 19.3.1 / Tailwind 4.3.3, `tsconfig.json` estricto con `jsx: react-jsx`, `next-env.d.ts`, `postcss.config.mjs`, `layout.tsx` raíz y `globals.css` con `@theme` Auros Light) y publicó los tipos espejo de los contratos sellados del backend en `backend-contracts.types.ts` (auth, pricing matrix, demo session, sobre de error de 15 códigos y protocolo de voz binario `0x01`/`0x02`). Tras él, `npm install` raíz (+44 paquetes) habilitó `tsc -p apps/web` para los cuatro carriles.
+  2. **Subagente 1.2 (Cliente HTTP en RAM y chrome comercial):** `http-client.ts` (`backendFetch` con JWT solo en RAM, `credentials:'include'`, refresh single-flight `POST /api/v1/auth/refresh` con cuerpo `{}`, cola de reintentos y eventos `oa:http:*`), `(commercial)/layout.tsx` (ámbito `data-portal="commercial-landing"`) y `PublicCommercialChrome.tsx` (cabecera anclada a `#plataforma`/`#demo-en-vivo`/`#precios` + pie con enlaces legales).
+  3. **Subagente 1.3 (Tokens Auros Light y primitivas):** `landing-auros-light.css` (tokens `--surface-liquid-*`, gradientes bioluminiscentes, cero `box-shadow`, radios 16/6 px; clases `.oa-*` congeladas, incluida `.oa-range`) y `AurosPrimitives.tsx` (`AuroraGradientButton`, `DiagonalArrowSquareButton`, `UppercaseTrackedKicker`, `LagoonSurfaceCard`).
+  4. **Subagente 1.4 (Física acústica y esfera):** `useAcousticSpherePhysics.ts` (energía RMS por anillo sobre `AnalyserNode` con amortiguación) y `BioluminescentVoiceDomSphere.tsx` (esfera bioluminiscente que refleja los estados de voz).
+  5. **Subagente 1.5 (Hero, grafo RAG y banner):** `HeroArchitectureShowcase.tsx` (sección `#plataforma` con maqueta «Nexo CRM» y las 4 anclas de entrenamiento `btn-new-deal`/`input-company-tax`/`btn-validate-cfdi`/`nav-billing`), `RagDomMolecularGraphSection.tsx` (grafo molecular DOM↔RAG) y `BioluminescentStatsBanner.tsx` (métricas públicas con el sello «Dual AI», sin fuga de infraestructura).
+  6. **Subagente 1.6 (Hook WS de la demo pública):** `usePublicVoiceDemoSession.ts` con el pipeline completo de 90 s (`startDemo`/`stopDemo`/`interruptAssistant`/`acknowledgeDirective`), uplink `[0x01]+PCM16` (641 B/frame = 320 muestras/20 ms), downlink PCM16 crudo sin cabecera, control `[0x02]+JSON`, barge-in con `voice.barge_in` y medición de latencias.
+  7. **Subagente 1.7 (CRM Shadow DOM y contenedor de demo):** `SimulatedCrmShadowCanvas.tsx` («Nexo CRM» aislado en Shadow DOM con los 4 anclas físicas del guion), `DemoBioluminescentCursorOverlay.tsx` (puntero bioluminiscente), `DemoStepProgressHeader.tsx` y `LiveInteractiveVoiceDemo.tsx` (sección `#demo-en-vivo`).
+  8. **Subagente 1.8 (Calculadora Whop):** `useWhopPricingCalculator.ts` (espejo de la aritmética del Módulo 04: tramos 10/20/35/50 % aplicados sobre el overage de PLAN_50, PAYG $0.20/min; ejemplo verificado 25×60=1.500 min → $158.00), `VolumeDiscountTierVisualizer.tsx`, `WhopPlanComparisonCards.tsx` e `InteractivePricingCalculator.tsx` (sección `#precios` con CTA `/auth/register?plan=<code>&estimated_minutes=<n>`).
+  9. **Subagente 1.9 (Ensamblaje, auditoría y cierre):** `(commercial)/page.tsx` compone las cinco secciones en orden narrativo sobre el lienzo `bg-liquid-abyss` respetando los tres anclajes; auditoría global `node scripts/check-file-lines.mjs` → **310 archivos, 0 violaciones** (máx. 497 en el backend); `tsc` del carril limpio en raíz y `apps/web`; Ledger cerrado (encabezado, semáforo, Buzón con `CIERRE_DIVISION_1` y `OBSERVACION_BACKEND_DEMO_WS`, inventario de la Sección 4 y esta bitácora).
+- **Archivos Creados (27 archivos, todos < 500 líneas):**
+  - `apps/web/package.json` (`30`), `apps/web/tsconfig.json` (`40`), `apps/web/next-env.d.ts` (`6`), `apps/web/postcss.config.mjs` (`29`), `apps/web/src/app/layout.tsx` (`58`) y `apps/web/src/app/globals.css` (`60`) — bootstrap y capa raíz compartida.
+  - `apps/web/src/lib/api-client/backend-contracts.types.ts` (`321`), `apps/web/src/lib/api-client/http-client.ts` (`298`).
+  - `apps/web/src/styles/landing-auros-light.css` (`317`), `apps/web/src/app/(commercial)/layout.tsx` (`46`), `apps/web/src/app/(commercial)/page.tsx` (`99`).
+  - `apps/web/src/components/landing/PublicCommercialChrome.tsx` (`193`), `.../primitives/AurosPrimitives.tsx` (`173`), `.../hero/useAcousticSpherePhysics.ts` (`299`), `.../hero/BioluminescentVoiceDomSphere.tsx` (`317`), `.../hero/HeroArchitectureShowcase.tsx` (`215`), `.../explore/RagDomMolecularGraphSection.tsx` (`166`), `.../explore/BioluminescentStatsBanner.tsx` (`77`), `.../live-demo/usePublicVoiceDemoSession.ts` (`337`), `.../live-demo/SimulatedCrmShadowCanvas.tsx` (`339`), `.../live-demo/DemoBioluminescentCursorOverlay.tsx` (`217`), `.../live-demo/DemoStepProgressHeader.tsx` (`179`), `.../live-demo/LiveInteractiveVoiceDemo.tsx` (`304`), `.../pricing/useWhopPricingCalculator.ts` (`307`), `.../pricing/VolumeDiscountTierVisualizer.tsx` (`179`), `.../pricing/WhopPlanComparisonCards.tsx` (`203`), `.../pricing/InteractivePricingCalculator.tsx` (`214`). **Subtotal: 27 archivos · 5.023 líneas.**
+  - `package-lock.json` (regenerado por el `npm install` raíz) y `docs/LIVE_ARCHITECTURE_LEDGER.md` (este cierre).
+- **Impacto en Contratos / Base de Datos / Redis:** solo consumo REST/WS de los contratos sellados (Módulo 07 público, aritmética espejo del Módulo 04, protocolo de voz del Módulo 05) y el contrato CTA con la División 2. Sin cambios de esquema ni claves Redis nuevas. **Costuras abiertas documentadas en el Buzón:** `DEFECTO_BACKEND_REFRESH` vigente (sin parche de cliente; el refresh queda inoperable hasta que el borde lea la cookie `__Host-oa_rt`; mientras tanto el primer 401 transiciona a `sessionPhase:'expired'` por contrato con IA #2) y `OBSERVACION_BACKEND_DEMO_WS` (ningún consumidor lee `oa:demo:token:*`; el handshake del gateway exige el nonce `sdk_handshake:*` del Módulo 02 con `projectId`, que la URL de demo no envía).
+- **Resultado de las Pruebas (4 filtros):** Límite de líneas `APROBADO` (310 archivos, 0 violaciones; mis 27 archivos: máximo `SimulatedCrmShadowCanvas.tsx` 339) · `npx tsc --noEmit` raíz: 4 errores externos (TS2540, carril QA), 0 propios · `npx tsc -p apps/web/tsconfig.json --noEmit`: 27 errores, CERO en las Divisiones 1 y 2 (19×TS2307 + 6×TS7006 + TS4111 + TS2375 de los Carriles 3/4) · Filtro del carril (`landing|api-client|commercial`) en ambos configs: **vacío**.
+- **Guía para el Siguiente Agente:** la División 1 queda cerrada y lista para consumo: el cliente `backendFetch` y los DTO espejo se importan desde `apps/web/src/lib/api-client/`; **no duplicar** `http-client.ts`, `backend-contracts.types.ts` ni las clases `.oa-*` (ámbito `[data-portal="commercial-landing"]` reservado a esta División). La landing `/` es la vitrina pública: cualquier cambio en el hero debe preservar las 4 anclas `data-oa-id` de la maqueta. Quedan abiertos para sus dueños los 27 errores de `apps/web` (Carriles 3/4, ver `DIAGNOSTICO_TSC_APPS_WEB`) y los 4 de la raíz (QA).
+
+---
+
+### [2026-10-16 21:15] - ACTUALIZACIÓN DALA DESIGN SYSTEM: DARK VOID, ESCALA -20%, CARRUSELES MÓVILES Y LOGOTIPO OFICIAL
+
+- **Resumen Técnico:**
+  1. **Actualización de Skills (.agents/skills):**
+     - `.agents/skills/estilo-landing-comercial-auros-claro/SKILL.md`: transicionado a estética **Dala Dark Void** (`#000000`, `PPNeueMontreal/Inter`, titulares en peso regular `400` con tracking `-0.04em`, cuerpo ultra-light `200`, acento Electric Iris `#8052ff`, Saffron Spark `#ffb829` y Deep Verdant `#15846e`).
+     - `.agents/skills/dala-design-system/SKILL.md`: creada skill maestra local con la especificación completa del vacío negro absoluto, reducción del 20% en escala tipográfica y dimensiones de contenedores, carruseles móviles táctiles compactos y morfismo de partículas en scroll.
+  2. **Escala Reducida (-20%):**
+     - Display: 90px (antes 113px, móvil `clamp(2rem, 6.5vw, 3.25rem)`).
+     - Heading-lg: 62px (antes 78px, móvil `clamp(1.75rem, 5vw, 2.5rem)`).
+     - Heading: 38px (antes 48px).
+     - Subheading: 28px (antes 36px).
+     - Body: 15px - 16px (peso 200).
+     - Nav / Labels: 13px - 14px (peso 600 uppercase).
+  3. **Ergonomía Móvil con Carruseles Compactos:** Prohibido apilar cuadros gigantes en pantallas pequeñas. Las características, planes y pasos se agrupan en carruseles horizontales con snap táctil (`overflow-x-auto snap-x snap-mandatory gap-3.5 pb-4 px-4 no-scrollbar`) con tarjetas de 260px-280px e indicadores de puntos `8px`.
+  4. **Canvas de Partículas con Morfismo en Scroll:** Canvas interactivo que interpola coordenadas de miles de microtriángulos cromáticos: Cerebro Humano 🧠 (0%-25% scroll) ➔ Aura de Asistente de Voz Acústica (25%-60%) ➔ Prisma Hexagonal y Red DOM (60%-100%).
+  5. **Logotipo Oficial e Isotipo Adaptable:**
+     - Generado con IA: prisma hexagonal neuronal facetado con facetas violeta/esmeralda, núcleo dorado y fondo transparente (`apps/web/public/brand/logo.jpg`).
+     - Componente SVG Vectorial: `apps/web/src/components/common/Logo.tsx` (194 líneas, `< 500 líneas`), 100% transparente y adaptable a cualquier fondo.
+- **Archivos Creados / Modificados:**
+  - `apps/web/src/components/common/Logo.tsx` (`194 líneas` - Creado)
+  - `apps/web/public/brand/logo.jpg` (Activo rasterizado de alta definición)
+  - `.agents/skills/estilo-landing-comercial-auros-claro/SKILL.md` (`184 líneas` - Actualizado)
+  - `.agents/skills/dala-design-system/SKILL.md` (`64 líneas` - Creado)
+  - `docs/LIVE_ARCHITECTURE_LEDGER.md` (Esta bitácora)
+- **Resultado de Líneas:** `node scripts/check-file-lines.mjs` → 311 archivos auditados, 0 violaciones.
+
+---
+
+### [2026-10-16 21:35] - REDISEÑO DALA DARK VOID COMPLETO: DIVISIÓN 3 (IA #3 — Dashboard Dev, Visual Trainer, RAG Editor y Prompt Studio)
+
+- **Resumen Técnico (4 Subagentes Especializados):**
+  1. **Subagente 3.1 (Dev Dashboard Overview & API Keys):**
+     - `DeveloperDashboardShell.tsx`: Transición integral al estándar cinematográfico **Dala Dark Void** (`#000000`, superficie sidebar `#080808` con `border-r border-white/[0.08]`, cabecera `#080808` con `border-b border-white/[0.08]`). Integración de `<Logo size={28} />` en el encabezado de navegación y versión responsiva en móvil con navegación desplegable optimizada. Conmutadores `OrganizationSwitcher` y `ProjectSwitcher` adaptados a Dark Void con fondos `#111110` y hovers `#1a1a18`. `RealtimeBalancePill` con tipografía monospace, pastilla en `#111110` y alerta al 85% de consumo en `#cf2d56`.
+     - `ApiKeyLifecycleManager.tsx`: Reducción de escala de cajas y textos en un 20% (`p-4` en vez de `p-8`, cifras métricas en `text-[28px]` con tracking `-1px` tabular). Carrusel horizontal móvil con snap táctil (`snap-x snap-mandatory flex gap-3 overflow-x-auto pb-1 sm:grid sm:grid-cols-4`). Tabla de claves contenida en wrapper con scroll horizontal suave sin desbordar el viewport, más modales de creación y rotación en `#0d0d0c`.
+  2. **Subagente 3.2 (Visual Trainer en Dark Stage con Overlay Preciso):**
+     - `InteractiveDomOverlayCanvas.tsx`: Escenario de entrenamiento en penumbra total (`#000000` Dark Stage) con bordes sutiles de 1px (`border-white/[0.08]`), sombras de profundidad profunda (`box-shadow: 0 0 40px rgba(0,0,0,0.8)`). Overlay vectorial de hover con acentos en Saffron Spark (`#ffb829`) y pastillas ultra-compactas con indicador de estabilidad y primarySelector.
+     - `TrainerToolbarAndViewportSwitcher.tsx`: Barra de instrumentación en Dark Void con selector táctil rápido de viewports (Desktop, Tablet, Mobile), conmutador segmentado Navegación/Captura con dot pulsante Saffron Spark y telemetría en tiempo real.
+     - `ElementTaggingModal.tsx`: Diálogo modal flotante en `#0b0b0a` con pastillas compactas y acentos Saffron Spark (#ffb829). Corrección estricta de `accessibilitySelector` para cumplimiento con `exactOptionalPropertyTypes`.
+  3. **Subagente 3.3 (Editor de Grafo RAG en Lienzo de Constelación):**
+     - `MapVersionHistoryAndShaBar.tsx`: Barra de digest SHA-256 e historial de versiones compacta con altura fija de 44px (`h-11`), tipografía monospace 12px, sello `SHA-256 VERIFIED` en Deep Verdant `#15846e`, hash abreviado y dropdown que no obstruye el lienzo en pantallas medianas.
+     - `VisualMapTreeAndCardEditor.tsx`: Lienzo visual con constelación de partículas y líneas sutiles en Electric Iris (`#8052ff`) sobre fondo `#000000`, tarjetas de nodos hiper-compactas en `#0a0a0a` con bordes sutiles y selector de acciones micro.
+     - `CanonicalJsonCodeEditor.tsx`: Editor de código JSON canónico RFC 8785 en fondo negro absoluto con numeración de líneas en `#070707` y sintaxis de alta densidad.
+  4. **Subagente 3.4 (Prompt Studio & Flujos con Micro-Animaciones):**
+     - `StepByStepFlowExtractorAndGuardrails.tsx`: Acordeón interactivo con micro-animaciones fluidas (`transition-all duration-200 ease-in-out`) al colapsar y expandir pasos conversacionales. Indicadores de guardrails de seguridad y variables con etiquetas redondeadas compactas de 11px (`rounded-full px-2 py-0.5`).
+     - `ModelAndVoiceConfigBar.tsx`: Configuración acústica y de hardware dual en Dark Void con escala compacta (-20%) y propiedad `modelTemperature`.
+     - `UnifiedSystemPromptEditor.tsx`: Marco de ventana en `#080808` con pestañas Markdown, JSON y cURL, anclas RAG en Saffron Spark `#ffb829` e inserción de variables en badges compactos de 11px.
+  5. **Resolución de Rutas Relativas e Imports en Proyectos:**
+     - Se reemplazaron todos los imports frágiles de 6 niveles (`../../../../../../components/...`) por el alias `@/components/...` en:
+       * `apps/web/src/app/dashboard/org/[orgSlug]/projects/[projectId]/keys/page.tsx`
+       * `apps/web/src/app/dashboard/org/[orgSlug]/projects/[projectId]/prompt-studio/page.tsx`
+       * `apps/web/src/app/dashboard/org/[orgSlug]/projects/[projectId]/rag-map-editor/page.tsx`
+       * `apps/web/src/app/dashboard/org/[orgSlug]/projects/[projectId]/visual-trainer/page.tsx`
+       * `apps/web/src/app/dashboard/org/[orgSlug]/team/page.tsx`
+       * `apps/web/src/app/dashboard/org/[orgSlug]/billing/page.tsx`
+- **Archivos Modificados:**
+  - `apps/web/src/components/dashboard-dev/DeveloperDashboardShell.tsx` (370 líneas)
+  - `apps/web/src/components/dashboard-dev/ApiKeyLifecycleManager.tsx` (380 líneas)
+  - `apps/web/src/components/visual-trainer/InteractiveDomOverlayCanvas.tsx` (215 líneas)
+  - `apps/web/src/components/visual-trainer/TrainerToolbarAndViewportSwitcher.tsx` (207 líneas)
+  - `apps/web/src/components/visual-trainer/ElementTaggingModal.tsx` (273 líneas)
+  - `apps/web/src/components/rag-editor/MapVersionHistoryAndShaBar.tsx` (260 líneas)
+  - `apps/web/src/components/rag-editor/VisualMapTreeAndCardEditor.tsx` (220 líneas)
+  - `apps/web/src/components/rag-editor/CanonicalJsonCodeEditor.tsx` (128 líneas)
+  - `apps/web/src/components/prompt-studio/StepByStepFlowExtractorAndGuardrails.tsx` (230 líneas)
+  - `apps/web/src/components/prompt-studio/ModelAndVoiceConfigBar.tsx` (140 líneas)
+  - `apps/web/src/components/prompt-studio/UnifiedSystemPromptEditor.tsx` (215 líneas)
+  - `apps/web/src/components/docs-sandbox/DocsCodeTokenizer.ts` (escape de bloque JSDoc)
+  - `apps/web/src/app/dashboard/org/[orgSlug]/projects/[projectId]/keys/page.tsx` (120 líneas)
+  - `apps/web/src/app/dashboard/org/[orgSlug]/projects/[projectId]/prompt-studio/page.tsx` (95 líneas)
+  - `apps/web/src/app/dashboard/org/[orgSlug]/projects/[projectId]/rag-map-editor/page.tsx` (105 líneas)
+  - `apps/web/src/app/dashboard/org/[orgSlug]/projects/[projectId]/visual-trainer/page.tsx` (175 líneas)
+  - `apps/web/src/app/dashboard/org/[orgSlug]/team/page.tsx`
+  - `apps/web/src/app/dashboard/org/[orgSlug]/billing/page.tsx`
+  - `docs/LIVE_ARCHITECTURE_LEDGER.md`
+- **Resultados de Auditoría:**
+  - Límite de líneas: **APROBADO** (`node scripts/check-file-lines.mjs`: 311 archivos auditados, 0 violaciones, todos los archivos estrictamente < 500 líneas).
+  - TypeScript en División 3: **0 ERRORES** en los 22 archivos y páginas del Developer Dashboard.
+
+---
+
+### [2026-10-16 22:20] - CONVERSIÓN A TEMA CLARO: FACTURACIÓN WHOP Y GOBIERNO SUPERADMIN (IA #4)
+
+- **Alineación con la Directriz del Usuario:**
+  - Se eliminaron los fondos negros (`#000000`/`#0a0a0c`) de los módulos de Facturación Whop y Gobierno SuperAdmin.
+  - Se restableció la paleta editorial limpia de **Tema Claro**: fondos base en pergamino limpio `#f7f7f4`, tarjetas en blanco `#ffffff` con bordes `#e6e5e0`, texto principal en tinta mineral `#26251e`, texto secundario en `#7a7974` y acentos sobrios.
+- **Componentes Convertidos a Tema Claro:**
+  - `apps/web/src/components/billing-whop/CurrentPlanAndBalanceCard.tsx` (277 líneas): Tarjeta de balance blanca con sombras suaves, barra de progreso limpia y métricas en tinta mineral.
+  - `apps/web/src/components/billing-whop/WhopCheckoutAndSpendCapControls.tsx` (386 líneas): Carrusel táctil con tarjetas blancas, indicadores en `#26251e` y formulario de Spend Cap limpio.
+  - `apps/web/src/components/billing-whop/MinuteByMinuteUsageLedgerTable.tsx` (255 líneas): Tabla de alta densidad clara sobre `#f7f7f4` y `#ffffff`, textos `#26251e` y micro-badges claros.
+  - `apps/web/src/components/superadmin/SuperAdminControlShell.tsx` (203 líneas): Barra lateral blanca, shell de navegación `#f7f7f4`, badge de SUPERADMIN en ámbar cálido y hardware FIDO2 en esmeralda.
+  - `apps/web/src/components/superadmin/GlobalTenantGovernanceGrid.tsx` (251 líneas): Matriz de supervisión de organizaciones con fondo blanco y selector claro.
+  - `apps/web/src/components/superadmin/SuspendTenantAndBreakGlassModals.tsx` (220 líneas): Modales de suspensión con fondo blanco, bordes y acento carmesí `#cf2d56` limpio.
+  - `apps/web/src/components/superadmin/TenantPricingOverrideManager.tsx` (325 líneas): Sliders ergonómicos, tabla comparativa de proyección clara y formularios blancos.
+  - `apps/web/src/components/superadmin/GlobalWhopPricingMatrixEditor.tsx` (239 líneas): Editor visual de planes y simulador financiero en superficies blancas `#ffffff`.
+  - `apps/web/src/components/superadmin/RealtimeInfraTelemetryPanel.tsx` (252 líneas): Panel de métricas acústicas TTFA y control de Kill-Switch en superficies claras.
+  - `apps/web/src/components/superadmin/ImmutableAuditLogExplorer.tsx` (258 líneas): Visor forense de bitácora SOC2 y modal diff antes/después claro.
+- **Páginas Actualizadas a Tema Claro:**
+  - `apps/web/src/app/dashboard/org/[orgSlug]/billing/page.tsx`
+  - `apps/web/src/app/billing/page.tsx`
+  - `apps/web/src/app/superadmin/organizations/page.tsx`
+  - `apps/web/src/app/superadmin/pricing-matrix/page.tsx`
+  - `apps/web/src/app/superadmin/custom-pricing-overrides/page.tsx`
+  - `apps/web/src/app/superadmin/infrastructure/page.tsx`
+- **Resultados de Verificación:**
+  - Límite de 500 líneas: **APROBADO** (`node scripts/check-file-lines.mjs`: 311 archivos auditados, 0 violaciones).
+  - Test E2E Full-Journey: **6/6 fases aprobadas al 100%** (`tests/e2e-frontend/frontend-backend-full-journey.spec.ts`).
+
+---
+
+### [2026-10-16 22:30] - CONSOLIDACIÓN INTEGRAL DE TEMA CLARO: LOGO, BILLING Y DASHBOARD API KEYS
+
+- **Resolución de la Corrección Directa del Usuario:**
+  - Corrección de `Logo.tsx`: El valor por defecto de `textTheme` era `'light'` (lo cual forzaba texto blanco `#ffffff`, resultando invisible sobre fondos claros). Se configuró a `textTheme = 'dark'` por defecto con tinta mineral `#121619` y subtítulo `#23534F` sobre fondos claros (`#ffffff` / `#f7f7f4`).
+  - Purga de fondos oscuros en `apps/web/src/app/dashboard/org/[orgSlug]/billing/page.tsx`: Se eliminó el cascarón `bg-[#000000] text-white` y tarjetas `bg-[#0a0a0c]/90`, sustituyéndolos por el lienzo oficial en pergamino `#f7f7f4`, tarjetas blancas `#ffffff`, bordes capilares `#cdcdc9` y tipografía tinta mineral `#26251e`.
+  - Transformación de `apps/web/src/components/dashboard-dev/ApiKeyLifecycleManager.tsx`: Se erradicaron todas las clases `bg-[#0a0a0a]`, `bg-[#111110]`, `bg-[#0d0d0c]` y `border-white/[0.08]`, reconvirtiendo el carrusel de métricas, tabla y modales de creación/rotación a superficies blancas `#ffffff` y pergamino `#f2f1ed` con bordes `#cdcdc9` y textos `#26251e`.
+  - Actualización de `apps/web/src/app/billing/page.tsx` a Tema Claro Cursor Atelier.
+- **Auditorías de Calidad:**
+  - Conteo de líneas: **311 archivos auditados, 0 violaciones**, máximo 497 líneas (`register-and-login.use-case.ts`).
+  - Suite E2E: **6/6 fases aprobadas con código de salida 0**.
+
+---
+
+### [2026-10-16 22:45] - CONSOLIDACIÓN ESTRICTO TEMA CLARO: AUTH, LEGAL, DOCS Y SANDBOX (IA CABEZA #2 - CURSOR ATELIER)
+
+- **Alineación con la Directriz del Usuario:**
+  - Consolidación y pulido de los portales de Autenticación, Legal, Documentación B2B y Sandbox Interactivo en **ESTRICTO TEMA CLARO** bajo la estética Cursor Atelier (`estilo-paneles-y-docs-cursor-atelier`).
+  - Lienzo base en Warm Parchment (`#f7f7f4`), tarjetas y paneles en Bone (`#f2f1ed`), bordes en Stone (`#cdcdc9`), textos en tinta Ink (`#26251e`) y acentos en Ember (`#f54e00`) y Verdant (`#1f8a65`).
+  - Erradicación total del modo oscuro / Dala Void en estos portales.
+  - Reducción de escala tipográfica en -20%, carruseles/tarjetas colapsables en móvil y fijación universal de radios en 4px (8px en modales).
+- **Despliegue de los 4 Subagentes:**
+  1. **Subagente 2.1 (Auth Shell, Split Hero & Logo en Login/Register/SuperAdmin/CLI):**
+     - `apps/web/src/app/(auth)/layout.tsx` (61 líneas): Shell centrado sobre lienzo `#f7f7f4` con selector `data-portal="workspace-atelier"`.
+     - `apps/web/src/app/(auth)/auth/login/page.tsx` (451 líneas): Integrado `<Logo size={34} textTheme="dark" href="/" />`, tarjeta Bone con borde Stone, botón primario Ink `#26251e` con texto hueso, padding táctil `clamp(16px, 4vw, 24px)` para móviles.
+     - `apps/web/src/app/(auth)/auth/register/page.tsx` (482 líneas): Escala -20%, formulario táctil compacto, badges de seguridad limpios y logo transparente.
+     - `apps/web/src/app/(auth)/internal/superadmin-login/page.tsx` (461 líneas): Tarjeta Bone con borde superior carmesí 2px, insignia de hardware WebAuthn/FIDO2 y logo dark.
+     - `apps/web/src/app/(auth)/auth/cli-device/page.tsx` (246 líneas): Terminal de vinculación CLI sobre pergamino claro, campos de código OTP compactos y logo oficial.
+  2. **Subagente 2.2 (Lector de Contratos Legales Compacto en Móvil):**
+     - `apps/web/src/components/auth-legal/LegalDocumentViewer.tsx` (478 líneas): Tipografía regular a 15px en tinta `#26251e` sobre fondo `#f7f7f4`, comentarios en `#84847e`, layout adaptable con aside colapsable `<details>` e índice con scroll táctil suave.
+     - `apps/web/src/components/auth-legal/MandatoryLegalReconsentModal.tsx` (487 líneas): Tarjetas de documentos pendientes en acordiones colapsables con scroll táctil suave (máx 160px), switches sobre Bone `#f2f1ed` y botón de aceptación Ink.
+  3. **Subagente 2.3 (Docs Shell & Explorador de Endpoints REST/WS):**
+     - `apps/web/src/components/docs-sandbox/DeveloperDocsShell.tsx` (419 líneas): Integrado `<Logo size={28} textTheme="dark" href="/" />`, H1 a 32px (-20%), Garamond 18px, `HttpMethodBadge` claro (GET, POST, WS, PUT) y drawer lateral colapsable para móvil con backdrop y botón ☰.
+     - `apps/web/src/components/docs-sandbox/ApiAndProtocolSpecViewer.tsx` (355 líneas): Eliminados imports obsoletos de `DalaVoidPrimitives`. Reconstruido en Cursor Atelier Light: catálogo de 6 tramas en tarjetas Bone colapsables, badges de dirección (↑ verde `#34785c`, ↓ ámbar `#c08532`), inspector de tramas vivas y visor de JSON crudo sobre pergamino `#f7f7f4`.
+  4. **Subagente 2.4 (Voice Sandbox Interactivo en Pergamino Cálido):**
+     - `apps/web/src/app/docs/sandbox/page.tsx` (377 líneas): Entorno de 3 paneles sobre Bone `#f2f1ed`: osciloscopio acústico con canvas HTML5 y ondas bioluminiscentes sobre lienzo `#f7f7f4`, telemetría de latencias en pastillas compactas monospace (`#26251e` sobre `#e6e5e0`), despachador interactivo `click_element`/`type_text` con simulación física y escudo contra campos sensibles, conmutador de pestañas táctiles para móvil y ancho desktop contenido a 480px.
+     - `apps/web/src/components/docs-sandbox/SandboxTargetApplicationCanvas.tsx` (361 líneas): Verificado y en pleno funcionamiento.
+- **Auditorías y Verificaciones:**
+  - Límite de líneas: **APROBADO** (`node scripts/check-file-lines.mjs`: 311 archivos auditados, 0 violaciones, todos <500 líneas físicas).
+  - TypeScript: **APROBADO CON 0 ERRORES** (`npx tsc --noEmit -p apps/web/tsconfig.json` código de salida 0).
+  - Seguridad y Contratos: Doctrina de tokens JWT en RAM y contratos de sesión estrictamente preservados.
+
+### [2026-10-17 04:14] - FASE 1: API REVERSE PROXY Y CONFIGURACIÓN DE PUERTOS (SUBAGENTE 1.1)
+
+- **Alineación con la Directriz del Orquestador:**
+  - Creación de `apps/web/next.config.mjs` (44 líneas) con reverse proxy hacia Fastify Control Plane: enruta `/api/v1/:path*` dinámicamente a través de `INTERNAL_API_URL`, `NEXT_PUBLIC_API_BASE_URL` o `http://127.0.0.1:3000`. Erradica errores 404, neutraliza problemas de CORS y preserva cookies HttpOnly.
+  - Modificación de `apps/web/package.json` actualizando los scripts `dev` y `start` para correr explícitamente en el puerto 3001 (`next dev -p 3001`, `next start -p 3001`), evitando la colisión de puertos con Fastify (puerto 3000).
+- **Auditoría y Certificación:**
+  - Límite de líneas: **APROBADO** (`node scripts/check-file-lines.mjs`: 312 archivos auditados, 0 violaciones, todos <500 líneas).
+  - TypeScript: **APROBADO** (`npm run typecheck:web`: 0 errores en `apps/web`).
+
+---
+
+### [2026-10-17 04:16] - FASE 1: TIMEOUT DEFENSIVO Y RESILIENCIA EN CALCULADORA DE PRECIOS (SUBAGENTE 1.2)
+
+- **Alineación con la Directriz del Orquestador:**
+  - Intervención en `apps/web/src/components/landing/pricing/useWhopPricingCalculator.ts` implementando un timeout defensivo de 4000 ms (`setTimeout(() => controller.abort(), 4000)`) al cargar la matriz de precios (`/api/v1/public/pricing-matrix`).
+  - Limpieza rigurosa del temporizador con `clearTimeout(timeoutId)` tanto en el bloque `.finally(...)` de la promesa como en la función de limpieza de desmontaje del `useEffect`.
+  - Desbloqueo garantizado de la interfaz de usuario: ante aborto por timeout, error de red o fallo HTTP, se asigna inmediatamente `CANONICAL_PUBLIC_PLANS_FALLBACK`, `PAYG_RATE_PER_MINUTE_USD_FALLBACK`, `isDegraded = true` y `isLoading = false`, evitando cualquier estado de carga perpetuo o congelamiento en el cliente.
+- **Auditoría y Certificación:**
+  - Límite de líneas: **APROBADO** (`useWhopPricingCalculator.ts` con 310 líneas, estado SALUDABLE < 380/500).
+  - TypeScript: **APROBADO** (`npx tsc --noEmit -p apps/web/tsconfig.json` con 0 errores, código de salida 0).
+  - Modularidad global: **APROBADO** (`node scripts/check-file-lines.mjs`: 312 archivos auditados, 0 violaciones, todos <500 líneas).
+
+---
+
+### [2026-10-17 04:22] - CONSOLIDACIÓN FRONTEND: DEVELOPER DASHBOARD SHELL, API KEYS & RUTAS RAÍZ (SUBAGENTE 4.1)
+
+- **Alineación con la Directriz del Orquestador:**
+  1. **Cascarón y Rutas Raíz del Dashboard:**
+     - Creación de `apps/web/src/app/dashboard/layout.tsx` (57 líneas): Estructura con `data-portal="workspace-atelier"`, paleta Warm Parchment `#f7f7f4` y metadatos del área de trabajo técnico.
+     - Creación de `apps/web/src/app/dashboard/page.tsx` (28 líneas): Redirección automática server-side (`redirect()`) hacia `/dashboard/org/default-org/projects/proj_default_live/keys`, erradicando el error 404 al visitar `/dashboard`.
+  2. **Shell y Drawer Móvil Responsive:**
+     - Modificación de `apps/web/src/components/dashboard-dev/DeveloperDashboardShell.tsx` (386 líneas):
+       - Conversión de la barra lateral fija `w-64` en un Drawer deslizante (`fixed inset-y-0 left-0 z-50 md:static md:w-64`) con backdrop táctil oscurecido (`#26251e`/40) en `< md`.
+       - Integración de botón de menú hamburguesa accesible en el `<header>` en `< md`.
+       - Truncado fluido de nombres en `OrganizationSwitcher` y `ProjectSwitcher` evitando desbordamientos de texto.
+  3. **Gestor de Ciclo de Vida de API Keys y Vista Adaptativa Dual:**
+     - Creación de `apps/web/src/components/dashboard-dev/ApiKeyLifecycleModals.tsx` (197 líneas): Separación modular de `CreateApiKeyModal` y `RotateApiKeyModal` para respetar el límite de 500 líneas con estética estricta Atelier.
+     - Modificación de `apps/web/src/components/dashboard-dev/ApiKeyLifecycleManager.tsx` (378 líneas):
+       - Vista adaptativa dual: en pantallas móviles (`sm:hidden`) renderizado de tarjetas táctiles compactas en `#f2f1ed` (Bone) con botón de copiado rápido y botones de acción de 40px de altura (cumpliendo WCAG); en desktop (`hidden sm:block`) tabla con scroll horizontal suave.
+       - Erradicación del blanco puro `#ffffff` reemplazado por Bone `#f2f1ed` y de los acentos `#8052ff` sustituidos por tokens oficiales Atelier (`#1f8a65` Verdant, `#c08532` Amber, `#26251e` Ink).
+  4. **Prevención de Recorte en Dominios Autorizados:**
+     - Modificación de `apps/web/src/components/dashboard-dev/AllowedDomainsManager.tsx` (258 líneas): Sustitución de `overflow-hidden` rígido por `overflow-x-auto` con `min-w-[480px]`, garantizando que la columna "Revocar" jamás quede recortada en móvil.
+  5. **Diálogo de Revelación Única de Secreto:**
+     - Modificación de `apps/web/src/components/dashboard-dev/OneTimeSecretRevealDialog.tsx` (124 líneas): Eliminación de `select-none` para habilitar selección en móvil, reemplazo del input horizontal estrecho por un bloque de código monospaciado con `break-all` sobre fondo Bone `#f2f1ed` con botón accesible (`aria-live`), y exportación dual (`OneTimeSecretRevealDialog` y `OneTimeSecretRevealModal`).
+- **Auditoría y Certificación:**
+  - Límite de líneas: **APROBADO** (`node scripts/check-file-lines.mjs`: 317 archivos auditados, 0 violaciones, todos <500 líneas físicas).
+  - TypeScript: **APROBADO CON 0 ERRORES** (`npx tsc -p apps/web/tsconfig.json --noEmit` código de salida 0).
+
+
+---
+
+### [2026-10-17 04:22] - FASE 5: RESPONSIVE AUTH 100DVH, LEGAL MODALS Y DOCS SANDBOX FLUID (SUBAGENTE 5.2)
+
+- **Alineación con la Directriz del Orquestador:**
+  1. **Layouts de Autenticación y Legal (`100dvh`):**
+     - En `apps/web/src/app/(auth)/layout.tsx` (69 líneas), `apps/web/src/app/legal/layout.tsx` (39 líneas), `apps/web/src/app/(auth)/auth/login/page.tsx` (451 líneas) y `apps/web/src/app/(auth)/auth/register/page.tsx` (496 líneas): sustituido `minHeight: '100vh'` por `minHeight: '100dvh'`, impidiendo que la apertura del teclado virtual en dispositivos móviles desplace la cabecera o botones fuera de la pantalla.
+     - En `apps/web/src/app/(auth)/auth/register/page.tsx`: botones de avanzar ("Crear organización y continuar") y retroceder ("Volver a las credenciales") envueltos en un contenedor responsive con `flex-direction: column-reverse; gap: 8px;` en móvil (`flex flex-col-reverse sm:flex-row sm:justify-between gap-2 mt-4`) para priorizar la acción principal en alcances táctiles.
+  2. **Modal de Reconsentimiento Legal (`MandatoryLegalReconsentModal.tsx`, 493 líneas):**
+     - Elemento `<details>` inicia colapsado si hay más de 1 documento (`pendingDocuments.length <= 1`), evitando sobrecarga visual.
+     - Limitación de altura interna del scroll a 120px con `overscroll-behavior: contain` y `DOCUMENT_LIST_STYLE` acotado a `36vh` con `overscroll-behavior: contain`, erradicando el atrapamiento de scroll táctil (*scroll trapping*).
+     - Contenedor modal configurado con `maxHeight: 'calc(100dvh - 32px)'`, scroll interno en el cuerpo y pie de acciones fijado con `flexShrink: 0`, garantizando que los botones de acción ("Cerrar sesión" y "Firmar y continuar") permanezcan 100% visibles y accesibles en cualquier resolución móvil.
+  3. **Shell de Documentación Responsive (`DeveloperDocsShell.tsx`, 444 líneas):**
+     - Barra lateral fija `<aside>` oculta en pantallas `< 1024px` mediante clases responsive (`hidden lg:flex`).
+     - Botón hamburguesa `☰` con `lg:hidden` activo solo en resoluciones menores.
+     - Enlaces principales del header (`DOCS_TOP_LINKS`) movidos al interior del drawer móvil con `hidden md:flex` en la cabecera y `md:hidden` dentro del drawer para `< 768px`.
+  4. **Lienzo Adaptativo de Aplicación (`SandboxTargetApplicationCanvas.tsx`, 391 líneas):**
+     - Implementado factor de escala adaptativo fluido (`Math.min(presetBaseScale, Math.min(1, availableWidth / activePreset.widthPx))`) con medición en vivo mediante `ResizeObserver` y `containerRef`.
+     - Sustituidos los anchos rígidos de 518px/476px por dimensiones fluidas con `maxWidth: '100%'`, erradicando totalmente el scroll 2D horizontal en terminales móviles.
+  5. **Visor de Tramas y JSON Crudo (`ApiAndProtocolSpecViewer.tsx`, 395 líneas):**
+     - En `RawJsonBlock`, reemplazado `wordBreak: 'break-all'` por `white-space: pre; overflow-x: auto; word-break: normal;` para mantener íntegros y legibles los selectores y propiedades JSON sin partir palabras a mitad de línea.
+- **Auditoría y Certificación:**
+  - Límite de líneas: **APROBADO** (todos los 8 archivos modificados < 500 líneas).
+  - TypeScript: **APROBADO** (`tsc --noEmit` en `apps/web`: 0 errores, código de salida 0).
+  - Protección de imports: **APROBADO** (100% de dependencias, contratos y tipos preservados).
 
 
 
 
 
 
+
+
+
+
+
+
+### Actualización Operativa — Overhaul Cinemático 3D Dala (Hero & Living Particle Intelligence)
+- **Fecha:** 2026-10-17
+- **Alcance:** `HeroArchitectureShowcase.tsx`, `LivingParticleIntelligenceCanvas.tsx`, `particle-geometry.ts`, `PublicCommercialChrome.tsx`.
+- **Problemas Erradicados:**
+  1. **Solapamiento Navbar / H1:** Se elevó el padding superior a `pt-20 pb-12 sm:pt-28 sm:pb-16 lg:pt-32 lg:pb-20` con `scroll-mt-28`, dejando espacio libre y elegante entre el header sticky (`bg-[#F2FAF8]/95 backdrop-blur-md`) y el titular H1.
+  2. **Escala y Composición Asimétrica:** El titular H1 se ajustó a `text-[clamp(2.1rem,4.0vw,3.6rem)] lg:text-[46px] font-normal sm:font-medium leading-[1.08] tracking-[-0.035em] max-w-[560px]` en 3 líneas balanceadas; la columna derecha del canvas 3D se expandió a 7/12 columnas (`min-h-[500px] sm:min-h-[600px] lg:min-h-[680px]`).
+  3. **Malla 3D Escultórica Dala:** Sustitución de partículas aleatorias planas por una **malla paramétrica estructurada 3D de cabeza humana y cráneo** con perfil anatómico exacto (frente, cuencas orbitales, puente y punta nasal esculpida, labios superior/inferior, hendidura labial, barbilla y mandíbula).
+  4. **Escorzo y Proyección Tangencial:** Cada microtriángulo se construye en el plano tangencial 3D usando bases ortonormales $(U, V)$ y normal $N$, proyectando sus 3 vértices independientes en perspectiva (FOV 500) para un escorzo tridimensional auténtico al rotar.
+  5. **Iluminación Perimetral (Rim Lighting):** Cálculo del ángulo rasante $(|n_z| < 0.38)$ para generar el halo luminoso en oro ámbar (`#FFB829`), turquesa brillante (`#43E7DB`) y blanco puro a lo largo de la silueta del perfil, contrastando con tonos joya (`#7038FF`, `#00A89D`, `#062D2A`) en el interior frontal y atenuación translúcida de caras posteriores.
+  6. **Profundidad Cinemática con Triángulos Anidados:** Partículas flotantes en primer plano con triángulos geométricos concéntricos (firma Dala).
+- **Verificación:** `node scripts/check-file-lines.mjs` (319 archivos, 0 violaciones < 500 líneas), `npm --prefix apps/web run typecheck` (0 errores) y `npm run typecheck` (0 errores).
+
+### Actualización Operativa — Erradicación de Errores de Hidratación en Frontend y Normalización de Tramos Whop
+- **Fecha:** 2026-10-17
+- **Alcance:**
+  1. `apps/web/src/components/common/Logo.tsx` (242 líneas).
+  2. `apps/web/src/components/landing/PublicCommercialChrome.tsx` (259 líneas).
+  3. `src/modules/07-public-commercial-and-sandbox/application/public-demo-and-pricing.use-case.ts` (402 líneas).
+  4. `apps/web/src/components/landing/pricing/useWhopPricingCalculator.ts` (333 líneas).
+  5. `apps/web/src/components/landing/pricing/VolumeDiscountTierVisualizer.tsx` (236 líneas).
+- **Problemas Erradicados:**
+  1. **Error de Hidratación React (`<a>` dentro de `<a>`):**
+     - En `Logo.tsx`, la prop `href` tenía por defecto `'/'` y envolvía el contenido incondicionalmente en `<a href={href}>`.
+     - En `PublicCommercialChrome.tsx`, el header y footer ya contenían un enlace envolvente `<a href="/">`. Al invocar `<Logo size={28} />`, se producía la anidación prohibida `<a href="/"><a href="/">...</a></a>`, desatando el error de hidratación `In HTML, <a> cannot be a descendant of <a>`.
+     - **Solución:** Se flexibilizó `LogoProps.href?: string | null` con valor por defecto `null`, y se condicionó la creación del elemento a `typeof href === 'string' && href.length > 0`. Se pasó explícitamente `href={null}` en `PublicCommercialHeader` y `PublicCommercialFooter`.
+  2. **Error de Claves Duplicadas / `tick-undefined` en Calculadora de Precios:**
+     - En PostgreSQL (`pricing_plans_config`), los tramos de volumen se persistían con nomenclatura snake_case (`min_overage_minutes`, `discount_pct`, `max_overage_minutes`).
+     - Al consultar el endpoint `/api/v1/public/pricing-matrix`, el caso de uso del backend casteaba directamente la columna JSON sin normalización a camelCase, provocando que en el frontend `tier.minMinutes` y `tier.discountPercentage` resultaran `undefined`.
+     - En `VolumeDiscountTierVisualizer.tsx`, esto generaba `key="tick-undefined"` y advertencias de claves idénticas/omitidas en React.
+     - **Solución:**
+       - En `public-demo-and-pricing.use-case.ts`, se implementó `normalizeVolumeDiscountTiers` con soporte para snake_case y camelCase, redondeando los minutos a enteros limpios (`Math.round`).
+       - En `useWhopPricingCalculator.ts`, se implementó `normalizeTierDto` para blindar el hook tanto en cotizaciones como en el ordenamiento de tramos.
+       - En `VolumeDiscountTierVisualizer.tsx`, se actualizaron las claves a `key={`tick-${minMinutes}-${index}`}` y `key={`tier-${minMinutes}-${index}`}` con respaldo numérico seguro.
+- **Certificación y Verificación:**
+  - `npm --prefix apps/web run typecheck`: **0 errores** (código de salida 0).
+  - `npm run typecheck`: **0 errores** (código de salida 0).
+  - `node scripts/check-file-lines.mjs`: **319 archivos auditados, 0 violaciones** (todos <500 líneas físicas).
+  - `http://localhost:3001/`: HTTP 200, SSR limpio con cero advertencias de hidratación en consola.
+
+### [2026-10-17 06:30] — Rediseño de la Sección «Entrenamiento Visual & Memoria RAG» (División 1 · Landing Comercial)
+- **Fecha:** 2026-10-17
+- **Agente:** `IA #1 — Rediseño Explorador RAG` (tema claro Auros · skill `estilo-landing-comercial-auros-claro`)
+- **Alcance (100 % landing, sin tocar backend ni contratos):**
+  1. `apps/web/src/components/landing/explore/RagDomMolecularGraphSection.tsx` (153 líneas · reescrito): encabezado editorial (kicker teal `#15846E`, H2 28px–46px con remate `font-display italic` «sellada con SHA-256.», subtítulo `max-w-2xl`) sobre velo radial `#EAF7F4 → #F2FAF8`; rejilla de escritorio `lg:grid-cols-12` 5/7 con las 3 tarjetas `RAG_PILLAR_CARDS` (la de tono `lift` en estado destacado con doble borde `#8052FF/25` y badge violeta) y el grafo molecular; montaje `lg:hidden` del explorador compacto.
+  2. `apps/web/src/components/landing/explore/VisualTrainingMolecularGraph.tsx` (270 líneas · nuevo): `DesktopMolecularGraph()` (lienzo 540×405, doble polígono envolvente, radios radar, 14 nodos, núcleo SHA-256 con `radialGradient` + `feGaussianBlur` y anillo pulsante `oa-graph-pulse` posicionado con `left/top calc(50% − 24px)`) y `CompactMolecularGraph()` (lienzo 320×320 con rejilla `oa-dot-grid`, halo `oa-graph-pulse--svg` con `transform-box: fill-box` y pastilla flotante «SHA-256»).
+  3. `apps/web/src/components/landing/explore/CompactVisualTrainingExplorer.tsx` (330 líneas · nuevo): panel de detalle dinámico con `VISUAL_TRAINING_DETAILS` (7 lecturas reales), barra de acento `#15846E → #8052FF`, `aria-live="polite"`, cierre + restauración accesible; grilla `[1fr_auto_1fr]` con 3 pastillas (navegación/memoria/guardrails) y 3 KPIs (`<45ms`, `100%`, `2 AI`) con `aria-pressed`, borde violeta y punto `oa-chip-pulse`; figura central con leyenda y CTA oscuro real «Entrenar mi producto» → `/auth/register`.
+  4. `apps/web/src/components/landing/explore/BioluminescentStatsBanner.tsx` (104 líneas · restilizado): micro-cabecera con punto violeta `#8052FF`, cifras bold 36px–42px y divisores `#D7EBE6` solo en escritorio; contenido comercial intacto (`<45ms`, `100%`, `2 Motores`, «Voz Ultra-Rápida»/«Voz Ultra-Precisa»).
+  5. `apps/web/src/styles/landing-auros-light.css` (498 líneas): utilidades nuevas `oa-chip-pulse`, `oa-graph-pulse` (+`--svg`), `oa-dot-grid` y `oa-quick-fade` con claves compactas y bloque `prefers-reduced-motion` ampliado; `.oa-live-dot::after` pasa a `background: inherit` para reuso cromático (demo intacta).
+  6. `apps/web/src/app/(commercial)/page.tsx` (100 líneas): comentarios de composición resincronizados (sección 3 con doble variante responsive).
+  7. **Retirado:** `BioluminescentStoryCarousel.tsx` (189 líneas) — el explorador compacto interactivo lo reemplaza; `RAG_PILLAR_CARDS` se conserva exportado desde la sección.
+- **Contratos preservados:** anclas del chrome (`#plataforma`, `#demo-en-vivo`, `#precios`), cifras comerciales reales, CTA `/auth/register`, cero fuga de infraestructura, cero funcionalidades inventadas.
+- **Certificación y Verificación:**
+  - `node scripts/check-file-lines.mjs`: **326 archivos auditados, 0 violaciones** (piezas nuevas: 153/270/330/104 ≤ 500).
+  - `npm --prefix apps/web run typecheck`: **0 errores** (código de salida 0).
+- **Follow-up de compactación (07:15 UTC, a pedido del usuario «demasiado grande, no quiero scrollear tanto»):** la sección se redujo de altura — H2 de 28–46px a 23–32px (`lg:text-[32px]`, leading 1.22), kicker a 10px y subtítulo a 14px, encabezado `mb-7 sm:mb-9`, padding vertical 32/40px, tarjetas a `p-4` (`gap-3`, título 14px, cuerpo 12.5px), rejilla `gap-8`, grafo de escritorio `max-w-[540px]`→`[430px]` con anillo pulsante `h-10` (`calc(…_-_20px)`) y leyenda a 11px. Altura estimada de la sección ≈ 626px (antes ≈ 870px). `npm --prefix apps/web run typecheck`: 0 errores; auditor sin violaciones.
+- **Pendiente de registro formal (arrastre):** el rediseño editorial del hero/demo (Vortex CRM, visualizador ambiental, motor de partículas) continúa sin filas de inventario propias; queda señalado en el subtotal del carril para la próxima pasada de resincronización.
+
+### [2026-10-18 00:10] — Fondo Vivo de Constelación Dala con Morphing por Scroll (División 1 · Landing Comercial)
+- **Fecha:** 2026-10-18
+- **Agente:** `IA #1 — Fondo Vivo Constelación Dala` (tema claro Auros · skills `estilo-landing-comercial-auros-claro`, `documentadora-live-contexto` y `reglas-globales-construccion-codigo`)
+- **Alcance (100 % landing, sin tocar backend, rutas ni contratos):**
+  1. `apps/web/src/components/landing/particles/DalaConstellationBackdrop.tsx` (480 líneas · nuevo): fondo de pantalla completa `fixed inset-0 z-0` (`aria-hidden`, `pointer-events-none`) con ~4.800 microtriángulos wireframe + 180 glifos ambientales en tres esculturas 3D que mutan con el scroll real del documento (0 → Cerebro anatómico, 0.5 → Aurora acústica de voz, 1 → Planeta Tierra cartográfico), proyección en perspectiva FOV 780, orden por profundidad Z, torsión espiral en las transiciones, repulsión elástica del cursor, pausa en pestaña oculta, densidad adaptativa móvil (2.400 nodos / 110 glifos), `prefers-reduced-motion` (fotograma estático que solo se redibuja con scroll/resize) y re-medición del rango de scroll vía `ResizeObserver`. **Sin botones HUD** (a pedido explícito del usuario).
+  2. `apps/web/src/components/landing/particles/dala-constellation-sculptures.ts` (460 líneas · nuevo): escultores analíticos — cerebro (cisura de Silvio, surco de Rolando, lóbulo temporal, cerebelo con folia y tronco encefálico), aurora de voz (6 canales, envolvente de formantes en `sampleVoiceTransmission`) y Tierra (costas 50 %, continentes 36 %, retícula oceánica 9 %, anillo orbital 5 %) — más `buildConstellation()`.
+  3. `apps/web/src/components/landing/particles/dala-constellation-geometry.ts` (282 líneas · nuevo): hash/ruido 3D determinista, `smootherstep`/`lerp`, rotación matricial `rotate3D`, paleta de alto contraste sobre lienzo claro y constantes del lienzo (FOV, conteos, rangos de scroll).
+  4. `apps/web/src/components/landing/particles/dala-constellation-earth-map.ts` (142 líneas · nuevo): malla cartográfica 96×48 con regiones continentales clasificadas en celdas de costa (trazo nítido) y masa continental (relleno).
+  5. `apps/web/src/app/(commercial)/layout.tsx` (55 líneas): monta el fondo tras el contenido con contexto aislado (`relative isolate`), `main` y pie a `z-10` (header sticky `z-40` intacto) y `bg-liquid-abyss` como respaldo pre-hidratación.
+  6. Lienzo transparentado para dejar ver la constelación: `(commercial)/page.tsx` (102 líneas, sin `bg-liquid-abyss`), hero sin gradiente opaco (155 líneas), explorador RAG con velo radial translúcido (rgba 0.72→0) y banner de métricas sin fondo propio (104 líneas); tarjetas/superficies blancas intactas.
+- **Contratos preservados:** anclas del chrome (`#plataforma`, `#demo-en-vivo`, `#precios`), CTA `/auth/register`, cifras comerciales reales (`<45ms`, `100%`, `2 Motores`), rutas y APIs intactas, cero funcionalidades inventadas.
+- **Certificación y Verificación:**
+  - `node scripts/check-file-lines.mjs`: **330 archivos auditados, 0 violaciones** (fondo Dala: 480/460/282/142 ≤ 500; partición modular preventiva al tocar el tope de 500).
+  - `npm --prefix apps/web run typecheck`: **0 errores** (código de salida 0).
+  - `http://localhost:3001/`: **HTTP 200** con el canvas del fondo presente en el HTML SSR (`data-purpose="landing-constellation-backdrop"`), fondos de sección transparentados y sin error boundary.
+- **Inventario del carril resincronizado:** 32 archivos · 7.868 líneas (recuento físico); filas del hero/demo/precios actualizadas con `check-file-lines`.
+
+### [2026-10-18 01:00] — Retiro del Motor Histórico de Partículas y Sincronización de las Skills del Proyecto
+- **Fecha:** 2026-10-18
+- **Agente:** `IA #1 — Limpieza de Código Muerto y Sincronización de Skills`
+- **Alcance (limpieza + documentación; cero cambios funcionales en rutas, anclas, APIs o cifras):**
+  1. **Retirados del repositorio** (código muerto, sin montar en ninguna ruta): `apps/web/src/components/landing/particles/LivingParticleIntelligenceCanvas.tsx` (379 líneas) y `apps/web/src/components/landing/particles/particle-geometry.ts` (417 líneas). Verificación de referencias: barrido de `LivingParticleIntelligence` y `particle-geometry` en `apps/` → 0 importaciones residuales; la carpeta `particles/` queda con los 4 módulos vigentes del Fondo Dala.
+  2. **Skills del proyecto sincronizadas** en `.agents/skills/` (puestas al día con el estado real del repositorio):
+     - `estilo-landing-comercial-auros-claro` (reescrita): gramática de partículas vigente (Cerebro → Aurora de Voz → Planeta Tierra con morphing por scroll real, sin HUD), inventario real de secciones y componentes, contrato de transparencias/capas y arquitectura del motor Dala con sus 4 módulos; nota histórica del retiro del motor anterior.
+     - `documentadora-live-contexto`: mapa de dominios real de la §1, estructura viva del Ledger (Buzón Inter-IA, sub-inventarios y subtotales) y auditor oficial `npm run check:lines` en lugar de `wc -l`.
+     - `reglas-globales-construccion-codigo`: verificación ejecutable vía `npm run check:lines` y frontend descrito como workspace único `apps/web` con grupos de rutas.
+     - `orquestador-construccion-backend`: banner de estado 16/16 partes completadas y comandos reales (`verify:partX`, `typecheck`, `typecheck:web`).
+     - `pruebas-verificacion-integracion`: 5 filtros con los scripts npm reales de `package.json` (suite completa mapeada) y smoke del frontend en el puerto 3001.
+     - `estilo-paneles-y-docs-cursor-atelier`: nota de estado (divisiones consolidadas en tema claro estricto dentro del workspace único `apps/web`).
+  3. **Ledger sincronizado:** subtotal del carril sin la nota de arrastre pendiente (resuelta), encabezado e integridad actualizados al recuento real y fila propia en el semáforo.
+- **Contratos preservados:** ninguna ruta, ancla (`#plataforma`, `#demo-en-vivo`, `#precios`), API, CTA ni cifra comercial fue tocada; el retiro no altera el HTML/SSR de la landing.
+- **Certificación y Verificación:**
+  - `node scripts/check-file-lines.mjs`: **328 archivos auditados, 0 violaciones** (330 → 328 por el retiro de los 2 archivos muertos; máximo vigente: `(auth)/auth/register/page.tsx` con 496).
+  - `npm --prefix apps/web run typecheck`: **0 errores** (código de salida 0).
+  - `http://localhost:3001/`: **HTTP 200** (126.774 bytes) sin error boundary tras el retiro.
+
+### [2026-10-18 01:25] — Rediseño y Compactación Visual de Autenticación (Login B2B y Registro de Organización)
+- **Fecha:** 2026-10-18
+- **Agente:** `IA #2 — Rediseño y Compactación Visual de Autenticación (Login B2B y Registro)`
+- **Alcance (UI/UX Ergonómica · tema claro Cursor Atelier sin romper contratos):**
+  1. `apps/web/src/styles/dashboard-docs-cursor-atelier.css`:
+     - Inputs y selects compactados: altura de ~44px a ~34px (`padding: 7px 10px`, `fontSize: 13px`).
+     - Botones `.atelier-btn`: min-height 32px, `padding: 6px 12px`, `fontSize: 12.5px`.
+     - Campos `.atelier-field`: espaciado vertical reducido a `4px`.
+     - Textos `.atelier-prose` reducidos de 17px a 14px y ayudas a 11px.
+     - Barra de ventana `.atelier-window__bar` y pestañas compactadas (`padding: 2px 7px`, `fontSize: 11px`).
+  2. `apps/web/src/app/(auth)/auth/login/page.tsx`:
+     - Tarjeta reducida de 440px a **360px de ancho máximo**.
+     - Logo reducido de 34px a 26px, título `h1` de 18px refinado, padding interno de 16px.
+     - Footer compacto con enlaces en 11.5px y pie legal en 11px.
+  3. `apps/web/src/app/(auth)/auth/register/page.tsx`:
+     - Tarjeta reducida de 640px a **450px de ancho máximo**.
+     - Paso 1 estructurado en rejilla de 2 columnas para campos afines (Organización + Slug, Nombre + Correo), eliminando el scroll vertical kilométrico.
+     - Medidor de entropía de contraseña integrado en línea (barra de 4px + etiqueta de bits a la derecha).
+     - Checkboxes legales (Paso 2) compactados con tipografía de 11.5px.
+     - Reducción física de líneas de código: **de 496 líneas a 448 líneas** (alejado del límite crítico de 500).
+- **Contratos preservados:** todos los flujos de autenticación, JWT EdDSA en RAM, endpoints `/api/v1/auth/*`, MFA challenge y checkout Whop intactos.
+- **Certificación y Verificación:**
+  - `node scripts/check-file-lines.mjs`: **328 archivos auditados, 0 violaciones** (máximo: `mfa-and-webauthn.use-case.ts` con 495 líneas).
+  - `npm --prefix apps/web run typecheck`: **0 errores** (código de salida 0).
+  - Verificación visual con browser subagent en `http://localhost:3001/auth/login` y `/auth/register`: proporciones refinadas, legibles y compactas.
+
+### [2026-10-18 01:40] — Registro Unificado Sin Fricción (Panel Único con Checkbox Maestro Legal)
+- **Fecha:** 2026-10-18
+- **Agente:** `IA #2 — Registro Directo Sin Fricción`
+- **Alcance (Eliminación de pasos repetitivos y UX ágil sin fricción):**
+  1. `apps/web/src/app/(auth)/auth/register/page.tsx`:
+     - Sustitución del wizard de 4 pasos por un **formulario unificado en un solo panel directo** (sin pasos ni pantallas intermedias).
+     - Incorporación de **Checkbox Maestro Legal**: `Acepto todos los acuerdos legales para mi organización` que marca y sincroniza simultáneamente los 4 instrumentos (`TOS_B2B`, `PRIVACY_POLICY`, `DPA_ENTERPRISE`, `AI_VOICE_AUP`) en un solo clic, con enlaces discretos y legibles en 10.5px, más un acordeón opcional para desglosarlos.
+     - Alta directa y transición transparente al panel o al checkout de Whop tras validar credenciales.
+     - Reducción masiva de complejidad y líneas físicas: el archivo pasó de 448 a **295 líneas** (0 violaciones de código).
+  2. **Diagnóstico del Servicio de Correo Electrónico:** Se constató que el backend genera el OTP criptográfico de 6 dígitos con hash SHA-256 en base de datos (`users.otp_sha256`), pero actualmente **no cuenta con ningún proveedor SMTP ni conector de correo externo (como Gmail, Resend o SendGrid)** configurado en `.env`.
+- **Certificación y Verificación:**
+  - `node scripts/check-file-lines.mjs`: **328 archivos auditados, 0 violaciones**.
+  - `npm --prefix apps/web run typecheck`: **0 errores** (código 0).
+  - Verificación visual browser subagent en `http://localhost:3001/auth/register`: confirmado panel único sin fricción con checkbox maestro.
+
+### [2026-10-18 01:50] — Slug Silencioso y Selector Telefónico Internacional
+- **Fecha:** 2026-10-18
+- **Agente:** `IA #2 — Teléfono Internacional & Slug Silencioso`
+- **Alcance (UI/UX Ergonómica & Auditoría de Contratos Backend/BD):**
+  1. `apps/web/src/app/(auth)/auth/register/page.tsx`:
+     - El campo visible de `Slug del espacio` fue **removido de la interfaz**; el slug se genera de forma completamente transparente y determinista en segundo plano a partir del nombre de la organización (`slugifyOrganizationName()`), satisfaciendo el contrato requerido por el backend (`organizationSlug`) sin pedirle esa carga técnica al usuario.
+     - En su lugar se integró un **selector telefónico internacional** compuesto por un selector de país (bandera, código ISO y prefijo telefónico ej: 🇨🇴 +57, 🇲🇽 +52, 🇪🇸 +34, 🇺🇸 +1, etc.) y un campo numérico con validación de al menos 7 dígitos.
+     - El conteo de líneas se mantiene en **315 líneas** (0 violaciones, holgadamente por debajo del límite de 500).
+  2. **Auditoría de Compatibilidad Backend & BD:**
+     - La tabla `users` (Migración `002`) no posee columna `phone_number`.
+     - El endpoint `POST /api/v1/auth/register` recibe el payload extendido sin fallar (ignora de forma tolerante el campo `ownerPhone`), por lo que **el registro funciona 100% sin romper el backend ni la BD**.
+- **Certificación y Verificación:**
+  - `node scripts/check-file-lines.mjs`: **331 archivos auditados, 0 violaciones**.
+  - `npm --prefix apps/web run typecheck`: **0 errores** (código 0).
+  - Verificación visual browser subagent en `http://localhost:3001/auth/register`: confirmado selector telefónico junto a nombre de organización y slug oculto.
+
+### [2026-10-18 02:15] — Optimización Integral de Fluidez y Deriva Lateral del Cerebro (Fondo Dala · Landing Comercial)
+- **Fecha:** 2026-10-18
+- **Agente:** `IA #1 — Landing Comercial (Fondo Dala)`
+- **Alcance (render caliente, arquitectura del compositor y encuadre del hero):**
+  1. **Anclaje del Cerebro (hero):** la etapa inicial deriva a la **zona derecha del viewport** —centrada en ~0,82 W × 0,48 H con escala 0,7— para ocupar el lienzo libre a la derecha del titular editorial; la deriva y la escala se disuelven con el peso del Cerebro durante el morphing. Recorte de seguridad contra el borde derecho (semiancho en unidades de mundo + margen de 14 px) y modo compacto en viewports menores a 1024 px (deriva 0,12 W, escala 0,84).
+  2. **Optimización a fondo del bucle caliente:**
+     - Densidades: 4.800 → **3.000** nodos y 180 → **96** glifos (móvil 2.400 → **1.500** y 110 → **56**).
+     - DPR acotado por **presupuesto de píxeles** (`MAX_CANVAS_PIXELS` ≈ 2,6 M; techo 1,5 / suelo 0,75) en lugar del techo fijo 2.
+     - Rotaciones **in situ con senos/cosenos precalculados por escultura**: se eliminan las funciones trigonométricas por nodo de las tres rotaciones y las asignaciones de `rotate3D`/muestras de voz por fotograma (`sampleVoiceTransmissionInto` escribe en un scratch reutilizado).
+     - Orden por profundidad con **conteo por rodajas** (8 slices, sin `sort()` de miles de elementos por fotograma) y **trazo agrupado en lotes cromáticos** cuantizados (color × 16 niveles de alfa × 2 grosores): de miles de `stroke()` individuales a centenas.
+     - **Gobernador de cadencia:** si el coste de pintura supera ~11 ms sostenidos se pinta en fotogramas alternos (30 fps estables) y se libera al bajar de ~7 ms.
+  3. **Partición modular del compositor** (tope <500): `dala-constellation-render.ts` (416), `-render-state.ts` (112) y `-ambient.ts` (84); retiro de helpers muertos (`rotate3D`/`Vector3D`) tras inlinear las rotaciones en el compositor.
+- **Archivos Modificados:** `DalaConstellationBackdrop.tsx` (reescrito, 480 → 266), `dala-constellation-render.ts` / `-render-state.ts` / `-ambient.ts` (nuevos), `dala-constellation-geometry.ts` (272) y `-sculptures.ts` (473); skill `estilo-landing-comercial-auros-claro` sincronizada (7 módulos, densidades nuevas, gobernador y anclaje del hero).
+- **Certificación y Verificación:**
+  - `node scripts/check-file-lines.mjs`: **331 archivos auditados, 0 violaciones** (piezas del fondo Dala: 473/416/272/266/142/112/84; máximo global: `mfa-and-webauthn.use-case.ts` con 495 líneas).
+  - `npm --prefix apps/web run typecheck`: **0 errores** (código 0).
+  - Smoke HTTP `http://localhost:3001/`: **200** · 126.773 bytes · canvas `landing-constellation-backdrop` presente.
+  - Encuadre verificado por cálculo en 1688×801 / 1280×720 / 1024×768 / 390×844 (sin desbordes; margen derecho ≥ 18 px).
+
+### [2026-10-18 03:10] — Red de Nodos y Conectores en Reemplazo de la Aurora Acústica (Fondo Dala · Landing Comercial)
+- **Fecha:** 2026-10-18
+- **Agente:** `IA #1 — Landing Comercial (Fondo Dala)`
+- **Alcance (etapa media del morphing y su composición):**
+  1. **Retiro de la aurora acústica:** se eliminan la espina de osciloscopio con cortinas boreales y todo el muestreo de voz (`sampleVoiceTransmissionInto`, `VoiceTransmissionSample`, `sampleAuroraPoint`, campos `a*`/`sNorm`/`stream`/`raySeed`/`freqSeed`), sin residuos en el código del fondo (grep verificado).
+  2. **Nueva Red de nodos y conectores** (`dala-constellation-network-map.ts`, nuevo): 5 anillos concéntricos de 41 concentradores (núcleo ámbar → halo teal) unidos por 65 conectores — radios del núcleo, cuerdas de anillo, radiales entre anillos y diagonales de cruce — dibujados como cadenas de triángulos proporcionales a su longitud (paso 10 unidades), más polvo de datos envolvente. Reparto por terminal: 328 (concentradores) + 1.067 (conectores) de figura y 1.605/105 de polvo para 3.000/1.500 nodos (la red completa entra en ambos terminales).
+  3. **Compositor:** rotación Y→X de la malla con oscilación propia y paralaje de puntero, pulso de concentradores (alfa, tamaño +34 % y trazo grueso) y realce de cadenas en el bucle por lotes; la etapa no usa trigonometría por nodo (se retira el giro fino por partícula). Rangos renombrados a `BRAIN_TO_NETWORK_RANGE` / `NETWORK_TO_WORLD_RANGE` conservando las ventanas [0.12–0.42] y [0.58–0.88].
+- **Archivos Modificados:** `dala-constellation-network-map.ts` (nuevo, 249), `dala-constellation-sculptures.ts` (473 → 397), `dala-constellation-render.ts` (416 → 403), `dala-constellation-render-state.ts` (112 → 107), `dala-constellation-geometry.ts` (272 → 269) y `DalaConstellationBackdrop.tsx` (prosa; 266); skill `estilo-landing-comercial-auros-claro` sincronizada (8 módulos, etapa 2 = Red de nodos 🕸️).
+- **Certificación y Verificación:**
+  - `node scripts/check-file-lines.mjs`: **337 archivos auditados, 0 violaciones** (piezas del fondo Dala: 397/403/269/266/142/107/84/249; máximo global: `mfa-and-webauthn.use-case.ts` con 495 líneas).
+  - `npm --prefix apps/web run typecheck`: **0 errores** (código 0).
+  - Smoke HTTP `http://localhost:3001/`: **200** · 126.774 bytes · canvas `landing-constellation-backdrop` presente.
+  - Encuadre verificado por cálculo en 1688×801 / 1280×720 / 1024×768 (red completa dentro del viewport; polvo con margen positivo en ambos terminales de densidad 3.000/1.500).
+
+### [2026-10-18 03:25] — Limpieza de Copy Visible del Pie de la Landing (Badge de Compatibilidad y Menciones «B2B»)
+- **Fecha:** 2026-10-18
+- **Agente:** `IA #1 — Landing Comercial (Fondo Dala)`
+- **Alcance (textos visibles, a solicitud del usuario):**
+  1. **Badge retirado:** se elimina del pie el distintivo de compatibilidad «Todos los sistemas operativos» (pulso esmeralda incluido).
+  2. **Menciones «B2B» visibles eliminadas:** enlace legal del pie «Términos B2B» → «Términos del servicio» y línea inferior «Plataforma B2B · Voz en tiempo real» → «Plataforma de voz en tiempo real». Se conservan intactos el contrato interno `TOS_B2B` (código legal en base de datos/API), la URL `/legal/tos-b2b` y su documento legal.
+  3. **Comentario interno** de `VortexCrmSimulatorBoard` actualizado («Barra lateral interactiva»); sin cambios funcionales.
+- **Archivos Modificados:** `PublicCommercialChrome.tsx` (249 → 242) y `VortexCrmSimulatorBoard.tsx` (comentario; 483).
+- **Certificación y Verificación:**
+  - Grep del carril landing: 0 coincidencias visibles de «B2B» (solo permanece el href técnico `/legal/tos-b2b`) y 0 de «sistemas operativos».
+  - `node scripts/check-file-lines.mjs`: **336 archivos auditados, 0 violaciones**.
+  - `npm --prefix apps/web run typecheck`: **0 errores**.
+  - Smoke HTTP `http://localhost:3001/`: **200** · canvas presente · HTML sin «B2B» ni badge de compatibilidad.
+
+### [2026-10-18 04:05] — Cierre de la Costura Demo Pública → Gateway de Voz (`OBSERVACION_BACKEND_DEMO_WS`)
+- **Fecha:** 2026-10-18
+- **Agente:** `IA #1 — Costura Demo Pública (a solicitud del usuario; motor de voz real)`
+- **Alcance (cierre del gap documentado en el Buzón; ningún contrato público cambia):**
+  1. **Lector no destructivo del descriptor demo (Módulo 07):** `public-demo-session.reader.ts` (nuevo, 101 líneas) lee `oa:demo:session:<id>` y `oa:demo:token:<t>` con las claves literales del emisor y rechazo en falso si Redis no responde; la puerta valida ANTES de consumir, así que una conexión rechazada no quema el token que el visitante aún puede usar.
+  2. **Integración demo del pool de voz:** `public-demo-voice-support.ts` (nuevo, 361 líneas) aporta (a) la puerta `resolvePublicDemoOpening()` con binding mutuo token↔sesión, prefijo `demo_` y caducidad; (b) el puerto de handshake que consume `oa:demo:token:*` con Lua `GETDEL` (un solo uso) y devuelve la organización sintética `public-demo` (imposible de facturar); (c) el puerto RAG con prompt genérico de 90 s, `onboardingStepsJson: []` y guardarraíl que siempre falla (`MAP_NOT_PUBLISHED`), de modo que el despacho real de herramientas degrada sin tocar la base de datos; (d) `PublicDemoMeteringService`, que anula todo movimiento contable.
+  3. **Borde del socket (`voice-realtime-gateway.main.ts`, 367 → 402):** detecta `demo=true`, resuelve la apertura antes del handshake (rechazo `4001` «La demostración pública expiró o ya fue utilizada.»), adopta los puertos demo solo tras aprobar la puerta y arma el tope duro de 90 s con `registry.closeSession(..., 1000, aviso)` (temporizador desligado del event loop y limpiado al cerrar el socket).
+  4. **Host del WebSocket inyectado:** nueva variable `PUBLIC_VOICE_WS_URL` (opcional, `webSocketUrlSchema`) en `env.zod-schema.ts` (326 → 398), cableada por `module-autoloader.ts` (341) a `websocketBaseUrl` de `registerPublicCommercialModule`: la demo entrega el gateway real (`ws://127.0.0.1:3002/ws/v1/realtime`) en lugar del dominio de ejemplo; documentada en `.env` y `.env.example`.
+- **Prueba de punta a punta ejecutada (motor de voz real; API 3000 y pool de voz 3002 en marcha):**
+  - `POST http://localhost:3001/api/v1/public/demo-session` (proxy Next real; `turnstile-test-passed` en desarrollo) → **201** con `websocketUrl` local y `demo=true`.
+  - Socket: `session.ready` en **1,9 s** con `activeProvider: GEMINI` (el primario QWEN no completó y el failover automático entró en acción) → silencio PCM16 sostenido → `session.closing` con `closeCode: 1000` y cierre del socket a los ~90 s con el aviso público al navegador.
+  - Negativo: token fabricado → cierre inmediato **4001**; log del pool: `Sesion de voz abierta … organizationId: "public-demo"` y `Sesion de voz cerrada` (liquidación anulada, `bargeInCount: 0`).
+  - Cuota demo (`oa:demo:ip:*`) reseteada tras las pruebas para que el visitante estrene en cero.
+- **Archivos Creados/Modificados:** `public-demo-session.reader.ts` (nuevo), `public-demo-voice-support.ts` (nuevo), `voice-realtime-gateway.main.ts` (402), `module-autoloader.ts` (341), `env.zod-schema.ts` (398) y `.env` / `.env.example`.
+- **Certificación y Verificación:**
+  - `node scripts/check-file-lines.mjs`: **338 archivos auditados, 0 violaciones** (máximo global: `mfa-and-webauthn.use-case.ts` con 495 líneas).
+  - `npm run typecheck` (raíz): 0 errores propios (único error global: `tests/unit/registration-with-phone.test.ts` del carril de identidad, ajeno a este cambio).
+  - Observación `OBSERVACION_BACKEND_DEMO_WS` del Buzón **CERRADA** de extremo a extremo.
