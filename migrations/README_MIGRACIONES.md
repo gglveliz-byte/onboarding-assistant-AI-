@@ -14,6 +14,10 @@ Todos los archivos cumplen estrictamente la skill `reglas-globales-construccion-
 | **004** | `004_whop_billing_voice_sessions_and_audit_tables.sql` | Matriz Whop, Overrides, Suscripciones, Voz, Libro Mayor y Auditoría | `pricing_plans_config`, `organization_pricing_overrides`, `whop_subscriptions`, `voice_sessions`, `usage_ledger`, `action_events`, `audit_logs` |
 | **005** | `005_row_level_security_policies_and_indexes.sql` | Activación `FORCE ROW LEVEL SECURITY` y candados `append-only` | 18 Políticas RLS multi-tenant + Triggers de inmutabilidad en `usage_ledger` y `audit_logs` |
 | **006** | `006_seed_pricing_matrix_and_legal_documents.sql` | Semillas idempotentes de planes Whop ($5-$50+) y documentos legales v1.0.0 | Planes `PAYG`, `PLAN_5`, `PLAN_10`, `PLAN_30`, `PLAN_50`, `CUSTOM_ENTERPRISE` + 5 documentos legales |
+| **007** | `007_application_role_without_bypassrls_and_identity_rls.sql` | Creación de rol oa_app sin BYPASSRLS y RLS en tablas de identidad | Rol `oa_app`, políticas RLS en `users`, `auth_sessions`, `legal_documents` |
+| **008** | `008_foreign_key_indexes_and_schema_hardening.sql` | Índices en claves foráneas y endurecimiento de restricciones | Índices FK y restricciones `ON DELETE RESTRICT` |
+| **009** | `009_identity_resolution_before_tenant_context.sql` | Resolución segura de identidad previa al contexto de inquilino | Políticas de lectura de usuario para login B2B |
+| **010** | `010_user_and_org_phone_number.sql` | Soporte de teléfono internacional para usuarios y organizaciones | Columnas `phone_number` en `users` y `organizations` |
 | **CLI** | `../src/shared/infrastructure/database/migrator.ts` | Orquestador TypeScript con verificacion de integridad `SHA-256` | Tabla de control `schema_migrations` |
 
 > **Ejecutor unico:** el orquestador vive en `src/shared/infrastructure/database/migrator.ts` y resuelve por si mismo esta carpeta `migrations/` de la raiz del repositorio. No existe ninguna copia duplicada del migrador dentro de `migrations/` (Regla 1: cero duplicacion de utilidades).

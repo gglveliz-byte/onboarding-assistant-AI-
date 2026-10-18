@@ -98,7 +98,7 @@ function FooterLinkColumn(props: {
           href={link.href}
           className={
             link.emphasized === true
-              ? 'inline-flex min-h-[30px] items-center justify-center rounded-[6px] border border-[#C5E8E1] bg-[linear-gradient(135deg,#43E7DB_0%,#8052FF_100%)] px-3 py-1 text-[11px] font-semibold text-[#062D2A] transition-all hover:brightness-105'
+              ? 'inline-flex min-h-[30px] w-fit items-center justify-center rounded-[6px] border border-[#C5E8E1] bg-[linear-gradient(135deg,#43E7DB_0%,#8052FF_100%)] px-3 py-1 text-[11px] font-semibold text-[#062D2A] transition-all hover:brightness-105'
               : 'w-fit text-[13px] font-medium tracking-[-0.01em] text-[#245954] transition-colors hover:text-[#062D2A]'
           }
         >
@@ -217,8 +217,8 @@ export function PublicCommercialHeader(): ReactElement {
 export function PublicCommercialFooter(): ReactElement {
   return (
     <footer className="relative z-10 border-t border-[#C5E8E1] bg-[#EAF7F4]">
-      <div className="mx-auto w-full max-w-[1140px] px-4 py-10 sm:px-6 lg:px-8">
-        <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mx-auto w-full max-w-[1140px] px-4 py-5 sm:py-10 sm:px-6 lg:px-8">
+        <div className="grid gap-4 sm:gap-8 sm:grid-cols-2 lg:grid-cols-4">
           <div className="flex flex-col gap-2.5">
             <a href="/" className="flex items-center gap-2 text-[#062D2A]">
               <Logo size={28} textTheme="dark" variant="icon" href={null} />

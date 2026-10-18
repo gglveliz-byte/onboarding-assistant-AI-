@@ -55,6 +55,8 @@ export interface PublicUser {
   readonly mfaWebauthnEnabled: boolean;
   /** Momento del ultimo acceso, para los paneles de seguridad del propio usuario. */
   readonly lastLoginAt: string | null;
+  /** Telefono de contacto del usuario. */
+  readonly phoneNumber?: string | null;
   /** Momento de creacion de la cuenta. */
   readonly createdAt: string;
 }
@@ -67,6 +69,8 @@ export interface PublicOrganization {
   readonly name: string;
   /** Identificador legible usado en direcciones. */
   readonly slug: string;
+  /** Telefono de contacto de la organizacion. */
+  readonly phoneNumber?: string | null;
 }
 
 /**
@@ -84,6 +88,7 @@ export function toPublicUser(user: UserEntity): PublicUser {
     mfaTotpEnabled: user.mfaTotpEnabled,
     mfaWebauthnEnabled: user.mfaWebauthnEnabled,
     lastLoginAt: user.lastLoginAt ? new Date(user.lastLoginAt).toISOString() : null,
+    phoneNumber: user.phoneNumber ?? null,
     createdAt: new Date(user.createdAt).toISOString(),
   };
 }
@@ -106,5 +111,6 @@ export function toPublicOrganization(organization: OrganizationEntity | null): P
     id: organization.id,
     name: organization.name,
     slug: organization.slug,
+    phoneNumber: organization.phoneNumber ?? null,
   };
 }

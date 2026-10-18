@@ -115,6 +115,31 @@ export interface PublicPricingDependencies {
   readonly rlsPool: RlsDatabasePool;
 }
 
+interface RawDbTierShape {
+  readonly minMinutes?: unknown;
+  readonly discountPercentage?: unknown;
+  readonly min_overage_minutes?: unknown;
+  readonly discount_pct?: unknown;
+}
+
+/** Normaliza los tramos de descuento por volumen leídos desde PostgreSQL (soportando tanto snake_case como camelCase). */
+function normalizeVolumeDiscountTiers(rawTiers: unknown): PublicVolumeDiscountTier[] {
+  if (!Array.isArray(rawTiers)) {
+    return [];
+  }
+  return rawTiers.map((raw): PublicVolumeDiscountTier => {
+    const rawObj = (typeof raw === 'object' && raw !== null ? raw : {}) as RawDbTierShape;
+    const rawMin = rawObj.minMinutes ?? rawObj.min_overage_minutes ?? 0;
+    const rawPct = rawObj.discountPercentage ?? rawObj.discount_pct ?? 0;
+    const minMinutes = Math.round(typeof rawMin === 'number' ? rawMin : Number(rawMin));
+    const discountPercentage = Math.round(typeof rawPct === 'number' ? rawPct : Number(rawPct));
+    return {
+      minMinutes: Number.isFinite(minMinutes) ? Math.max(0, minMinutes) : 0,
+      discountPercentage: Number.isFinite(discountPercentage) ? Math.min(100, Math.max(0, discountPercentage)) : 0,
+    };
+  });
+}
+
 /** Caso de uso: Obtener la matriz pública de precios para la Landing Comercial. */
 export class GetPublicPricingMatrixUseCase {
   public constructor(private readonly deps: PublicPricingDependencies) {}
@@ -153,9 +178,7 @@ export class GetPublicPricingMatrixUseCase {
           baseOverageRatePerMinuteUsd: row.base_overage_rate_per_minute_usd,
           overageAllowed: row.overage_allowed,
           volumeDiscountEligible: row.volume_discount_eligible,
-          volumeDiscountTiers: Array.isArray(row.volume_discount_tiers_json)
-            ? (row.volume_discount_tiers_json as PublicVolumeDiscountTier[])
-            : [],
+          volumeDiscountTiers: normalizeVolumeDiscountTiers(row.volume_discount_tiers_json),
           isActive: row.is_active,
         }));
       });

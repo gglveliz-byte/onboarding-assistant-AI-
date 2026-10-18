@@ -123,7 +123,7 @@ function describeRoles(connectionString: string | undefined): string {
  * @returns Hallazgos expuestos por el sistema en el estado contaminado.
  */
 function verifyContaminatedEnvironment(ownerUrlFromFile: string): ReturnType<typeof describeConnectionIdentity> {
-  process.env['NODE_ENV'] = 'development';
+  (process.env as Record<string, string | undefined>)['NODE_ENV'] = 'development';
   process.env['DATABASE_URL'] = ownerUrlFromFile;
 
   const loadedKeys = loadDotEnvFile();
@@ -190,7 +190,7 @@ function verifyContaminatedEnvironment(ownerUrlFromFile: string): ReturnType<typ
  */
 function verifyCleanEnvironment(applicationUrlFromFile: string): void {
   delete process.env['DATABASE_URL'];
-  process.env['NODE_ENV'] = 'development';
+  (process.env as Record<string, string | undefined>)['NODE_ENV'] = 'development';
 
   loadDotEnvFile();
   resetEnvConfigCache();
@@ -233,7 +233,7 @@ function verifyCleanEnvironment(applicationUrlFromFile: string): void {
  */
 function verifyProductionRefusesToStart(ownerUrlFromFile: string): void {
   process.env['DATABASE_URL'] = ownerUrlFromFile;
-  process.env['NODE_ENV'] = 'production';
+  (process.env as Record<string, string | undefined>)['NODE_ENV'] = 'production';
   loadDotEnvFile();
 
   const parsed = refinedEnvironmentSchema.safeParse(process.env);
@@ -261,7 +261,7 @@ function verifyProductionRefusesToStart(ownerUrlFromFile: string): void {
   );
   passedAssertions += 1;
 
-  process.env['NODE_ENV'] = 'development';
+  (process.env as Record<string, string | undefined>)['NODE_ENV'] = 'development';
 }
 
 /** Restaura el entorno del proceso tal como estaba antes de la prueba. */

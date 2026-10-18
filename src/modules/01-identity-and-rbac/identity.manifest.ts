@@ -151,6 +151,7 @@ export function registerIdentityModule(
         password: String(body['ownerPassword'] ?? body['password'] ?? ''),
         organizationName: String(body['organizationName'] ?? ''),
         organizationSlug: String(body['organizationSlug'] ?? ''),
+        phone: String(body['ownerPhone'] ?? body['phoneNumber'] ?? body['phone'] ?? '').trim(),
         ipAddress: req.clientIp,
         userAgent,
       });

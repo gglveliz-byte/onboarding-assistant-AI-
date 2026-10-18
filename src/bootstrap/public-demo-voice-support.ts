@@ -6,17 +6,20 @@
  *   voz no tenia forma de autorizar las sesiones efimeras de la demostracion publica porque el
  *   token emitido por el Modulo 07 (`oa:demo:token:*`) no era consumido por nadie y el handshake
  *   exigia la identidad completa del SDK (nonce + proyecto + organizacion + sesion persistida).
- *   Este soporte aporta tres piezas aisladas del camino normal —un puerto de handshake que consume
- *   el token demo, un puerto RAG con prompt generico de 90 segundos sin elementos accionables y un
- *   servicio de facturacion anulado— mas la puerta que valida la apertura antes de conectar el
- *   motor. El camino SDK normal no cambia en absoluto: conserva sus puertos reales.
+ *   Este soporte aporta las piezas aisladas del camino normal —un puerto de handshake que consume
+ *   el token demo, un puerto RAG con el mapa funcional sintetico de la demostracion (los elementos
+ *   reales del CRM simulado que el asistente opera: abrir el formulario, capturar el trato,
+ *   guardarlo, facturacion y validacion CFDI) y un servicio de facturacion anulado— mas la puerta
+ *   que valida la apertura y el despachador demo, que evita toda escritura en PostgreSQL. El camino
+ *   SDK normal no cambia en absoluto: conserva sus puertos reales.
  *
  * @resumen_contenido
- *   - Constantes `PUBLIC_DEMO_*`: identidad sintetica, prompt generico y aviso de tiempo agotado.
+ *   - Constantes `PUBLIC_DEMO_*`: identidad sintetica y aviso de tiempo agotado.
  *   - Interfaces `PublicDemoOpening` y `PublicDemoVoiceIntegration`.
  *   - Funcion `createPublicDemoVoiceIntegration()`: puertos demo y puerta de validacion.
  *   - Funciones `resolvePublicDemoOpening()`, `createPublicDemoHandshakePort()` y
- *     `createPublicDemoRagPort()`.
+ *     `createPublicDemoRagPort()`: el mapa funcional operativo vive en
+ *     `public-demo-functional-map.ts` y el despacho anulado en `public-demo-tool-dispatch.ts`.
  *   - Clase `PublicDemoMeteringService`: facturacion anulada para sesiones anonimas.
  *
  * @dependencias_internas
@@ -24,6 +27,8 @@
  *     (`../modules/07-public-commercial-and-sandbox/infrastructure/public-demo-session.reader`).
  *   - `VoiceSessionMeteringService` y contratos (`../modules/05-voice-realtime-gateway/application/*`).
  *   - Puertos del nucleo (`../shared/ports/core-modules.ports`).
+ *   - Mapa funcional sintetico de la demo (`./public-demo-functional-map`).
+ *   - Despachador de herramientas demo (`./public-demo-tool-dispatch`).
  *
  * @dependencias_externas
  *   - Ninguna.
@@ -31,12 +36,12 @@
  * @tablas_bd_o_redis
  *   - Redis: `oa:demo:token:<token>` (Consumo atomico `GETDEL` al abrir el socket) y
  *     `oa:demo:session:<id>` (Lectura no destructiva de validacion en la puerta).
- *   - PostgreSQL: ninguna (la demostracion no factura, ni persiste sesiones, ni opera interfaces).
+ *   - PostgreSQL: ninguna (la demostracion no factura ni persiste sesiones, y su despachador de
+ *     herramientas escribe sobre un repositorio anulado en memoria).
  */
 
 import type { RedisClusterClient } from '../shared/infrastructure/redis/redis-cluster.client';
 import type {
-  ActiveMapMetadata,
   IApiKeyAndHandshakePort,
   IVisualRagAndPromptPort,
   PortFailure,
@@ -56,6 +61,14 @@ import {
   readPublicDemoToken,
   type PublicDemoSessionRecord,
 } from '../modules/07-public-commercial-and-sandbox/infrastructure/public-demo-session.reader';
+import {
+  PUBLIC_DEMO_ALLOWED_ACTIONS,
+  PUBLIC_DEMO_MAP_METADATA,
+  PUBLIC_DEMO_STEP_INSTRUCTION,
+  PUBLIC_DEMO_SYSTEM_PROMPT,
+  validatePublicDemoElementAction,
+} from './public-demo-functional-map';
+import { createPublicDemoToolDispatchUseCase } from './public-demo-tool-dispatch';
 import type { BootstrappedSystem } from './module-autoloader';
 
 /** Proyecto sintetico con el que se abren las sesiones de la demostracion publica. */
@@ -81,32 +94,6 @@ const DEMO_MAX_MAX_SECONDS = 120;
 
 /** Prefijo de sesion valido: los identificadores de demostracion siempre nacen con el. */
 const DEMO_SESSION_ID_PREFIX = 'demo_';
-
-/**
- * Prompt generico de la demostracion publica.
- * Deliberadamente sin mapa funcional: la visita anonima no tiene proyecto real, de modo que el
- * asistente conversa, descubre el objetivo del visitante y cierra invitando a crear una cuenta, sin
- * intentar operar una interfaz que no existe.
- */
-const PUBLIC_DEMO_SYSTEM_PROMPT = [
-  'Eres el asistente de voz de Onboarding Assistant en una demostración pública de 90 segundos.',
-  'Habla en español neutro, con calidez y frases breves: máximo dos oraciones por turno.',
-  'Preséntate, pregunta el nombre de quien te habla y descubre qué quiere lograr con un asistente',
-  'que guía a los usuarios dentro de su producto, opera la interfaz por ellos y reduce el soporte.',
-  'No intentes ejecutar acciones sobre ninguna pantalla: esta demostración no tiene interfaz conectada.',
-  'Si te piden operar algo, explica amablemente que la demostración en vivo es de conversación y que',
-  'la operación de interfaz se activa al crear una cuenta. Cierra invitando a registrarse.',
-].join(' ');
-
-/** Metadatos simbolicos del mapa de la demostracion: no carga mapas reales ni persiste nada. */
-const PUBLIC_DEMO_MAP_METADATA: ActiveMapMetadata = {
-  functionalMapId: 'public-demo-functional-map',
-  versionNumber: 1,
-  canonicalSha256: 'checksum-simbolico-de-demostracion-publica',
-  routes: ['/'],
-  totalElementsCount: 0,
-  publishedAtIso: '2026-01-01T00:00:00.000Z',
-};
 
 /** Datos de apertura resueltos para una sesion de demostracion publica valida. */
 export interface PublicDemoOpening {
@@ -139,12 +126,15 @@ export function createPublicDemoVoiceIntegration(
   system: BootstrappedSystem,
   basePorts: VoiceWebSocketPorts
 ): PublicDemoVoiceIntegration {
+  const demoRagPort = createPublicDemoRagPort();
   const demoPorts: VoiceWebSocketPorts = {
     ...basePorts,
-    // El orquestador, el pool y el despachador de herramientas se reutilizan tal cual: el despacho
-    // real degrada en falso educado porque el mapa de la demo no declara elementos accionables.
+    // El orquestador y el pool se reutilizan tal cual; el mapa funcional y el despachador SI se
+    // sustituyen: la demo opera unicamente los elementos sinteticos de su CRM y su repositorio
+    // anulado jamas escribe en PostgreSQL (visita anonima sin trazabilidad contable).
     handshakePort: createPublicDemoHandshakePort(system.redisClient),
-    ragPort: createPublicDemoRagPort(),
+    ragPort: demoRagPort,
+    dispatchToolUseCase: createPublicDemoToolDispatchUseCase(system, demoRagPort),
     meteringService: new PublicDemoMeteringService({
       billingPort: createLazyBillingPort(system.container),
       meteringStore: createVoiceSessionMeteringStore(system.databasePool),
@@ -269,9 +259,10 @@ export function createPublicDemoHandshakePort(redisClient: RedisClusterClient): 
 }
 
 /**
- * Puerto RAG del camino demo: prompt generico, sin pasos de onboarding y sin elementos accionables.
- * La validacion de acciones siempre falla en falso: si el motor propone una herramienta, el
- * despachador real la rechaza en la barrera de guardarrailes sin tocar la base de datos.
+ * Puerto RAG del camino demo: prompt operativo, mapa funcional sintetico y barrera de seguridad.
+ * A diferencia del mapa vacio original, la demo SI declara elementos accionables (los del CRM
+ * simulado de la landing) y la barrera autoriza exactamente esos elementos con la accion que cada
+ * uno admite. El despachador demo que consume este puerto jamas escribe en PostgreSQL.
  *
  * @returns Puerto RAG con la firma de la interfaz del nucleo.
  */
@@ -281,7 +272,7 @@ export function createPublicDemoRagPort(): IVisualRagAndPromptPort {
       return {
         ok: true as const,
         systemPrompt: PUBLIC_DEMO_SYSTEM_PROMPT,
-        promptVersionNumber: 1,
+        promptVersionNumber: 2,
         onboardingStepsJson: [],
         primaryVoiceModel: 'GEMINI',
         fallbackVoiceModel: 'QWEN',
@@ -294,18 +285,19 @@ export function createPublicDemoRagPort(): IVisualRagAndPromptPort {
         context: {
           routePath,
           stepNumber,
-          stepInstruction: 'Demostración pública: conversa, descubre el objetivo del visitante y cierra invitando a crear una cuenta.',
-          allowedActions: [],
+          stepInstruction: PUBLIC_DEMO_STEP_INSTRUCTION,
+          allowedActions: PUBLIC_DEMO_ALLOWED_ACTIONS,
         },
       };
     },
-    async validateElementActionGuardrail() {
-      return {
-        ok: false as const,
-        code: 'MAP_NOT_PUBLISHED' as const,
-        reason: 'La demostración pública no incluye acciones sobre interfaces.',
-        retryable: false,
-      };
+    async validateElementActionGuardrail(
+      _projectId: string,
+      _functionalMapId: string,
+      toolName: 'click_element' | 'type_text',
+      targetElementKey: string,
+      routePath: string
+    ) {
+      return validatePublicDemoElementAction(toolName, targetElementKey, routePath);
     },
   };
 }

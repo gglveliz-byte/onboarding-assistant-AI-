@@ -184,6 +184,7 @@ export interface OrganizationEntity {
   readonly suspendedReason?: string | null;
   readonly suspendedAt?: Date | null;
   readonly suspendedByUserId?: string | null;
+  readonly phoneNumber?: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -195,6 +196,7 @@ export interface UserEntity {
   readonly id: string;
   readonly email: string;
   readonly fullName: string;
+  readonly phoneNumber?: string | null;
   readonly passwordHash: string | null;
   readonly tokenVersion: number;
   readonly isPlatformSuperadmin: boolean;

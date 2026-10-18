@@ -1,0 +1,174 @@
+/*
+ * @archivo apps/web/src/app/globals.css
+ * @modulo apps/web/src/app (hoja de estilos raiz del workspace web)
+ * @proposito
+ *   Integra Tailwind CSS v4 con la hoja de tokens Auros Light del carril comercial y fija las
+ *   bases tipograficas y de color compartidas por todas las vistas del producto.
+ * @resumen_contenido
+ *   - Importacion de Tailwind y de `../styles/landing-auros-light.css` (tokens del sistema visual).
+ *   - Bloque `@theme` con la paleta Auros Light, la tipografia Matter y los radios 12px/6px.
+ *   - Reglas base de `html` (suavizado tipografico, tamaño base compacto) y `body` (lienzo y tinta).
+ * @dependencias_internas
+ *   - `apps/web/src/styles/landing-auros-light.css` (hoja del carril Auros Light, Subagente 1.3).
+ * @dependencias_externas
+ *   - Tailwind CSS v4 (resuelto por PostCSS en la compilacion de Next.js).
+ * @tablas_bd_o_redis
+ *   - Ninguna (capa de presentacion: no accede a datos).
+ */
+
+@import "tailwindcss";
+@import "../styles/landing-auros-light.css";
+
+/* Tokens de diseno congelados del sistema Auros Light (tema claro bioluminiscente). */
+@theme {
+  /* Capas de agua clara: superficies sin sombra. */
+  --color-liquid-abyss: #f2fbf9;
+  --color-liquid-deep: #e4f5f2;
+  --color-kelp: #ffffff;
+  --color-liquid-lift: #ddf3ef;
+  --color-slate-deep: #b8e0da;
+  --color-hairline: #c5e8e3;
+
+  /* Tintas minerales: texto con contraste AAA sobre el lienzo claro. */
+  --color-ink: #012624;
+  --color-kelp-ink: #23534f;
+  --color-ash: #567a77;
+
+  /* Acento lavanda-fosforo: reservado a cifras clave y estados activos. */
+  --color-orchid: #581585;
+  --color-orchid-surface: #f9e8ff;
+
+  /* Tipografia mecanica y radios cerrados compactos del sistema. */
+  --font-matter: 'Matter', 'Inter', 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+  --radius-card: 12px;
+  --radius-button: 6px;
+}
+
+:root {
+  --radius-card: 12px;
+  --radius-button: 6px;
+}
+
+/* Suavizado tipografico, desplazamiento fluido y escala base compacta y nítida. */
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-size: 14px;
+}
+
+/* Lienzo claro, escala compacta y tinta abisal por defecto en todo el documento. */
+body {
+  margin: 0;
+  background-color: #f2fbf9;
+  color: #012624;
+  font-family: var(--font-matter);
+  font-size: 13px;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+}
+
+/* === Tipografía Editorial y Cursiva para la Landing === */
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,400;1,600;1,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
+.font-display {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+}
+
+.font-script {
+  font-family: 'Caveat', cursive, sans-serif;
+}
+
+.font-sans-editorial {
+  font-family: 'Plus Jakarta Sans', var(--font-matter), sans-serif;
+}
+
+/* Fondo radial sutil con halo ambiental respirante */
+.radial-bg {
+  background: radial-gradient(circle at 72% 50%, rgba(206, 244, 237, 0.45) 0%, rgba(225, 247, 243, 0.25) 35%, transparent 68%),
+              radial-gradient(circle at 15% 15%, rgba(235, 252, 248, 0.6) 0%, transparent 40%),
+              linear-gradient(135deg, #f4fbf8 0%, #edf7f4 50%, #eaf5f2 100%);
+}
+
+/* Animación de ondas concéntricas para el visualizador del asistente */
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.92);
+    opacity: 0.65;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 0.3;
+  }
+  100% {
+    transform: scale(0.92);
+    opacity: 0.65;
+  }
+}
+
+.pulse-ring-slow {
+  animation: pulse-ring 6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.pulse-ring-fast {
+  animation: pulse-ring 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Animación de pulso ecualizador de las barras de frecuencia de voz */
+@keyframes barPulse {
+  0%, 100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.wave-bar {
+  transform-origin: center;
+  animation: barPulse 1.8s ease-in-out infinite;
+}
+
+.wave-bar-1 { animation-delay: 0.0s; }
+.wave-bar-2 { animation-delay: 0.25s; }
+.wave-bar-3 { animation-delay: 0.4s; }
+.wave-bar-4 { animation-delay: 0.15s; }
+.wave-bar-5 { animation-delay: 0.3s; }
+
+/* Animación de cursor flotante de IA */
+@keyframes cursor-float {
+  0%, 100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(6px, -4px);
+  }
+}
+
+.animate-cursor-ai {
+  animation: cursor-float 3s ease-in-out infinite;
+}
+
+/* Animación de barras de habla de usuario */
+@keyframes wave-bounce {
+  0%, 100% {
+    height: 6px;
+  }
+  50% {
+    height: 20px;
+  }
+}
+
+.wave-bounce-1 { animation: wave-bounce 1.1s ease-in-out infinite; }
+.wave-bounce-2 { animation: wave-bounce 1.4s ease-in-out infinite 0.2s; }
+.wave-bounce-3 { animation: wave-bounce 0.9s ease-in-out infinite 0.4s; }
+.wave-bounce-4 { animation: wave-bounce 1.3s ease-in-out infinite 0.1s; }
+.wave-bounce-5 { animation: wave-bounce 1.2s ease-in-out infinite 0.3s; }
+
+/* Sombra de ventana de vidrio */
+.shadow-glass {
+  box-shadow: 0 20px 45px -15px rgba(10, 37, 44, 0.08), 0 0 0 1px rgba(10, 37, 44, 0.05);
+}
+
+

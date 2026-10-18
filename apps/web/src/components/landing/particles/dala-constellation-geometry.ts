@@ -166,6 +166,12 @@ export function smootherstep(edge0: number, edge1: number, x: number): number {
   return t * t * t * (t * (t * 6 - 15) + 10);
 }
 
+/** Suavizado cúbico Hermite — mesetas ~40% más cortas que quintic, respuesta más inmediata. */
+export function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
 /**
  * Triángulo proyectado en pantalla con lote cromático cuantizado: `colorId` indexa la tabla de
  * colores del estado del compositor, `alphaLevel` cubre 0..15 niveles y `widthId` 0/1 selecciona
@@ -245,10 +251,10 @@ export const MIN_DEVICE_PIXEL_RATIO = 0.75;
 export const PERSPECTIVE_FOV = 780;
 /** Tiempo congelado (segundos) del fotograma único cuando el usuario reduce el movimiento. */
 export const STATIC_MOTION_TIME = 2.6;
-/** Rango de transición Cerebro → Red de nodos sobre el progreso de scroll (0..1). */
-export const BRAIN_TO_NETWORK_RANGE: readonly [number, number] = [0.12, 0.42];
-/** Rango de transición Red de nodos → Planeta Tierra sobre el progreso de scroll (0..1). */
-export const NETWORK_TO_WORLD_RANGE: readonly [number, number] = [0.58, 0.88];
+/** Rango de transición Cerebro → Red Neuronal viva: inicia de inmediato con el scroll (0.00..0.48). */
+export const BRAIN_TO_NETWORK_RANGE: readonly [number, number] = [0.00, 0.48];
+/** Rango de transición Red Neuronal → Planeta Tierra: solapado para flujo continuo (0.42..0.95). */
+export const NETWORK_TO_WORLD_RANGE: readonly [number, number] = [0.42, 0.95];
 
 /** Transformación de pantalla de una etapa: deriva relativa y escala uniforme de la escultura. */
 export interface StageScreenTransform {
@@ -263,7 +269,8 @@ export interface StageScreenTransform {
 /** El Cerebro inicial deriva a la zona derecha del hero (círculo libre de texto) y se compacta. */
 export const BRAIN_SCREEN_TRANSFORM: StageScreenTransform = { offsetX: 0.315, offsetY: -0.02, scale: 0.7 };
 /** Deriva y escala del Cerebro en viewports angostos (el hero apila el contenido en una columna). */
-export const BRAIN_COMPACT_OFFSET_FACTOR = 0.12;
-export const BRAIN_COMPACT_SCALE = 0.84;
+export const BRAIN_COMPACT_OFFSET_FACTOR = 0.0;
+export const BRAIN_COMPACT_SCALE = 0.46;
+export const BRAIN_COMPACT_OFFSET_Y_FACTOR = -0.16;
 /** Ancho mínimo de viewport para activar la deriva lateral del Cerebro (debajo: recentrado). */
 export const BRAIN_SIDE_SHIFT_MIN_WIDTH = 1024;

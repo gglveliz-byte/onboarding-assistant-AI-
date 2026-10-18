@@ -53,20 +53,20 @@ Cuando necesites dividir un archivo para respetar el límite de 500 líneas, apl
   - Separa cada Caso de Uso en su propio archivo: `create-api-key.use-case.ts`, `rotate-api-key.use-case.ts`, `revoke-api-key.use-case.ts`.
   - Separa las consultas SQL complejas o mapeadores de filas (`RowMappers`) en archivos dedicados: `whop-subscription.queries.ts` y `whop-subscription.mapper.ts`.
   - Separa los validadores de entrada DTO/Zod en `*.schema.ts` y los tipos/interfaces de dominio en `*.types.ts`.
-- **En Frontend (`apps/web/`, `apps/dashboard/`, `apps/superadmin/`):**
+- **En Frontend (workspace único `apps/web/`; landing, auth, docs, legal, dashboard y superadmin viven como grupos de rutas dentro de `apps/web/src/app/`: `(commercial)/`, `(auth)/`, `docs/`, `legal/`, `dashboard/org/[orgSlug]/`, `superadmin/`):**
   - Un archivo de vista o página (`page.tsx`) nunca debe contener la lógica de negocio ni subcomponentes extensos; solo orquesta el layout.
   - Extrae cada bloque visual en subcomponentes propios (`<ElementTaggingModal />`, `<ResponsiveViewportSwitcher />`, `<SelectorCascadePreview />`).
   - Extrae la máquina de estados, llamadas a API y hooks de WebSocket en hooks dedicados (`useRemoteTrainerSession.ts`, `useVoiceRealtimeSocket.ts`).
 
 ### Verificación Ejecutable de Líneas
 
-Después de cada creación o edición de archivos, ejecuta siempre el comando de verificación sobre los archivos tocados:
+Después de cada creación o edición de archivos, ejecuta siempre el auditor oficial del repositorio:
 
 ```bash
-wc -l <lista_de_archivos_creados_o_modificados>
+npm run check:lines
 ```
 
-Si cualquier archivo reporta un número mayor a `500`, divídelo antes de actualizar la documentación o responder al usuario.
+Equivale a `node scripts/check-file-lines.mjs`: recorre todo el código fuente, imprime el conteo por archivo y clasifica su estado (Saludable, Alerta preventiva 381–450, Límite crítico 451–500, Violación >500). **Criterio de aprobación: 0 violaciones.** Si un archivo supera las 500 líneas, divídelo antes de actualizar la documentación o responder al usuario.
 
 ## Regla 3: Estándar Obligatorio de Documentación en Español Dentro de Cada Archivo
 
@@ -159,7 +159,7 @@ Para garantizar un relevo armonioso y sin fricciones entre agentes concurrentes:
    - Si un agente (ej. Carril 1) detecta durante su verificación general que existen errores de compilación (`tsc`), tipado estricto o incompatibilidades en archivos que pertenecen al módulo asignado al otro agente (ej. Carril 2), **no debe modificar esos archivos ajenos**.
    - En su lugar, debe documentar una alerta técnica precisa en el encabezado de `docs/LIVE_ARCHITECTURE_LEDGER.md` (especificando los archivos exactos, el número de errores detectados y la causa probable, ej. `exactOptionalPropertyTypes`).
 2. **Recepción y Subsanación Quirúrgica:**
-   - El agente responsable de ese carril, al iniciar su turno, debe leer obligatoriamente la alerta, priorizar la resolución de raíz de dichos errores sin degradar banderas estrictas de TypeScript (`strict`, `exactOptionalPropertyTypes`, `noImplicitAny`), y verificar `npx tsc --noEmit`.
+   - El agente responsable de ese carril, al iniciar su turno, debe leer obligatoriamente la alerta, priorizar la resolución de raíz de dichos errores sin degradar banderas estrictas de TypeScript (`strict`, `exactOptionalPropertyTypes`, `noImplicitAny`), y verificar `npm run typecheck` (monorepo) más `npm run typecheck:web` (workspace `apps/web`).
 3. **Limpieza Obligatoria del Aviso ("Notice Purge"):**
    - Una vez que los errores hayan sido corregidos y la verificación arroje **0 errores**, el agente que subsanó el problema **TIENE LA OBLIGACIÓN ESTRICTA de eliminar o purgar la alerta del encabezado y de las notas operativas activas del Ledger**.
    - El encabezado del Ledger debe reflejar siempre el estado limpio y actual del repositorio (ej. `0 ERRORES EN TODO EL MONOREPO`), trasladando el registro de la corrección a la bitácora histórica de la Parte en la Sección 5.

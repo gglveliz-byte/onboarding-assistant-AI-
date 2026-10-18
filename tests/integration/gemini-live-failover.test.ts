@@ -65,7 +65,7 @@ async function runGeminiLiveTestSuite(): Promise<void> {
   // ===========================================================================
   // FASE 1: Protocolo BidiGenerateContent y Serializacion de Herramientas
   // ===========================================================================
-  console.log('[1/5] Protocolo BidiGenerateContent (Setup, MediaChunks y ToolCalling)...');
+  console.log('[1/5] Protocolo BidiGenerateContent (Setup, Audio Streaming y ToolCalling)...');
 
   // 1.1 Construccion de setup inicial
   const setupStr = GeminiProtocolMapper.buildSetupMessage(
@@ -82,12 +82,13 @@ async function runGeminiLiveTestSuite(): Promise<void> {
   assert.ok(setupData['tools'][0]['functionDeclarations'].some((f: any) => f['name'] === 'click_element'));
   assert.ok(setupData['tools'][0]['functionDeclarations'].some((f: any) => f['name'] === 'type_text'));
 
-  // 1.2 Serializacion de audio PCM16
+  // 1.2 Serializacion de audio PCM16 (campo vigente `audio` del protocolo)
   const fakePcm = Buffer.alloc(640, 0x12); // 20ms de audio a 16kHz
   const audioMsgStr = GeminiProtocolMapper.buildAudioChunkMessage(fakePcm, 16000);
   const audioMsgObj = JSON.parse(audioMsgStr) as Record<string, any>;
-  assert.equal(audioMsgObj['realtimeInput']['mediaChunks'][0]['mimeType'], 'audio/pcm;rate=16000');
-  assert.equal(audioMsgObj['realtimeInput']['mediaChunks'][0]['data'], fakePcm.toString('base64'));
+  assert.equal(audioMsgObj['realtimeInput']['audio']['mimeType'], 'audio/pcm;rate=16000');
+  assert.equal(audioMsgObj['realtimeInput']['audio']['data'], fakePcm.toString('base64'));
+  assert.equal(audioMsgObj['realtimeInput']['mediaChunks'], undefined);
 
   // 1.3 Parseo de respuesta del servidor con llamada a herramienta
   const rawToolCallMsg = JSON.stringify({

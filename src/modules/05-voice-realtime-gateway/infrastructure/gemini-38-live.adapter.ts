@@ -101,14 +101,10 @@ export class Gemini38LiveStream implements IActiveProviderStream {
 
   public requestBargeIn(): void {
     this.assistantSpeaking = false;
-    // Si la conexion esta activa, se puede enviar una senal o simplemente descartar audio en transito
-    if (this.ws.readyState === WebSocket.OPEN) {
-      // Reinicio del contexto de reproduccion del modelo
-      const realtimeInput = JSON.stringify({
-        realtimeInput: { mediaChunks: [] },
-      });
-      this.ws.send(realtimeInput);
-    }
+    // Gemini interrumpe su propia generacion cuando su VAD detecta voz del usuario en el flujo
+    // `realtimeInput.audio`: el cliente no envia ningun mensaje de interrupcion (la trama heredada
+    // `mediaChunks: []` no surtia efecto alguno). El reinicio local basta para que el proximo audio
+    // del modelo vuelva a anunciarse con `onAssistantSpeechStarted()`.
   }
 
   public async close(status: VoiceSessionStatus): Promise<void> {

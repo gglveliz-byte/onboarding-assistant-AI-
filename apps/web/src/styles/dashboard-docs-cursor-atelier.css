@@ -1,0 +1,302 @@
+/* ============================================================================
+   @archivo apps/web/src/styles/dashboard-docs-cursor-atelier.css
+   @modulo 08. Frontend Compartido — Sistema de Diseño "Cursor Light — Warm Parchment Atelier"
+   @proposito
+     Fuente única de tokens y componentes visuales para el Dashboard del Desarrollador,
+     el Dashboard de SuperAdmin, los paneles de Auth/CRM y la Landing de Documentación
+     & Sandbox: estética de atelier en pergamino cálido con papel sobre papel, radios
+     de 4px (8px solo en modales), cero blanco puro y cero negro puro.
+   @resumen_contenido
+     - Bloque de tokens bajo `[data-portal="workspace-atelier"]`: paleta cromática,
+       superficies semánticas, familias tipográficas con fallbacks, escala tipográfica
+       con trackings, espaciados base 4px, radios estrictos y sombras cálidas.
+     - `::selection` con azul de sistema sobre tinta cálida.
+     - Superficies: shell, tarjeta, línea capilar, divisor y área con scroll.
+     - Tipografía editorial: eyebrow, encabezados peso 400, prosa EB Garamond y mono tnum.
+     - Formularios: campos, etiquetas, inputs, selects, ayudas, errores y checkbox.
+     - Botones: base accesible y variantes primary/secondary/amber/forest/crimson/ghost/full.
+     - Marco de ventana macOS, caja de terminal copiable y etiquetas mono de metadatos.
+     - Modales (único radio de 8px), enlaces ember y badge de acento.
+   @dependencias_internas
+     - Consumido por `apps/web/src/components/atelier-primitives/AtelierUiPrimitives.tsx`
+       y por las vistas de los subagentes 2.2 a 2.9 (Auth, Legal, Docs, Sandbox y SDK Web).
+   @notas
+     - CSS puro y autocontenido: sin directivas Tailwind, sin fuentes externas y sin
+       declaraciones forzadas con prioridad máxima.
+     - Ember queda prohibido como fondo de botón o superficie grande (solo acento puntual).
+     - Sombras reservadas a marcos de ventana, visores remotos y modales (`--shadow-xl`).
+   ============================================================================ */
+
+:root[data-portal="workspace-atelier"],
+[data-portal="workspace-atelier"] {
+  color-scheme: light;
+
+  /* Paleta cromática estricta */
+  --color-parchment: #f7f7f4;
+  --color-bone: #f2f1ed;
+  --color-linen: #e6e5e0;
+  --color-stone: #cdcdc9;
+  --color-mist: #a1a19f;
+  --color-driftwood: #84847e;
+  --color-ash: #7a7974;
+  --color-ink: #26251e;
+  --color-ember: #f54e00;
+  --color-amber: #c08532;
+  --color-forest: #34785c;
+  --color-verdant: #1f8a65;
+  --color-crimson: #cf2d56;
+
+  /* Superficies semánticas */
+  --surface-canvas: #f7f7f4;
+  --surface-card: #f2f1ed;
+  --surface-elevated: #e6e5e0;
+  --surface-outline: #cdcdc9;
+  --border-hairline: color-mix(in oklab, #26251e 8%, transparent);
+
+  /* Familias tipográficas con fallbacks */
+  --font-cursorgothic: 'CursorGothic', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-eb-garamond: 'EB Garamond', 'Georgia', ui-serif, serif;
+  --font-berkeleymono: 'berkeleyMono', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-system-ui: system-ui, -apple-system, sans-serif;
+
+  /* Escala tipográfica (titulares siempre en peso 400 con tracking progresivo) */
+  --text-eyebrow: 10px;
+  --leading-eyebrow: 1.63;
+  --text-body-sm: 13px;
+  --leading-body-sm: 1.5;
+  --tracking-body-sm: 0.01em;
+  --text-heading-sm: 15px;
+  --leading-heading-sm: 1.3;
+  --tracking-heading-sm: -0.005em;
+  --text-heading: 18px;
+  --leading-heading: 1.25;
+  --tracking-heading: -0.012em;
+  --text-heading-lg: 24px;
+  --leading-heading-lg: 1.2;
+  --tracking-heading-lg: -0.02em;
+  --text-display: 36px;
+  --leading-display: 1.1;
+  --tracking-display: -0.03em;
+
+  /* Espaciado compacto (base 4px) */
+  --spacing-4: 4px;
+  --spacing-8: 8px;
+  --spacing-12: 12px;
+  --spacing-16: 16px;
+  --spacing-20: 20px;
+  --spacing-24: 16px;
+  --spacing-32: 20px;
+  --spacing-48: 28px;
+  --spacing-64: 36px;
+
+  /* Radios estrictos (8px exclusivo de modales flotantes) */
+  --radius-cards: 4px;
+  --radius-tiles: 4px;
+  --radius-inputs: 4px;
+  --radius-buttons: 4px;
+  --radius-modals: 8px;
+
+  /* Sombras cálidas reservadas a marcos, visores remotos y modales */
+  --shadow-xl: rgba(0, 0, 0, 0.14) 0px 28px 70px 0px, rgba(0, 0, 0, 0.1) 0px 14px 32px 0px, oklab(0.263084 -0.00230259 0.0124794 / 0.1) 0px 0px 0px 1px;
+  --shadow-subtle: rgb(235, 234, 229) 0px 0px 0px 2px;
+}
+
+::selection {
+  background-color: #8BC4F8;
+  color: #26251e;
+}
+
+/* ---------- Superficies y layout ---------- */
+
+.atelier-shell { background-color: var(--color-parchment); color: var(--color-ink); font-family: var(--font-cursorgothic); font-size: var(--text-body-sm); line-height: var(--leading-body-sm); }
+
+.atelier-card { background-color: var(--color-bone); border: 1px solid var(--color-stone); border-radius: var(--radius-cards); padding: var(--spacing-24); }
+
+.atelier-hairline { border: 1px solid var(--border-hairline); }
+
+.atelier-divider { border: 0; height: 1px; width: 100%; margin: var(--spacing-16) 0; background-color: var(--color-stone); }
+
+.atelier-scrollarea { overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--color-stone) transparent; }
+
+/* ---------- Tipografía editorial ---------- */
+
+.atelier-eyebrow { margin: 0; font-family: var(--font-cursorgothic); font-size: var(--text-eyebrow); line-height: var(--leading-eyebrow); font-weight: 400; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-ash); }
+
+.atelier-heading-sm { margin: 0; font-family: var(--font-cursorgothic); font-size: var(--text-heading-sm); line-height: var(--leading-heading-sm); letter-spacing: var(--tracking-heading-sm); font-weight: 400; color: var(--color-ink); }
+
+.atelier-heading { margin: 0; font-family: var(--font-cursorgothic); font-size: var(--text-heading); line-height: var(--leading-heading); letter-spacing: var(--tracking-heading); font-weight: 400; color: var(--color-ink); }
+
+.atelier-heading-lg { margin: 0; font-family: var(--font-cursorgothic); font-size: var(--text-heading-lg); line-height: var(--leading-heading-lg); letter-spacing: var(--tracking-heading-lg); font-weight: 400; color: var(--color-ink); }
+
+.atelier-display { margin: 0; font-family: var(--font-cursorgothic); font-size: var(--text-display); line-height: var(--leading-display); letter-spacing: var(--tracking-display); font-weight: 400; color: var(--color-ink); }
+
+.atelier-prose { font-family: var(--font-eb-garamond); font-size: 14px; line-height: 1.45; color: var(--color-driftwood); }
+
+.atelier-mono { font-family: var(--font-berkeleymono); font-size: 11px; line-height: 1.45; font-feature-settings: "tnum"; }
+
+/* ---------- Formularios ---------- */
+
+.atelier-field { display: flex; flex-direction: column; gap: var(--spacing-4); }
+
+.atelier-label { font-family: var(--font-cursorgothic); font-size: 12px; line-height: 1.35; color: var(--color-ash); }
+
+.atelier-input,
+.atelier-select { width: 100%; background-color: var(--color-bone); border: 1px solid var(--color-stone); border-radius: var(--radius-inputs); padding: 7px 10px; font-family: var(--font-cursorgothic); font-size: 13px; line-height: 1.4; min-height: 34px; color: var(--color-ink); transition: border-color 120ms ease, box-shadow 120ms ease; }
+
+.atelier-select { cursor: pointer; }
+
+.atelier-input::placeholder { color: var(--color-mist); }
+
+.atelier-input:focus,
+.atelier-select:focus { outline: none; border-color: var(--color-ink); box-shadow: inset 0 1px 2px color-mix(in oklab, #26251e 12%, transparent); }
+
+.atelier-help-text { font-size: 11px; line-height: 1.35; color: var(--color-mist); }
+
+.atelier-error-text { font-size: 11px; line-height: 1.35; color: var(--color-crimson); }
+
+.atelier-checkbox-row { display: flex; align-items: center; gap: 6px; font-size: 12px; line-height: 1.35; color: var(--color-ink); cursor: pointer; }
+
+/* ---------- Botones ---------- */
+
+.atelier-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 6px 12px; min-height: 32px; border: 1px solid transparent; border-radius: var(--radius-buttons); font-family: var(--font-cursorgothic); font-size: 12.5px; line-height: 1.35; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
+
+.atelier-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.atelier-btn:focus-visible { outline: 2px solid color-mix(in oklab, #26251e 45%, transparent); outline-offset: 2px; }
+
+.atelier-btn--primary { background-color: var(--color-ink); color: var(--color-parchment); }
+.atelier-btn--primary:hover:not(:disabled) { background-color: color-mix(in oklab, #26251e 90%, #7a7974); }
+
+.atelier-btn--secondary { background-color: var(--color-linen); border-color: var(--color-stone); color: var(--color-ink); }
+.atelier-btn--secondary:hover:not(:disabled) { background-color: color-mix(in oklab, #e6e5e0 82%, #cdcdc9); }
+
+.atelier-btn--amber { background-color: var(--color-amber); color: var(--color-parchment); }
+.atelier-btn--amber:hover:not(:disabled) { background-color: color-mix(in oklab, #c08532 88%, #26251e); }
+
+.atelier-btn--forest { background-color: var(--color-forest); color: var(--color-parchment); }
+.atelier-btn--forest:hover:not(:disabled) { background-color: color-mix(in oklab, #34785c 88%, #26251e); }
+
+.atelier-btn--crimson { background-color: transparent; border-color: var(--color-crimson); color: var(--color-crimson); }
+.atelier-btn--crimson:hover:not(:disabled) { background-color: color-mix(in oklab, #cf2d56 10%, transparent); }
+
+.atelier-btn--ghost { background-color: transparent; border-color: var(--color-stone); color: var(--color-ink); }
+.atelier-btn--ghost:hover:not(:disabled) { background-color: var(--color-linen); }
+
+.atelier-btn--full { width: 100%; }
+
+/* ---------- Marco de ventana macOS ---------- */
+
+.atelier-window { background-color: var(--color-bone); border: 1px solid var(--color-stone); border-radius: var(--radius-cards); box-shadow: var(--shadow-xl); overflow: hidden; }
+
+.atelier-window__bar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--border-hairline); }
+
+.atelier-window__dots { display: inline-flex; align-items: center; gap: 5px; }
+
+.atelier-window__dot { width: 9px; height: 9px; border-radius: 50%; background-color: var(--color-stone); border: 1px solid color-mix(in oklab, #26251e 14%, transparent); }
+
+.atelier-window__title { font-family: var(--font-berkeleymono); font-size: 11px; color: var(--color-ash); }
+
+.atelier-window__tabs { display: flex; align-items: center; gap: 3px; margin-left: auto; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+
+.atelier-window__tab { background-color: transparent; border: 0; border-radius: var(--radius-buttons); padding: 2px 7px; font-family: var(--font-berkeleymono); font-size: 11px; color: var(--color-ash); transition: background-color 120ms ease, color 120ms ease; }
+
+button.atelier-window__tab { cursor: pointer; }
+
+button.atelier-window__tab:hover { color: var(--color-ink); }
+
+.atelier-window__tab--active { background-color: var(--color-linen); color: var(--color-ink); }
+
+.atelier-window__body { background-color: var(--color-parchment); padding: 14px 16px; }
+
+/* ---------- Caja de terminal copiable ---------- */
+
+.atelier-terminal { background-color: var(--color-bone); border: 1px solid color-mix(in oklab, #26251e 10%, transparent); border-radius: var(--radius-cards); padding: 10px 12px; }
+
+.atelier-terminal__label { margin: 0 0 var(--spacing-8); font-family: var(--font-berkeleymono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-ash); }
+
+.atelier-terminal__row { display: flex; align-items: center; gap: var(--spacing-8); }
+
+.atelier-terminal__prompt { font-family: var(--font-berkeleymono); font-size: 12px; color: var(--color-ash); user-select: none; }
+
+.atelier-terminal__command { flex: 1; overflow-x: auto; font-family: var(--font-berkeleymono); font-size: 12px; color: var(--color-ink); white-space: nowrap; }
+
+.atelier-terminal__copy { background-color: transparent; border: 1px solid var(--color-stone); border-radius: var(--radius-buttons); padding: 4px 8px; font-family: var(--font-berkeleymono); font-size: 12px; line-height: 1; color: var(--color-ash); cursor: pointer; transition: color 120ms ease, border-color 120ms ease; }
+
+.atelier-terminal__copy:hover { color: var(--color-ink); border-color: var(--color-ink); }
+
+/* ---------- Etiquetas mono de metadatos ---------- */
+
+.atelier-mono-tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border: 1px solid var(--color-stone); border-radius: var(--radius-buttons); background-color: var(--color-linen); font-family: var(--font-berkeleymono); font-size: 12px; line-height: 1.4; color: var(--color-ink); font-feature-settings: "tnum"; }
+
+.atelier-mono-tag--neutral { color: var(--color-driftwood); }
+
+.atelier-mono-tag--success { border-color: color-mix(in oklab, #1f8a65 38%, var(--color-stone)); color: var(--color-verdant); }
+
+.atelier-mono-tag--danger { border-color: color-mix(in oklab, #cf2d56 38%, var(--color-stone)); color: var(--color-crimson); }
+
+.atelier-mono-tag--accent { border-color: color-mix(in oklab, #f54e00 32%, var(--color-stone)); color: var(--color-ember); }
+
+/* ---------- Modales (único radio de 8px permitido) ---------- */
+
+.atelier-modal-overlay { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: var(--spacing-24); background-color: color-mix(in oklab, #26251e 42%, transparent); }
+
+.atelier-modal { width: 100%; max-width: 560px; max-height: calc(100dvh - 32px); overflow-y: auto; -webkit-overflow-scrolling: touch; background-color: var(--color-parchment); border: 1px solid var(--color-stone); border-radius: var(--radius-modals); box-shadow: var(--shadow-xl); padding: var(--spacing-24); }
+
+.atelier-modal__title { margin: 0; font-family: var(--font-cursorgothic); font-size: var(--text-heading-sm); line-height: var(--leading-heading-sm); letter-spacing: var(--tracking-heading-sm); font-weight: 400; color: var(--color-ink); }
+
+.atelier-modal__body { padding: var(--spacing-16) 0; font-size: var(--text-body-sm); line-height: var(--leading-body-sm); color: var(--color-ink); }
+
+.atelier-modal__actions { display: flex; justify-content: flex-end; gap: var(--spacing-8); }
+
+/* ---------- Enlaces y badges ---------- */
+
+.atelier-link { color: var(--color-ember); text-decoration: none; cursor: pointer; }
+
+.atelier-link:hover { text-decoration: underline; }
+
+.atelier-badge-ember { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--radius-buttons); background-color: color-mix(in oklab, #f54e00 8%, #f2f1ed); font-family: var(--font-berkeleymono); font-size: 12px; line-height: 1.4; color: var(--color-ember); }
+
+/* ---------- Adaptaciones responsivas ---------- */
+
+@media (max-width: 768px) {
+  .atelier-input,
+  .atelier-select {
+    font-size: 16px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .atelier-modal__actions {
+    flex-direction: column-reverse;
+  }
+
+  .atelier-modal__actions .atelier-btn,
+  .atelier-modal__actions > * {
+    width: 100%;
+  }
+}
+
+/* ---------- Movimiento reducido ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .atelier-input,
+  .atelier-select,
+  .atelier-btn,
+  .atelier-window__tab,
+  .atelier-terminal__copy {
+    transition: none;
+  }
+}
+
+/* ---------- Navegación Estática / Sticky Docs Shell ---------- */
+
+.docs-mobile-subbar {
+  display: flex;
+}
+
+@media (min-width: 768px) {
+  .docs-mobile-subbar,
+  .docs-mobile-drawer {
+    display: none !important;
+  }
+}

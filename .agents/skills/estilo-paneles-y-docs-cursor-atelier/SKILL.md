@@ -8,6 +8,8 @@ description: >-
 
 Esta skill define el sistema de diseño obligatorio para todas las superficies técnicas, operativas y documentales de la plataforma: **Landing Pública de Documentación & Sandbox (`/docs`, `/docs/sandbox`)**, **Portales de Login/Recuperación (`/auth/*`)**, **Dashboard del Desarrollador (`/dashboard/*`)** y **Dashboard de SuperAdmin (`/superadmin/*`)**.
 
+**Estado actual (2026-10-18):** todas estas superficies están construidas y consolidadas en **tema claro estricto** dentro del workspace único `apps/web` (grupos de rutas `(auth)/*`, `legal/*`, `docs/*` + `docs/sandbox`, `dashboard/org/[orgSlug]/*`, `superadmin/*`). Cero modo oscuro. Las rutas reales del repositorio son la fuente de verdad (`docs/LIVE_ARCHITECTURE_LEDGER.md`, Sección 1: mapa de enrutamiento). La **Landing Comercial (`/`)** es la única superficie que NO se rige por esta skill: le corresponde la skill hermana `estilo-landing-comercial-auros-claro` (lienzo Auros con fondo de constelación viva).
+
 ## Cuándo Activar esta Skill
 
 Activa y aplica estas directrices siempre que construyas o modifiques:

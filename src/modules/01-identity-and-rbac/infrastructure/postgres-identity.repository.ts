@@ -59,14 +59,42 @@ export class PostgresIdentityRepository {
   ) {}
 
   /**
+   * Ejecuta una operacion de base de datos bajo contexto de sesion o superadmin local.
+   */
+  private async executeWithContext<T>(
+    c: PoolClient | undefined,
+    setup: (client: PoolClient) => Promise<void>,
+    action: (client: PoolClient) => Promise<T>
+  ): Promise<T> {
+    if (c) {
+      await setup(c);
+      return await action(c);
+    }
+    return await this.rlsPool.withClient(async (client) => {
+      await client.query('BEGIN');
+      try {
+        await setup(client);
+        const res = await action(client);
+        await client.query('COMMIT');
+        return res;
+      } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw err;
+      }
+    });
+  }
+
+  /**
    * Busca un usuario por su correo electronico normalizado (tipo CITEXT).
    */
   public async findUserByEmail(email: string, client?: PoolClient): Promise<UserEntity | null> {
     const query = 'SELECT * FROM users WHERE email = $1 LIMIT 1';
     const params = [email.trim().toLowerCase()];
-    const result = client
-      ? await client.query(query, params)
-      : await this.rlsPool.withClient((c) => c.query(query, params));
+    const result = await this.executeWithContext(
+      client,
+      (c) => c.query("SELECT set_config('app.is_superadmin', 'true', true)").then(() => {}),
+      (c) => c.query(query, params)
+    );
 
     if (result.rows.length === 0 || !result.rows[0]) {
       return null;
@@ -80,9 +108,11 @@ export class PostgresIdentityRepository {
   public async findUserById(id: string, client?: PoolClient): Promise<UserEntity | null> {
     const query = 'SELECT * FROM users WHERE id = $1 LIMIT 1';
     const params = [id];
-    const result = client
-      ? await client.query(query, params)
-      : await this.rlsPool.withClient((c) => c.query(query, params));
+    const result = await this.executeWithContext(
+      client,
+      (c) => c.query("SELECT set_config('app.current_user_id', $1, true)", [id]).then(() => {}),
+      (c) => c.query(query, params)
+    );
 
     if (result.rows.length === 0 || !result.rows[0]) {
       return null;
@@ -97,8 +127,8 @@ export class PostgresIdentityRepository {
     const query = `
       INSERT INTO users (
         email, full_name, password_hash, token_version, is_platform_superadmin,
-        email_verification_otp_sha256, email_verification_expires_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        email_verification_otp_sha256, email_verification_expires_at, phone_number
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *
     `;
     const params = [
@@ -109,11 +139,14 @@ export class PostgresIdentityRepository {
       data.isPlatformSuperadmin ?? false,
       data.otpSha256 ?? null,
       data.otpExpiresAt ?? null,
+      data.phoneNumber ?? null,
     ];
 
-    const result = client
-      ? await client.query(query, params)
-      : await this.rlsPool.withClient((c) => c.query(query, params));
+    const result = await this.executeWithContext(
+      client,
+      (c) => c.query("SELECT set_config('app.is_superadmin', 'true', true)").then(() => {}),
+      (c) => c.query(query, params)
+    );
 
     const user = IdentityRowMapper.mapUserRow(result.rows[0] as Record<string, unknown>);
     await this.redis.json.setText(RedisKeys.authUserTokenVersion('oa', user.id), String(user.tokenVersion));
@@ -140,11 +173,11 @@ export class PostgresIdentityRepository {
     `;
     const params = [nextAttempts, lockedUntil, userId];
 
-    if (client) {
-      await client.query(query, params);
-    } else {
-      await this.rlsPool.withClient((c) => c.query(query, params));
-    }
+    await this.executeWithContext(
+      client,
+      (c) => c.query("SELECT set_config('app.current_user_id', $1, true)", [userId]).then(() => {}),
+      (c) => c.query(query, params)
+    );
 
     return { attempts: nextAttempts, lockedUntil };
   }
@@ -159,11 +192,11 @@ export class PostgresIdentityRepository {
       WHERE id = $2
     `;
     const params = [ip, userId];
-    if (client) {
-      await client.query(query, params);
-    } else {
-      await this.rlsPool.withClient((c) => c.query(query, params));
-    }
+    await this.executeWithContext(
+      client,
+      (c) => c.query("SELECT set_config('app.current_user_id', $1, true)", [userId]).then(() => {}),
+      (c) => c.query(query, params)
+    );
   }
 
   /**
@@ -183,35 +216,16 @@ export class PostgresIdentityRepository {
       RETURNING token_version
     `;
 
-    const executeWithContext = async (c: PoolClient): Promise<number> => {
-      await c.query('BEGIN');
-      try {
-        await c.query(`SELECT set_config('app.current_user_id', $1, true)`, [userId]);
-        const res = await c.query<{ token_version: number }>(query, [userId]);
-        const row = res.rows[0];
-        if (!row) {
-          throw new NotFoundError(`Usuario con id ${userId} no encontrado para incremento de version.`);
-        }
-        await c.query('COMMIT');
-        return row.token_version;
-      } catch (error) {
-        await c.query('ROLLBACK').catch(() => {});
-        throw error;
-      }
-    };
-
-    const newVersion = client
-      ? await (async () => {
-          await client.query(`SELECT set_config('app.current_user_id', $1, true)`, [userId]);
-          const res = await client.query<{ token_version: number }>(query, [userId]);
-          const row = res.rows[0];
-          if (!row) {
-            throw new NotFoundError(`Usuario con id ${userId} no encontrado para incremento de version.`);
-          }
-          return row.token_version;
-        })()
-      : await this.rlsPool.withClient(executeWithContext);
-
+    const res = await this.executeWithContext(
+      client,
+      (c) => c.query("SELECT set_config('app.current_user_id', $1, true)", [userId]).then(() => {}),
+      (c) => c.query<{ token_version: number }>(query, [userId])
+    );
+    const row = res.rows[0];
+    if (!row) {
+      throw new NotFoundError(`Usuario con id ${userId} no encontrado para incremento de version.`);
+    }
+    const newVersion = row.token_version;
     await this.redis.json.setText(RedisKeys.authUserTokenVersion('oa', userId), String(newVersion));
     return newVersion;
   }
@@ -222,9 +236,11 @@ export class PostgresIdentityRepository {
   public async findOrganizationBySlug(slug: string, client?: PoolClient): Promise<OrganizationEntity | null> {
     const query = 'SELECT * FROM organizations WHERE slug = $1 LIMIT 1';
     const params = [slug.trim().toLowerCase()];
-    const result = client
-      ? await client.query(query, params)
-      : await this.rlsPool.withClient((c) => c.query(query, params));
+    const result = await this.executeWithContext(
+      client,
+      (c) => c.query("SELECT set_config('app.is_superadmin', 'true', true)").then(() => {}),
+      (c) => c.query(query, params)
+    );
 
     if (result.rows.length === 0 || !result.rows[0]) {
       return null;
@@ -238,9 +254,11 @@ export class PostgresIdentityRepository {
   public async findOrganizationById(id: string, client?: PoolClient): Promise<OrganizationEntity | null> {
     const query = 'SELECT * FROM organizations WHERE id = $1 LIMIT 1';
     const params = [id];
-    const result = client
-      ? await client.query(query, params)
-      : await this.rlsPool.withClient((c) => c.query(query, params));
+    const result = await this.executeWithContext(
+      client,
+      (c) => c.query("SELECT set_config('app.is_superadmin', 'true', true)").then(() => {}),
+      (c) => c.query(query, params)
+    );
 
     if (result.rows.length === 0 || !result.rows[0]) {
       return null;
@@ -254,8 +272,8 @@ export class PostgresIdentityRepository {
   public async createOrganization(data: CreateOrganizationData, client?: PoolClient): Promise<OrganizationEntity> {
     const query = `
       INSERT INTO organizations (
-        name, slug, enforce_mfa, enforce_sso, sso_email_domain, dpa_signed_at, dpa_clickwrap_ip
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        name, slug, enforce_mfa, enforce_sso, sso_email_domain, dpa_signed_at, dpa_clickwrap_ip, phone_number
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *
     `;
     const params = [
@@ -266,11 +284,14 @@ export class PostgresIdentityRepository {
       data.ssoEmailDomain ? data.ssoEmailDomain.trim().toLowerCase() : null,
       data.dpaSignedAt ?? null,
       data.dpaClickwrapIp ?? null,
+      data.phoneNumber ?? null,
     ];
 
-    const result = client
-      ? await client.query(query, params)
-      : await this.rlsPool.withClient((c) => c.query(query, params));
+    const result = await this.executeWithContext(
+      client,
+      (c) => c.query("SELECT set_config('app.is_superadmin', 'true', true)").then(() => {}),
+      (c) => c.query(query, params)
+    );
 
     return IdentityRowMapper.mapOrgRow(result.rows[0] as Record<string, unknown>);
   }
@@ -289,9 +310,11 @@ export class PostgresIdentityRepository {
       RETURNING *
     `;
     const params = [data.organizationId, data.userId, data.role, data.isActive ?? true];
-    const result = client
-      ? await client.query(query, params)
-      : await this.rlsPool.withClient((c) => c.query(query, params));
+    const result = await this.executeWithContext(
+      client,
+      (c) => c.query("SELECT set_config('app.is_superadmin', 'true', true)").then(() => {}),
+      (c) => c.query(query, params)
+    );
 
     return IdentityRowMapper.mapMembershipRow(result.rows[0] as Record<string, unknown>);
   }
@@ -302,9 +325,11 @@ export class PostgresIdentityRepository {
   public async findMembership(organizationId: string, userId: string, client?: PoolClient): Promise<MembershipEntity | null> {
     const query = 'SELECT * FROM memberships WHERE organization_id = $1 AND user_id = $2 AND is_active = TRUE LIMIT 1';
     const params = [organizationId, userId];
-    const result = client
-      ? await client.query(query, params)
-      : await this.rlsPool.withClient((c) => c.query(query, params));
+    const result = await this.executeWithContext(
+      client,
+      (c) => c.query("SELECT set_config('app.current_user_id', $1, true), set_config('app.current_org_id', $2, true)", [userId, organizationId]).then(() => {}),
+      (c) => c.query(query, params)
+    );
 
     if (result.rows.length === 0 || !result.rows[0]) {
       return null;
@@ -318,9 +343,11 @@ export class PostgresIdentityRepository {
   public async findUserActiveMemberships(userId: string, client?: PoolClient): Promise<readonly MembershipEntity[]> {
     const query = 'SELECT * FROM memberships WHERE user_id = $1 AND is_active = TRUE ORDER BY created_at ASC';
     const params = [userId];
-    const result = client
-      ? await client.query(query, params)
-      : await this.rlsPool.withClient((c) => c.query(query, params));
+    const result = await this.executeWithContext(
+      client,
+      (c) => c.query("SELECT set_config('app.current_user_id', $1, true)", [userId]).then(() => {}),
+      (c) => c.query(query, params)
+    );
 
     return result.rows.map((rowRecord) => IdentityRowMapper.mapMembershipRow(rowRecord as Record<string, unknown>));
   }
@@ -348,9 +375,11 @@ export class PostgresIdentityRepository {
       data.expiresAt,
     ];
 
-    const result = client
-      ? await client.query(query, params)
-      : await this.rlsPool.withClient((c) => c.query(query, params));
+    const result = await this.executeWithContext(
+      client,
+      (c) => c.query("SELECT set_config('app.current_user_id', $1, true)", [data.userId]).then(() => {}),
+      (c) => c.query(query, params)
+    );
 
     return IdentityRowMapper.mapAuthSessionRow(result.rows[0] as Record<string, unknown>);
   }
@@ -361,9 +390,11 @@ export class PostgresIdentityRepository {
   public async findSessionByTokenHash(refreshTokenSha256: string, client?: PoolClient): Promise<AuthSessionEntity | null> {
     const query = 'SELECT * FROM auth_sessions WHERE refresh_token_sha256 = $1 LIMIT 1';
     const params = [refreshTokenSha256];
-    const result = client
-      ? await client.query(query, params)
-      : await this.rlsPool.withClient((c) => c.query(query, params));
+    const result = await this.executeWithContext(
+      client,
+      (c) => c.query("SELECT set_config('app.is_superadmin', 'true', true)").then(() => {}),
+      (c) => c.query(query, params)
+    );
 
     if (result.rows.length === 0 || !result.rows[0]) {
       return null;
@@ -377,11 +408,11 @@ export class PostgresIdentityRepository {
   public async consumeSession(sessionId: string, client?: PoolClient): Promise<void> {
     const query = 'UPDATE auth_sessions SET consumed_at = NOW() WHERE id = $1';
     const params = [sessionId];
-    if (client) {
-      await client.query(query, params);
-    } else {
-      await this.rlsPool.withClient((c) => c.query(query, params));
-    }
+    await this.executeWithContext(
+      client,
+      (c) => c.query("SELECT set_config('app.is_superadmin', 'true', true)").then(() => {}),
+      (c) => c.query(query, params)
+    );
   }
 
   /**
@@ -394,11 +425,11 @@ export class PostgresIdentityRepository {
       WHERE token_family_id = $2 AND revoked_at IS NULL
     `;
     const params = [reason, tokenFamilyId];
-    if (client) {
-      await client.query(query, params);
-    } else {
-      await this.rlsPool.withClient((c) => c.query(query, params));
-    }
+    await this.executeWithContext(
+      client,
+      (c) => c.query("SELECT set_config('app.is_superadmin', 'true', true)").then(() => {}),
+      (c) => c.query(query, params)
+    );
   }
 
   /**
@@ -411,9 +442,11 @@ export class PostgresIdentityRepository {
       WHERE user_id = $2 AND revoked_at IS NULL
     `;
     const params = [reason, userId];
-    const result = client
-      ? await client.query(query, params)
-      : await this.rlsPool.withClient((c) => c.query(query, params));
+    const result = await this.executeWithContext(
+      client,
+      (c) => c.query("SELECT set_config('app.current_user_id', $1, true)", [userId]).then(() => {}),
+      (c) => c.query(query, params)
+    );
 
     return result.rowCount ?? 0;
   }
@@ -423,9 +456,11 @@ export class PostgresIdentityRepository {
    */
   public async hasAcceptedMandatoryLegalDocs(userId: string, organizationId?: string | null, client?: PoolClient): Promise<boolean> {
     const queryMandatory = 'SELECT id, content_sha256 FROM legal_documents WHERE is_mandatory = TRUE AND is_active = TRUE';
-    const mandatoryResult = client
-      ? await client.query<{ id: string; content_sha256: string }>(queryMandatory)
-      : await this.rlsPool.withClient((c) => c.query<{ id: string; content_sha256: string }>(queryMandatory));
+    const mandatoryResult = await this.executeWithContext(
+      client,
+      (c) => c.query("SELECT set_config('app.current_user_id', $1, true)", [userId]).then(() => {}),
+      (c) => c.query<{ id: string; content_sha256: string }>(queryMandatory)
+    );
 
     if (mandatoryResult.rows.length === 0) {
       return true;
@@ -440,9 +475,11 @@ export class PostgresIdentityRepository {
         AND (organization_id = $3 OR organization_id IS NULL)
     `;
     const params = [userId, docIds, organizationId ?? null];
-    const acceptedResult = client
-      ? await client.query<{ legal_document_id: string }>(queryAccepted, params)
-      : await this.rlsPool.withClient((c) => c.query<{ legal_document_id: string }>(queryAccepted, params));
+    const acceptedResult = await this.executeWithContext(
+      client,
+      (c) => c.query("SELECT set_config('app.current_user_id', $1, true)", [userId]).then(() => {}),
+      (c) => c.query<{ legal_document_id: string }>(queryAccepted, params)
+    );
 
     return acceptedResult.rows.length >= mandatoryResult.rows.length;
   }

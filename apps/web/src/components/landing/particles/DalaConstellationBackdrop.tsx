@@ -172,9 +172,14 @@ export function DalaConstellationBackdrop({ className = '' }: DalaConstellationB
         return;
       }
       readScrollTarget();
-      currentScroll += (targetScroll - currentScroll) * 0.08;
-      pointer.smoothX += (pointer.normX - pointer.smoothX) * 0.06;
-      pointer.smoothY += (pointer.normY - pointer.smoothY) * 0.06;
+      const scrollDelta = targetScroll - currentScroll;
+      if (Math.abs(scrollDelta) < 0.001) {
+        currentScroll = targetScroll;
+      } else {
+        currentScroll += scrollDelta * 0.35;
+      }
+      pointer.smoothX += (pointer.normX - pointer.smoothX) * 0.12;
+      pointer.smoothY += (pointer.normY - pointer.smoothY) * 0.12;
 
       frameTick += 1;
       if (frameStride > 1 && frameTick % frameStride !== 0) {
@@ -198,6 +203,8 @@ export function DalaConstellationBackdrop({ className = '' }: DalaConstellationB
       window.addEventListener('scroll', scheduleStaticFrame, { passive: true });
       paintFrame(STATIC_MOTION_TIME);
     } else {
+      // Listener pasivo de scroll para capturar el valor más reciente antes del paint
+      window.addEventListener('scroll', readScrollTarget, { passive: true });
       paintFrame(0);
       animationFrameId = window.requestAnimationFrame(animate);
     }
@@ -248,6 +255,7 @@ export function DalaConstellationBackdrop({ className = '' }: DalaConstellationB
       }
       scrollRangeObserver.disconnect();
       window.removeEventListener('scroll', scheduleStaticFrame);
+      window.removeEventListener('scroll', readScrollTarget);
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerleave', handlePointerLeave);

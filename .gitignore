@@ -57,6 +57,7 @@ scratch/
 .npm-cache/
 limpiar.ts
 tmp-parser-probe.ts
+*.mp4
 
 # HERRAMIENTAS LOCALES DE DESARROLLO (Redis de pruebas, binarios descargados)
 .tools/

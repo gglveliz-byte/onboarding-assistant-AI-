@@ -41,6 +41,12 @@ import {
   type MembershipInvitationRecord,
 } from './identity-advanced-row.mapper';
 
+interface AdvancedRlsContext {
+  readonly userId?: string | undefined;
+  readonly orgId?: string | undefined;
+  readonly isSuperAdmin?: boolean | undefined;
+}
+
 /**
  * Repositorio especializado para flujos avanzados de identidad, MFA, recuperacion y legal.
  */
@@ -48,17 +54,53 @@ export class PostgresAdvancedIdentityRepository {
   public constructor(private readonly rlsPool: RlsDatabasePool) {}
 
   /**
+   * Ejecuta una operacion garantizando contexto RLS de sesion, organizacion o superadmin.
+   */
+  private async executeWithRls<T>(
+    client: PoolClient | undefined,
+    rls: AdvancedRlsContext | undefined,
+    fn: (c: PoolClient) => Promise<T>
+  ): Promise<T> {
+    const applyRls = async (c: PoolClient): Promise<void> => {
+      if (rls?.isSuperAdmin) {
+        await c.query("SELECT set_config('app.is_superadmin', 'true', true)");
+      } else {
+        if (rls?.userId) await c.query("SELECT set_config('app.current_user_id', $1, true)", [rls.userId]);
+        if (rls?.orgId) await c.query("SELECT set_config('app.current_org_id', $1, true)", [rls.orgId]);
+      }
+    };
+
+    if (client) {
+      if (rls) await applyRls(client);
+      return await fn(client);
+    }
+    return await this.rlsPool.withClient(async (c) => {
+      await c.query('BEGIN');
+      try {
+        if (rls) await applyRls(c);
+        const res = await fn(c);
+        await c.query('COMMIT');
+        return res;
+      } catch (err) {
+        await c.query('ROLLBACK').catch(() => {});
+        throw err;
+      }
+    });
+  }
+
+  /**
    * Ejecuta una consulta parametrizada usando el cliente provisto o uno adquirido del pool.
    */
   private async query<T = Record<string, unknown>>(
     sql: string,
     params: readonly unknown[] = [],
-    client?: PoolClient
+    client?: PoolClient,
+    rls?: AdvancedRlsContext
   ): Promise<T[]> {
-    const res = client
-      ? await client.query(sql, params as unknown[])
-      : await this.rlsPool.withClient((c) => c.query(sql, params as unknown[]));
-    return res.rows as T[];
+    return this.executeWithRls(client, rls, async (c) => {
+      const res = await c.query(sql, params as unknown[]);
+      return res.rows as T[];
+    });
   }
 
   /**
@@ -76,11 +118,7 @@ export class PostgresAdvancedIdentityRepository {
         await client.query('COMMIT');
         return result;
       } catch (error) {
-        try {
-          await client.query('ROLLBACK');
-        } catch {
-          // La reversion fallida deja la conexion marcada; el pool la descarta al liberarla.
-        }
+        await client.query('ROLLBACK').catch(() => {});
         throw error;
       }
     });
@@ -94,18 +132,15 @@ export class PostgresAdvancedIdentityRepository {
     hashedCodes: ReadonlyArray<{ saltHex: string; sha256Hex: string }>,
     client?: PoolClient
   ): Promise<void> {
-    const execute = async (c: PoolClient): Promise<void> => {
+    await this.executeWithRls(client, { userId }, async (c) => {
       await c.query('DELETE FROM user_mfa_recovery_codes WHERE user_id = $1', [userId]);
       for (const item of hashedCodes) {
         await c.query(
-          `INSERT INTO user_mfa_recovery_codes (user_id, code_salt_hex, code_sha256)
-           VALUES ($1, $2, $3)`,
+          `INSERT INTO user_mfa_recovery_codes (user_id, code_salt_hex, code_sha256) VALUES ($1, $2, $3)`,
           [userId, item.saltHex, item.sha256Hex]
         );
       }
-    };
-    if (client) await execute(client);
-    else await this.rlsPool.withClient(execute);
+    });
   }
 
   /**
@@ -117,32 +152,30 @@ export class PostgresAdvancedIdentityRepository {
     ipAddress: string,
     client?: PoolClient
   ): Promise<boolean> {
-    const execute = async (c: PoolClient): Promise<boolean> => {
+    return this.executeWithRls(client, { userId }, async (c) => {
       const rows = await this.query<{ id: string; code_salt_hex: string; code_sha256: string }>(
-        `SELECT id, code_salt_hex, code_sha256 FROM user_mfa_recovery_codes WHERE user_id = $1 AND consumed_at IS NULL`,
+        'SELECT id, code_salt_hex, code_sha256 FROM user_mfa_recovery_codes WHERE user_id = $1 AND consumed_at IS NULL',
         [userId],
-        c
+        c,
+        { userId }
       );
       for (const row of rows) {
         const candidateHash = CryptoUtils.sha256Hex(`${row.code_salt_hex}:${plainCode.trim().toUpperCase()}`);
         if (CryptoUtils.timingSafeEqualHex(candidateHash, row.code_sha256)) {
-          await c.query(`UPDATE user_mfa_recovery_codes SET consumed_at = NOW(), consumed_ip = $1 WHERE id = $2`, [ipAddress, row.id]);
+          await c.query('UPDATE user_mfa_recovery_codes SET consumed_at = NOW(), consumed_ip = $1 WHERE id = $2', [ipAddress, row.id]);
           return true;
         }
       }
       return false;
-    };
-    return client ? execute(client) : this.rlsPool.withClient(execute);
+    });
   }
 
-  /**
-   * Cuenta los codigos de recuperacion restantes sin consumir.
-   */
   public async countRemainingRecoveryCodes(userId: string, client?: PoolClient): Promise<number> {
     const rows = await this.query<{ count: number }>(
       `SELECT COUNT(*)::int AS count FROM user_mfa_recovery_codes WHERE user_id = $1 AND consumed_at IS NULL`,
       [userId],
-      client
+      client,
+      { userId }
     );
     return rows[0]?.count ?? 0;
   }
@@ -156,15 +189,12 @@ export class PostgresAdvancedIdentityRepository {
    */
   public async deactivateUserMfaCompletely(userId: string, client?: PoolClient): Promise<void> {
     await this.query(
-      `UPDATE users
-        SET mfa_totp_enabled = FALSE, mfa_totp_secret_enc = NULL,
-            mfa_webauthn_enabled = FALSE, mfa_webauthn_credentials_json = '[]'::jsonb,
-            updated_at = NOW()
-        WHERE id = $1`,
+      `UPDATE users SET mfa_totp_enabled = FALSE, mfa_totp_secret_enc = NULL, mfa_webauthn_enabled = FALSE, mfa_webauthn_credentials_json = '[]'::jsonb, updated_at = NOW() WHERE id = $1`,
       [userId],
-      client
+      client,
+      { userId }
     );
-    await this.query(`DELETE FROM user_mfa_recovery_codes WHERE user_id = $1`, [userId], client);
+    await this.query(`DELETE FROM user_mfa_recovery_codes WHERE user_id = $1`, [userId], client, { userId });
   }
 
   /**
@@ -174,12 +204,8 @@ export class PostgresAdvancedIdentityRepository {
     data: { organizationId: string; userId: string; dnsTxtVerificationToken: string; requestIp: string },
     client?: PoolClient
   ): Promise<BreakGlassRequestRecord> {
-    const rows = await this.query(
-      `INSERT INTO mfa_break_glass_requests (organization_id, user_id, dns_txt_verification_token, request_ip, status)
-       VALUES ($1, $2, $3, $4, 'PENDING_DNS_OR_WHOP_CHALLENGE') RETURNING *`,
-      [data.organizationId, data.userId, data.dnsTxtVerificationToken, data.requestIp],
-      client
-    );
+    const sql = "INSERT INTO mfa_break_glass_requests (organization_id, user_id, dns_txt_verification_token, request_ip, status) VALUES ($1, $2, $3, $4, 'PENDING_DNS_OR_WHOP_CHALLENGE') RETURNING *";
+    const rows = await this.query(sql, [data.organizationId, data.userId, data.dnsTxtVerificationToken, data.requestIp], client, { userId: data.userId, orgId: data.organizationId });
     return IdentityAdvancedRowMapper.mapBreakGlassRow(rows[0] as Record<string, unknown>);
   }
 
@@ -197,7 +223,8 @@ export class PostgresAdvancedIdentityRepository {
          AND status IN ('PENDING_DNS_OR_WHOP_CHALLENGE', 'COOLING_OFF_24H', 'PENDING_SUPERADMIN_APPROVAL')
        ORDER BY created_at DESC LIMIT 1`,
       [organizationId, userId],
-      client
+      client,
+      { userId, orgId: organizationId }
     );
     if (rows.length === 0 || !rows[0]) return null;
     return IdentityAdvancedRowMapper.mapBreakGlassRow(rows[0] as Record<string, unknown>);
@@ -207,34 +234,18 @@ export class PostgresAdvancedIdentityRepository {
    * Marca el reto DNS o Whop de una solicitud Break-Glass como superado y arranca el enfriamiento de 24h.
    */
   public async markBreakGlassChallengeVerified(requestId: string, whopReceiptId?: string, client?: PoolClient): Promise<void> {
-    await this.query(
-      `UPDATE mfa_break_glass_requests
-       SET status = 'COOLING_OFF_24H', challenge_verified_at = NOW(),
-           cooling_off_ends_at = NOW() + INTERVAL '24 hours',
-           whop_last_receipt_id_verified = COALESCE($2, whop_last_receipt_id_verified)
-       WHERE id = $1`,
-      [requestId, whopReceiptId ?? null],
-      client
-    );
+    const sql = "UPDATE mfa_break_glass_requests SET status = 'COOLING_OFF_24H', challenge_verified_at = NOW(), cooling_off_ends_at = NOW() + INTERVAL '24 hours', whop_last_receipt_id_verified = COALESCE($2, whop_last_receipt_id_verified) WHERE id = $1";
+    await this.query(sql, [requestId, whopReceiptId ?? null], client, { isSuperAdmin: true });
   }
 
   /**
    * Registra un token efimero de restablecimiento de contrasena (TTL 15m).
    */
   public async createPasswordResetToken(
-    userId: string,
-    tokenSha256: string,
-    requestIp: string,
-    userAgent: string | undefined,
-    expiresAt: Date,
-    client?: PoolClient
+    userId: string, tokenSha256: string, requestIp: string, userAgent: string | undefined, expiresAt: Date, client?: PoolClient
   ): Promise<void> {
-    await this.query(
-      `INSERT INTO password_reset_tokens (user_id, token_sha256, request_ip, user_agent, expires_at)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [userId, tokenSha256, requestIp, userAgent ?? null, expiresAt],
-      client
-    );
+    const sql = 'INSERT INTO password_reset_tokens (user_id, token_sha256, request_ip, user_agent, expires_at) VALUES ($1, $2, $3, $4, $5)';
+    await this.query(sql, [userId, tokenSha256, requestIp, userAgent ?? null, expiresAt], client, { userId });
   }
 
   /**
@@ -250,7 +261,8 @@ export class PostgresAdvancedIdentityRepository {
     const rows = await this.query<{ id: string; user_id: string; expires_at: Date }>(
       `SELECT id, user_id, expires_at FROM password_reset_tokens WHERE token_sha256 = $1 AND used_at IS NULL AND expires_at > NOW() LIMIT 1`,
       [tokenSha256],
-      client
+      client,
+      { isSuperAdmin: true }
     );
     if (rows.length === 0 || !rows[0]) return null;
     return { id: rows[0].id, userId: rows[0].user_id, expiresAt: rows[0].expires_at };
@@ -284,7 +296,8 @@ export class PostgresAdvancedIdentityRepository {
         WHERE token_sha256 = $1 AND used_at IS NULL AND expires_at > NOW()
         RETURNING id, user_id, expires_at`,
       [tokenSha256],
-      client
+      client,
+      { isSuperAdmin: true }
     );
     if (rows.length === 0 || !rows[0]) return null;
     return { id: rows[0].id, userId: rows[0].user_id, expiresAt: rows[0].expires_at };
@@ -294,14 +307,24 @@ export class PostgresAdvancedIdentityRepository {
    * Actualiza el hash de contrasena de un usuario tras un restablecimiento validado.
    */
   public async updateUserPasswordHash(userId: string, passwordHash: string, client?: PoolClient): Promise<void> {
-    await this.query(`UPDATE users SET password_hash = $2, failed_login_attempts = 0, locked_until = NULL, updated_at = NOW() WHERE id = $1`, [userId, passwordHash], client);
+    await this.query(
+      `UPDATE users SET password_hash = $2, failed_login_attempts = 0, locked_until = NULL, updated_at = NOW() WHERE id = $1`,
+      [userId, passwordHash],
+      client,
+      { userId }
+    );
   }
 
   /**
    * Busca una organizacion por su dominio de correo corporativo para SSO SAML.
    */
   public async findOrganizationBySsoDomain(domain: string, client?: PoolClient): Promise<OrganizationEntity | null> {
-    const rows = await this.query(`SELECT * FROM organizations WHERE sso_email_domain = $1 LIMIT 1`, [domain.trim().toLowerCase()], client);
+    const rows = await this.query(
+      `SELECT * FROM organizations WHERE sso_email_domain = $1 LIMIT 1`,
+      [domain.trim().toLowerCase()],
+      client,
+      { isSuperAdmin: true }
+    );
     if (rows.length === 0 || !rows[0]) return null;
     return IdentityRowMapper.mapOrgRow(rows[0] as Record<string, unknown>);
   }
@@ -310,32 +333,11 @@ export class PostgresAdvancedIdentityRepository {
    * Crea una invitacion a la organizacion para un nuevo miembro.
    */
   public async createOrganizationInvitation(
-    data: {
-      organizationId: string;
-      userId: string;
-      role: string;
-      invitedByUserId: string;
-      invitationTokenSha256: string;
-      invitationExpiresAt: Date;
-    },
+    data: { organizationId: string; userId: string; role: string; invitedByUserId: string; invitationTokenSha256: string; invitationExpiresAt: Date },
     client?: PoolClient
   ): Promise<MembershipInvitationRecord> {
-    const rows = await this.query(
-      `INSERT INTO memberships (
-         organization_id, user_id, role, invited_by_user_id,
-         invitation_token_sha256, invitation_expires_at, is_active
-       ) VALUES ($1, $2, $3, $4, $5, $6, FALSE)
-       ON CONFLICT (organization_id, user_id) DO UPDATE
-       SET role = EXCLUDED.role,
-           invited_by_user_id = EXCLUDED.invited_by_user_id,
-           invitation_token_sha256 = EXCLUDED.invitation_token_sha256,
-           invitation_expires_at = EXCLUDED.invitation_expires_at,
-           invitation_accepted_at = NULL,
-           is_active = FALSE
-       RETURNING *`,
-      [data.organizationId, data.userId, data.role, data.invitedByUserId, data.invitationTokenSha256, data.invitationExpiresAt],
-      client
-    );
+    const sql = 'INSERT INTO memberships (organization_id, user_id, role, invited_by_user_id, invitation_token_sha256, invitation_expires_at, is_active) VALUES ($1, $2, $3, $4, $5, $6, FALSE) ON CONFLICT (organization_id, user_id) DO UPDATE SET role = EXCLUDED.role, invited_by_user_id = EXCLUDED.invited_by_user_id, invitation_token_sha256 = EXCLUDED.invitation_token_sha256, invitation_expires_at = EXCLUDED.invitation_expires_at, invitation_accepted_at = NULL, is_active = FALSE RETURNING *';
+    const rows = await this.query(sql, [data.organizationId, data.userId, data.role, data.invitedByUserId, data.invitationTokenSha256, data.invitationExpiresAt], client, { orgId: data.organizationId, isSuperAdmin: true });
     return IdentityAdvancedRowMapper.mapMembershipRow(rows[0] as Record<string, unknown>);
   }
 
@@ -348,7 +350,8 @@ export class PostgresAdvancedIdentityRepository {
        WHERE invitation_token_sha256 = $1 AND invitation_accepted_at IS NULL 
          AND (invitation_expires_at IS NULL OR invitation_expires_at > NOW()) LIMIT 1`,
       [tokenSha256],
-      client
+      client,
+      { isSuperAdmin: true }
     );
     if (rows.length === 0 || !rows[0]) return null;
     return IdentityAdvancedRowMapper.mapMembershipRow(rows[0] as Record<string, unknown>);
@@ -360,7 +363,12 @@ export class PostgresAdvancedIdentityRepository {
    * (`WHERE id = $1 AND user_id = $2`): un aceptante ajeno no apropia nada.
    */
   public async acceptOrganizationInvitation(invitationId: string, acceptingUserId: string, client?: PoolClient): Promise<void> {
-    await this.query(`UPDATE memberships SET invitation_accepted_at = NOW(), is_active = TRUE WHERE id = $1 AND user_id = $2`, [invitationId, acceptingUserId], client);
+    await this.query(
+      `UPDATE memberships SET invitation_accepted_at = NOW(), is_active = TRUE WHERE id = $1 AND user_id = $2`,
+      [invitationId, acceptingUserId],
+      client,
+      { userId: acceptingUserId }
+    );
   }
 
   /**
@@ -400,7 +408,8 @@ export class PostgresAdvancedIdentityRepository {
          WHERE user_id = $1 AND legal_document_id = $2 AND organization_id = $3 
            AND document_sha256_snapshot = $4 LIMIT 1`,
         [userId, doc.id, organizationId, doc.sha256],
-        client
+        client,
+        { userId, orgId: organizationId }
       );
       if (rows.length === 0) {
         missing.push(doc.docType);
@@ -413,37 +422,23 @@ export class PostgresAdvancedIdentityRepository {
    * Registra la aceptacion formal de un instrumento legal por un usuario y tenant.
    */
   public async recordLegalAcceptance(
-    data: {
-      userId: string;
-      organizationId: string | null;
-      legalDocumentId: string;
-      documentSha256Snapshot: string;
-      ipAddress: string;
-      userAgent: string;
-    },
+    data: { userId: string; organizationId: string | null; legalDocumentId: string; documentSha256Snapshot: string; ipAddress: string; userAgent: string },
     client?: PoolClient
   ): Promise<void> {
-    await this.query(
-      `INSERT INTO user_legal_acceptances (
-         user_id, organization_id, legal_document_id,
-         document_sha256_snapshot, ip_address, user_agent
-       ) VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (user_id, legal_document_id, organization_id)
-       DO UPDATE SET
-         document_sha256_snapshot = EXCLUDED.document_sha256_snapshot,
-         ip_address = EXCLUDED.ip_address,
-         user_agent = EXCLUDED.user_agent,
-         accepted_at = NOW()`,
-      [data.userId, data.organizationId, data.legalDocumentId, data.documentSha256Snapshot, data.ipAddress, data.userAgent],
-      client
-    );
+    const sql = 'INSERT INTO user_legal_acceptances (user_id, organization_id, legal_document_id, document_sha256_snapshot, ip_address, user_agent) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (user_id, legal_document_id, organization_id) DO UPDATE SET document_sha256_snapshot = EXCLUDED.document_sha256_snapshot, ip_address = EXCLUDED.ip_address, user_agent = EXCLUDED.user_agent, accepted_at = NOW()';
+    await this.query(sql, [data.userId, data.organizationId, data.legalDocumentId, data.documentSha256Snapshot, data.ipAddress, data.userAgent], client, { userId: data.userId, orgId: data.organizationId ?? undefined });
   }
 
   /**
    * Registra la firma del DPA empresarial a nivel de organizacion.
    */
   public async signDpaForOrganization(organizationId: string, ipAddress: string, client?: PoolClient): Promise<void> {
-    await this.query(`UPDATE organizations SET dpa_signed_at = NOW(), dpa_clickwrap_ip = $2 WHERE id = $1`, [organizationId, ipAddress], client);
+    await this.query(
+      `UPDATE organizations SET dpa_signed_at = NOW(), dpa_clickwrap_ip = $2 WHERE id = $1`,
+      [organizationId, ipAddress],
+      client,
+      { orgId: organizationId }
+    );
   }
 
   /**
@@ -453,7 +448,8 @@ export class PostgresAdvancedIdentityRepository {
     const rows = await this.query<{ user_id: string; role: string }>(
       `SELECT user_id, role FROM memberships WHERE organization_id = $1 AND is_active = TRUE`,
       [organizationId],
-      client
+      client,
+      { orgId: organizationId }
     );
     return rows.map((r) => ({ userId: r.user_id, role: r.role }));
   }
@@ -462,25 +458,17 @@ export class PostgresAdvancedIdentityRepository {
    * Recopila el expediente completo de datos de un usuario para cumplimiento GDPR.
    */
   public async exportGdprUserData(userId: string, client?: PoolClient): Promise<Record<string, unknown>> {
-    const execute = async (c: PoolClient): Promise<Record<string, unknown>> => {
+    return this.executeWithRls(client, { userId }, async (c) => {
       const userRes = await c.query('SELECT id, email, full_name, created_at FROM users WHERE id = $1', [userId]);
       const membershipsRes = await c.query(
-        `SELECT m.role, m.is_active, m.created_at, o.name AS organization_name, o.slug AS organization_slug
-         FROM memberships m JOIN organizations o ON o.id = m.organization_id WHERE m.user_id = $1`,
+        'SELECT m.role, m.is_active, m.created_at, o.name AS organization_name, o.slug AS organization_slug FROM memberships m JOIN organizations o ON o.id = m.organization_id WHERE m.user_id = $1',
         [userId]
       );
       const legalRes = await c.query(
-        `SELECT a.document_sha256_snapshot, a.accepted_at, a.ip_address, d.doc_type, d.version_tag, d.title
-         FROM user_legal_acceptances a JOIN legal_documents d ON d.id = a.legal_document_id WHERE a.user_id = $1`,
+        'SELECT a.document_sha256_snapshot, a.accepted_at, a.ip_address, d.doc_type, d.version_tag, d.title FROM user_legal_acceptances a JOIN legal_documents d ON d.id = a.legal_document_id WHERE a.user_id = $1',
         [userId]
       );
-      return {
-        profile: userRes.rows[0] ?? null,
-        memberships: membershipsRes.rows,
-        legalAcceptances: legalRes.rows,
-        exportedAt: new Date().toISOString(),
-      };
-    };
-    return client ? execute(client) : this.rlsPool.withClient(execute);
+      return { profile: userRes.rows[0] ?? null, memberships: membershipsRes.rows, legalAcceptances: legalRes.rows, exportedAt: new Date().toISOString() };
+    });
   }
 }

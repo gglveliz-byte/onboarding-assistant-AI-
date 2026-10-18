@@ -52,10 +52,10 @@ export interface GeminiBidiSetupPayload {
 /** Trama de entrada de audio en streaming `realtimeInput`. */
 export interface GeminiBidiRealtimeInputPayload {
   readonly realtimeInput: {
-    readonly mediaChunks: readonly {
+    readonly audio: {
       readonly mimeType: string;
       readonly data: string;
-    }[];
+    };
   };
 }
 
@@ -129,6 +129,9 @@ export class GeminiProtocolMapper {
 
   /**
    * Serializa un chunk de audio PCM16 Little-Endian a la trama `realtimeInput`.
+   * El campo vigente del protocolo BidiGenerateContent es `audio`; la forma heredada
+   * `mediaChunks` era ignorada en silencio por el servidor, de modo que el motor jamas escuchaba
+   * al usuario final (ni VAD, ni turnos, ni llamadas de herramienta).
    *
    * @param pcmFrame - Buffer binario con datos de audio PCM16.
    * @param sampleRateHz - Frecuencia de muestreo (16000 por omision).
@@ -136,12 +139,10 @@ export class GeminiProtocolMapper {
   public static buildAudioChunkMessage(pcmFrame: Buffer, sampleRateHz = 16000): string {
     const payload: GeminiBidiRealtimeInputPayload = {
       realtimeInput: {
-        mediaChunks: [
-          {
-            mimeType: `audio/pcm;rate=${sampleRateHz}`,
-            data: pcmFrame.toString('base64'),
-          },
-        ],
+        audio: {
+          mimeType: `audio/pcm;rate=${sampleRateHz}`,
+          data: pcmFrame.toString('base64'),
+        },
       },
     };
 

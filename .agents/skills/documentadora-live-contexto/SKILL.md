@@ -21,13 +21,15 @@ Esta skill es de ejecución **doble y obligatoria** en cada turno de programaci�
 
 Antes de explorar carpetas al azar, abre `docs/LIVE_ARCHITECTURE_LEDGER.md` y ejecuta estas verificaciones:
 
-1. **Consulta la Sección 1 (`Mapa de Enrutamiento para Lectura Dirigida`):** Identifica el módulo exacto de tu tarea (`01-identity-and-rbac`, `02-projects-and-keys`, `03-visual-trainer-and-rag`, `04-billing-and-whop`, `05-voice-realtime-gateway`, `06-superadmin-governance`, `sdk`, `frontend-landing`, `frontend-dashboard`). Lee únicamente los archivos listados en la columna `Archivos Clave de Entrada` de ese módulo.
+1. **Consulta la Sección 1 (`Mapa de Enrutamiento para Lectura Dirigida`):** Identifica el dominio exacto de tu tarea (`00. Cimientos`, `00. Kernel Compartido`, `01. Identidad, Logins, MFA & Legal`, `02. Proyectos, Dominios & API Keys`, `03. Entrenamiento Visual & Mapa RAG`, `04. Facturación & Cobros`, `05. Gateway de Voz Realtime`, `06. Gobierno SuperAdmin`, `07. Endpoints Públicos Comerciales & Sandbox`, `07. Frontend Landing Comercial`, `08. Frontend Paneles, CRM & Docs`, `09. SDK Web`, `QA & Pruebas de Fuego`). Lee únicamente los archivos listados en la columna `Archivos Clave de Lectura Obligatoria` de ese dominio.
 2. **Consulta la Sección 2 (`Catálogo de Dependencias y Utilidades Compartidas`):** Verifica si la librería externa o la función auxiliar que necesitas ya está registrada. Si existe, reutilízala desde su ruta oficial; está prohibido crear una segunda implementación.
 3. **Consulta la Sección 3 (`Semáforo de Concurrencia Multi-Agente`):** Verifica que ningún otro agente de IA tenga bloqueados los archivos que planeas modificar. Si hay solapamiento, aplica el protocolo *Stop & Ask* de la Skill 01.
 
 ### Paso 2: Actualización Obligatoria Post-Trabajo en `docs/LIVE_ARCHITECTURE_LEDGER.md`
 
 Cada vez que crees, edites, dividas o conectes archivos, actualiza `docs/LIVE_ARCHITECTURE_LEDGER.md` manteniendo sus 5 secciones canónicas al día. Si el archivo `docs/LIVE_ARCHITECTURE_LEDGER.md` aún no existe en el repositorio, créalo inmediatamente con la plantilla completa especificada a continuación.
+
+> **Estructura viva evolucionada:** el Ledger real creció más allá de la plantilla mínima. Hoy mantiene además: el *Buzón de Notificaciones y Dependencias Inter-IA (Carriles 1–4)* dentro de la Sección 3, sub-inventarios por parte/división y subtotales por carril dentro de la Sección 4, y notas de arrastre junto a las bitácoras de la Sección 5. **La fuente de verdad es el propio `docs/LIVE_ARCHITECTURE_LEDGER.md`: replica su estructura vigente y no la simplifiques.**
 
 ## Plantilla Canónica Obligatoria de `docs/LIVE_ARCHITECTURE_LEDGER.md`
 
@@ -104,6 +106,6 @@ Mantén el documento estructurado exactamente con estas 5 secciones técnicas, c
 ## Reglas de Oro de la Documentadora Live
 
 1. **Concisión Técnica Sin Paja:** No pegues bloques enteros de código fuente dentro de `docs/LIVE_ARCHITECTURE_LEDGER.md`. Registra rutas exactas, nombres de clases/funciones, firmas de entrada/salida, tablas afectadas y conteo de líneas.
-2. **Sincronización Inmediata del Conteo de Líneas:** Cada vez que agregues o dividas un archivo en la Sección 4 (`Inventario de Archivos`), escribe el número real de líneas obtenido con `wc -l`.
-3. **Eliminación de Archivos Obsoletos del Índice:** Si durante una refactorización divides un archivo de 490 líneas en dos archivos de 250 líneas, actualiza inmediatamente la tabla de la Sección 1 y Sección 4 para que ningún agente futuro intente buscar el archivo antiguo.
+2. **Sincronización Inmediata del Conteo de Líneas:** Cada vez que agregues, dividas o retires un archivo en la Sección 4 (`Inventario de Archivos`), escribe el número real de líneas obtenido con el auditor oficial **`npm run check:lines`** (`node scripts/check-file-lines.mjs`: reporta violaciones >500, límite crítico 451–500 y alertas preventivas). El recuento global del encabezado debe coincidir con la salida del auditor tras cada pasada.
+3. **Eliminación de Archivos Obsoletos del Índice:** Si durante una refactorización divides un archivo de 490 líneas en dos archivos de 250 líneas, actualiza inmediatamente la tabla de la Sección 1 y Sección 4 para que ningún agente futuro intente buscar el archivo antiguo. **Ejemplo real:** el retiro del motor histórico de partículas (`LivingParticleIntelligenceCanvas.tsx` / `particle-geometry.ts`, 2026-10-18) eliminó sus filas y su nota de arrastre en la misma pasada del borrado físico.
 4. **Higiene de Avisos y Purgado de Alertas Resueltas ("Notice Purge"):** Las alertas de errores o advertencias entre carriles (ej. discrepancias de `tsc` o pruebas temporales) son **estrictamente transitorias**. Cuando el agente responsable de ese carril corrija los errores, **debe purgar inmediatamente la alerta del encabezado y de las notas operativas del Ledger**, confirmando el estado actual limpio (`0 errores`). El registro de la subsanación se preserva únicamente en la bitácora histórica de esa Parte en la Sección 5. De esta manera, el Live Ledger refleja la verdad en tiempo real sin falsas alarmas para el siguiente agente.

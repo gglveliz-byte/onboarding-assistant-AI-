@@ -43,6 +43,7 @@ export interface CreateUserData {
   readonly isPlatformSuperadmin?: boolean;
   readonly otpSha256?: string | null;
   readonly otpExpiresAt?: Date | null;
+  readonly phoneNumber?: string | null;
 }
 
 /** Datos necesarios para crear una nueva organizacion. */
@@ -54,6 +55,7 @@ export interface CreateOrganizationData {
   readonly ssoEmailDomain?: string | null;
   readonly dpaSignedAt?: Date | null;
   readonly dpaClickwrapIp?: string | null;
+  readonly phoneNumber?: string | null;
 }
 
 /** Datos para registrar una nueva sesion de autenticacion. */
@@ -101,6 +103,7 @@ export class IdentityRowMapper {
       lockedUntil: row['locked_until'] ? new Date(String(row['locked_until'])) : null,
       lastLoginAt: row['last_login_at'] ? new Date(String(row['last_login_at'])) : null,
       lastLoginIp: row['last_login_ip'] ? String(row['last_login_ip']) : null,
+      phoneNumber: row['phone_number'] ? String(row['phone_number']) : null,
       createdAt: new Date(String(row['created_at'])),
       updatedAt: new Date(String(row['updated_at'])),
     };
@@ -130,6 +133,7 @@ export class IdentityRowMapper {
       suspendedReason: row['suspended_reason'] ? String(row['suspended_reason']) : null,
       suspendedAt: row['suspended_at'] ? new Date(String(row['suspended_at'])) : null,
       suspendedByUserId: row['suspended_by_user_id'] ? String(row['suspended_by_user_id']) : null,
+      phoneNumber: row['phone_number'] ? String(row['phone_number']) : null,
       createdAt: new Date(String(row['created_at'])),
       updatedAt: new Date(String(row['updated_at'])),
     };

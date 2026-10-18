@@ -1,7 +1,7 @@
 ---
 name: orquestador-construccion-backend
 description: >-
-  Skill maestra y orquestadora padre para la construcción modular del backend en 16 partes del Onboarding Assistant AI. Úsala automáticamente cuando el usuario pida iniciar, continuar o ejecutar cualquiera de las 16 partes del backend (ej: "comienza con la parte 1", "haz la parte 2", "siguiente parte"). Conecta la orden del usuario con los planos de ingeniería (09 y 10), el Ledger Live (docs/LIVE_ARCHITECTURE_LEDGER.md), el archivo orden.md y las reglas de construcción de código.
+  Skill maestra y orquestadora padre para la construcción modular del backend en 16 partes del Onboarding Assistant AI (estado actual: las 16 partes están COMPLETADAS y selladas). Úsala cuando el usuario mencione cualquiera de las 16 partes del backend (ej: "la parte 3", "revisa la parte 9", "siguiente parte") para leer su bitácora, re-ejecutar sus verificaciones y reportar el estado real. Conecta la orden del usuario con los planos de ingeniería (09 y 10), el Ledger Live (docs/LIVE_ARCHITECTURE_LEDGER.md), el archivo orden.md y las reglas de construcción de código.
 ---
 
 # 🧠 Skill Padre Orquestadora: Construcción Modular del Backend en 16 Partes
@@ -13,6 +13,18 @@ Su propósito es que cuando el usuario escriba en el chat una orden corta como:
 > *"Ejecuta la parte 4"* o *"Siguiente parte"*
 
 Cualquier agente de IA (**DeepSeek V4.1 Flash** o **Gemini 3.8 Flash**) sepa exactamente qué archivos leer, qué archivos crear, qué modelo le corresponde y cómo registrar su avance sin pedir instrucciones adicionales.
+
+---
+
+## ⚠️ Estado de la Obra (2026-10-18): 16/16 PARTES COMPLETADAS Y SELLADAS
+
+Las 16 partes del backend **ya están construidas, auto-ensambladas y verificadas** de extremo a extremo: `npm run test:e2e` superado con **74/74 aserciones**, suites troncales en verde (`test:auth-routes`, `test:auth-flow`, `test:billing`, `test:rates`, `test:deduction`, `test:governance`, `test:public-sdk`, `test:trainer`) y `npm run typecheck` con 0 errores. Esta skill ya no dispara construcción desde cero; cuando el usuario mencione una «Parte X», el agente debe:
+
+1. Leer la bitácora de esa parte en `docs/LIVE_ARCHITECTURE_LEDGER.md` (Sección 5) y sus filas de inventario (Sección 4).
+2. Re-ejecutar su verificación oficial con los atajos reales de `package.json`: `npm run verify:part1/2/3/7/9/10/11/12/13/14/15/16` (líneas + tipos + pruebas de la parte).
+3. Reportar el estado real; solo extender o refactorizar bajo órdenes explícitas del usuario.
+
+La matriz de asignación por modelo que sigue se conserva como registro histórico de la construcción original.
 
 ---
 
@@ -72,9 +84,9 @@ Aplica obligatoriamente las reglas de la skill `reglas-globales-construccion-cod
 
 ### Paso 4: Verificación y Pruebas de Calidad (Obligatorio)
 Aplica obligatoriamente la skill `pruebas-verificacion-integracion`:
-1. Ejecuta el filtro de líneas (`wc -l`) certificando que ningún archivo supere las **500 líneas**.
-2. Ejecuta comprobación de tipado TypeScript (`npx tsc --noEmit`).
-3. Ejecuta la **Prueba de Fuego** específica del módulo (ej: `migrator.ts` para migraciones, tests de criptografía, test de webhooks HMAC de Whop, test de VAD de voz, etc.).
+1. Ejecuta la auditoría de líneas oficial: `npm run check:lines` (`scripts/check-file-lines.mjs`) certificando **0 violaciones** del tope de 500 líneas.
+2. Ejecuta el tipado estricto: `npm run typecheck` (monorepo) y `npm run typecheck:web` si tocaste `apps/web`.
+3. Ejecuta la **Prueba de Fuego** con los atajos reales de `package.json`: `npm run verify:partX` (combina líneas + tipos + pruebas de la parte), o el test específico (`npm run test:webhook`, `npm run test:e2e`, `npm run db:migrate`, etc.).
 4. Si alguna prueba falla, corrige el código inmediatamente antes de reportar al usuario.
 
 ### Paso 5: Cierre y Actualización del Live Ledger

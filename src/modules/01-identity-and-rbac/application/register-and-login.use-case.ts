@@ -67,6 +67,7 @@ export interface RegisterOwnerInput {
   readonly organizationSlug: string;
   readonly ipAddress: string;
   readonly userAgent: string;
+  readonly phone?: string;
 }
 
 /** Resultado del registro inicial de organizacion y propietario. */
@@ -119,7 +120,9 @@ export class RegisterOrganizationOwnerUseCase {
     // 4. Ejecucion transaccional para crear usuario, organizacion, membresia, suscripcion y proyecto base
     const { user, org } = await this.rlsPool.withClient(async (client) => {
       await client.query('BEGIN');
+      await client.query("SELECT set_config('app.is_superadmin', 'true', true)");
       try {
+        const phone = input.phone?.trim() || null;
         // Insercion de usuario
         const createdUser = await this.identityRepo.createUser(
           {
@@ -130,6 +133,7 @@ export class RegisterOrganizationOwnerUseCase {
             isPlatformSuperadmin: false,
             otpSha256,
             otpExpiresAt,
+            phoneNumber: phone,
           },
           client
         );
@@ -143,6 +147,7 @@ export class RegisterOrganizationOwnerUseCase {
             enforceSso: false,
             dpaSignedAt: new Date(),
             dpaClickwrapIp: input.ipAddress,
+            phoneNumber: phone,
           },
           client
         );
@@ -160,20 +165,14 @@ export class RegisterOrganizationOwnerUseCase {
 
         // Insercion de suscripcion base en whop_subscriptions
         await client.query(
-          `INSERT INTO whop_subscriptions (
-            organization_id, plan_code, status, current_period_start, current_period_end,
-            period_included_minutes_quota, period_included_minutes_remaining, period_overage_minutes_used,
-            current_period_overage_billed_usd, credit_balance_usd, auto_topup_enabled
-          ) VALUES ($1, 'PAYG', 'ACTIVE', NOW(), NOW() + INTERVAL '30 days', '0.000000', '0.000000', '0.000000', '0.000000', '0.000000', TRUE)`,
+          `INSERT INTO whop_subscriptions (organization_id, plan_code, status, current_period_start, current_period_end, period_included_minutes_quota, period_included_minutes_remaining, period_overage_minutes_used, current_period_overage_billed_usd, credit_balance_usd, auto_topup_enabled) VALUES ($1, 'PAYG', 'ACTIVE', NOW(), NOW() + INTERVAL '30 days', '0.000000', '0.000000', '0.000000', '0.000000', '0.000000', TRUE)`,
           [createdOrg.id]
         );
 
         // Insercion de proyecto por defecto
         await client.query(
-          `INSERT INTO projects (
-            organization_id, name, slug, description, environment, status
-          ) VALUES ($1, 'General', 'general', 'Proyecto principal de onboarding y asistentes', 'LIVE', 'ACTIVE')`,
-          [createdOrg.id]
+          `INSERT INTO projects (organization_id, name, slug, environment, is_active, created_by_user_id) VALUES ($1, 'General', 'general', 'LIVE', TRUE, $2)`,
+          [createdOrg.id, createdUser.id]
         );
 
         await client.query('COMMIT');
@@ -479,15 +478,9 @@ export class AuthenticateUserUseCase {
       status: 'AUTHENTICATED',
       user,
       organization: targetOrg ?? {
-        id: '',
-        name: 'Plataforma',
-        slug: 'platform',
-        status: 'ACTIVE',
-        enforceMfa: false,
-        enforceSso: false,
-        optInSessionTranscripts: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
+        id: '', name: 'Plataforma', slug: 'platform', status: 'ACTIVE',
+        enforceMfa: false, enforceSso: false, optInSessionTranscripts: false,
+        createdAt: new Date(), updatedAt: new Date(),
       },
       role: targetRole,
       accessToken,

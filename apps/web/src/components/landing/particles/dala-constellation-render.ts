@@ -27,6 +27,7 @@
 
 import {
   BRAIN_COMPACT_OFFSET_FACTOR,
+  BRAIN_COMPACT_OFFSET_Y_FACTOR,
   BRAIN_COMPACT_SCALE,
   BRAIN_SCREEN_TRANSFORM,
   BRAIN_SIDE_SHIFT_MIN_WIDTH,
@@ -35,7 +36,7 @@ import {
   NETWORK_TO_WORLD_RANGE,
   PERSPECTIVE_FOV,
   lerp,
-  smootherstep,
+  smoothstep,
   type BackdropGlyph,
   type BackdropNode,
   type PointerState,
@@ -67,8 +68,8 @@ export interface ConstellationScene {
 export function renderConstellationFrame(scene: ConstellationScene, state: ConstellationRenderState): void {
   const { ctx, width, height, time, scroll, nodes, glyphs, pointer } = scene;
 
-  const tBrainToNetwork = smootherstep(BRAIN_TO_NETWORK_RANGE[0], BRAIN_TO_NETWORK_RANGE[1], scroll);
-  const tNetworkToWorld = smootherstep(NETWORK_TO_WORLD_RANGE[0], NETWORK_TO_WORLD_RANGE[1], scroll);
+  const tBrainToNetwork = smoothstep(BRAIN_TO_NETWORK_RANGE[0], BRAIN_TO_NETWORK_RANGE[1], scroll);
+  const tNetworkToWorld = smoothstep(NETWORK_TO_WORLD_RANGE[0], NETWORK_TO_WORLD_RANGE[1], scroll);
   const wBrain = 1 - tBrainToNetwork;
   const wNetwork = tBrainToNetwork * (1 - tNetworkToWorld);
   const wWorld = tNetworkToWorld;
@@ -83,23 +84,27 @@ export function renderConstellationFrame(scene: ConstellationScene, state: Const
 
   drawAmbientGlyphs(ctx, glyphs, width, height, time, cx, cy, fov, baseScale);
 
+  // Rotación continua inducida por scroll: respuesta fluida inmediata desde el primer píxel
+  const scrollOrbitY = scroll * 0.88;
+  const scrollTiltX = scroll * 0.30;
+
   // Rotaciones por escultura: senos y cosenos una sola vez por fotograma (antes: 6 por nodo).
-  const brainRotY = Math.sin(time * 0.42) * 0.16 + pointer.smoothX * 0.28;
-  const brainRotX = Math.cos(time * 0.32) * 0.06 - pointer.smoothY * 0.18;
+  const brainRotY = Math.sin(time * 0.38) * 0.14 + pointer.smoothX * 0.28 + scrollOrbitY * 0.45;
+  const brainRotX = Math.cos(time * 0.28) * 0.05 - pointer.smoothY * 0.18 + scrollTiltX * 0.35;
   const brainCosY = Math.cos(brainRotY);
   const brainSinY = Math.sin(brainRotY);
   const brainCosX = Math.cos(brainRotX);
   const brainSinX = Math.sin(brainRotX);
 
-  const networkRotY = Math.sin(time * 0.24) * 0.16 + pointer.smoothX * 0.42;
-  const networkRotX = 0.12 - pointer.smoothY * 0.2;
+  const networkRotY = Math.sin(time * 0.22) * 0.14 + pointer.smoothX * 0.38 + scrollOrbitY * 0.55;
+  const networkRotX = 0.10 - pointer.smoothY * 0.18 + scrollTiltX * 0.35;
   const networkCosY = Math.cos(networkRotY);
   const networkSinY = Math.sin(networkRotY);
   const networkCosX = Math.cos(networkRotX);
   const networkSinX = Math.sin(networkRotX);
 
-  const worldRotY = -0.52 + time * 0.32 + pointer.smoothX * 0.55;
-  const worldRotX = 0.16 - pointer.smoothY * 0.28;
+  const worldRotY = -0.52 + time * 0.32 + pointer.smoothX * 0.55 + scrollOrbitY * 0.85;
+  const worldRotX = 0.16 - pointer.smoothY * 0.28 + scrollTiltX * 0.45;
   const worldCosY = Math.cos(worldRotY);
   const worldSinY = Math.sin(worldRotY);
   const worldOrbitalCosY = Math.cos(-worldRotY * 1.35);
@@ -117,25 +122,24 @@ export function renderConstellationFrame(scene: ConstellationScene, state: Const
   const brainStageOffsetX = sideShiftActive
     ? Math.min(BRAIN_SCREEN_TRANSFORM.offsetX * width, maxOffsetX)
     : BRAIN_COMPACT_OFFSET_FACTOR * width;
-  const brainStageOffsetY = sideShiftActive ? BRAIN_SCREEN_TRANSFORM.offsetY * height : 0;
+  const brainStageOffsetY = sideShiftActive
+    ? BRAIN_SCREEN_TRANSFORM.offsetY * height
+    : BRAIN_COMPACT_OFFSET_Y_FACTOR * height;
   const networkStageOffsetX = sideShiftActive ? Math.min(0.245 * width, maxOffsetX) : 0;
-  const networkStageOffsetY = sideShiftActive ? 0.045 * height : 0;
-  const networkStageScale = 0.82;
+  const networkStageOffsetY = sideShiftActive ? 0.035 * height : 0;
+  const networkStageScale = 1.26;
   const stageScale = wBrain * brainStageScale + wNetwork * networkStageScale + wWorld * 1.0;
   const stageOffsetX = wBrain * brainStageOffsetX + wNetwork * networkStageOffsetX;
   const stageOffsetY = wBrain * brainStageOffsetY + wNetwork * networkStageOffsetY;
 
-  // Torsión espiral orgánica durante las transiciones de scroll (4 carriles precalculados).
+  // Torsión espiral orgánica muy suave para morphing laminar sin giros violentos
   const morphMotion = Math.sin(tBrainToNetwork * Math.PI) * (1 - tNetworkToWorld) + Math.sin(tNetworkToWorld * Math.PI);
-  const twistAmp = morphMotion > 0.01 ? morphMotion * 0.78 : 0;
+  const twistAmp = morphMotion > 0.01 ? morphMotion * 0.16 : 0;
   for (let lane = 0; lane < 4; lane += 1) {
     const twistAngle = twistAmp * (0.6 + lane * 0.14);
     state.twistCos[lane] = Math.cos(twistAngle);
     state.twistSin[lane] = Math.sin(twistAngle);
   }
-
-  const snapToNetwork = tBrainToNetwork > 0.5 && tNetworkToWorld < 0.5;
-  const snapToWorld = tNetworkToWorld >= 0.5;
   const buffer = state.buffer;
   let zMin = Number.POSITIVE_INFINITY;
   let zMax = Number.NEGATIVE_INFINITY;
@@ -237,15 +241,21 @@ export function renderConstellationFrame(scene: ConstellationScene, state: Const
     node.rotZ += node.vRotZ;
     node.rotX += node.vRotX;
 
-    let colorId = state.brainColorIds[i] ?? 0;
-    if (snapToNetwork) {
+    // Transición cromática continua por pesos de etapa: el color dominante fluye con el morphing
+    let colorId: number;
+    if (wBrain >= wNetwork && wBrain >= wWorld) {
+      colorId = state.brainColorIds[i] ?? 0;
+    } else if (wNetwork >= wWorld) {
       colorId = state.networkColorIds[i] ?? 0;
-    } else if (snapToWorld) {
+    } else {
       colorId = state.worldColorIds[i] ?? 0;
     }
 
     const normDepth = Math.max(0, Math.min(1, (z + 290 * baseScale) / (580 * baseScale)));
     let alpha = 0.25 + normDepth * 0.73;
+    if (!sideShiftActive && wBrain > 0.05) {
+      alpha *= 0.55;
+    }
 
     // En la Tierra, atenuar el hemisferio trasero y realzar las costas frontales.
     if (wWorld > 0.2) {

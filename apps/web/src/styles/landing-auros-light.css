@@ -1,0 +1,498 @@
+/* @archivo apps/web/src/styles/landing-auros-light.css
+ * @modulo 12. Landing Publica Comercial: tokens y clases Auros Light
+ * @proposito
+ *   Fuente unica de tokens cromaticos, capas de superficie, tipografia editorial,
+ *   gradientes de alta elegancia y clases utilitarias semanticas del portal comercial
+ *   en tema claro "Living Particle Intelligence / Laguna Bioluminiscente":
+ *   lienzo #F2FAF8, superficies blancas y tenues, cero sombras (box-shadow: none !important),
+ *   radios estrictos de 12px en tarjetas y 6px en botones/chips, y clases de motion
+ *   editorial (.oa-reveal-up, .oa-mask-reveal, .oa-motion-stagger).
+ *
+ * @resumen_contenido
+ *   - Bloque `:root`: tokens oficiales del Master Prompt (Superficies, Tipografia, Acentos,
+ *     Gradiente CTA) y alias retrocompatibles con el ecosistema anterior.
+ *   - Ambito `[data-portal="commercial-landing"]`: candado `box-shadow: none !important`
+ *     con descendientes y pseudoelementos; anillo de foco y seleccion editorial.
+ *   - Clases congeladas `.oa-*`: CTA degradado (#43E7DB -> #8052FF), boton de flecha,
+ *     kicker con tracking amplio, tarjeta liquida (kelp/lift/deep), separador capilar,
+ *     chip de metadatos, punto en vivo, vumetro, escenario de demo, texto cinetico,
+ *     cifra, pastilla, texto aurora, slider y pulsos/grafo del explorador compacto.
+ *   - Utilidades de motion editorial: `.oa-reveal-up`, `.oa-mask-reveal`, `.oa-motion-stagger`.
+ *   - Fotogramas clave `oa-pulse`, `oa-vu-breathe`, `oa-drift`, `oa-reveal-up`,
+ *     `oa-mask-reveal` mas `oa-graph-pulse`/`oa-chip-pulse`/`oa-quick-fade` compactos.
+ *
+ * @dependencias_internas
+ *   - Importada por `apps/web/src/app/globals.css`.
+ *   - Consumida por `apps/web/src/components/landing/primitives/AurosPrimitives.tsx` y
+ *     todos los componentes de la Landing Publica Comercial.
+ *
+ * @dependencias_externas
+ *   - Ninguna (hoja de estilos CSS pura sin librerias externas).
+ *
+ * @tablas_bd_o_redis
+ *   - Ninguna (hoja de presentacion pura: no accede a datos).
+ */
+
+/* === A. Tokens Oficiales del Master Design System (Auros Light Premium) === */
+:root {
+  /* 1. Superficies Oficiales */
+  --surface-primary: #F2FAF8;
+  --surface-white: #FFFFFF;
+  --surface-secondary: #EAF7F4;
+  --surface-interactive: #DDF3EE;
+  --border-subtle: #C5E8E1;
+  --border-divider: #D7EBE6;
+
+  /* 2. Tipografia Oficial */
+  --text-primary: #062D2A;
+  --text-secondary: #245954;
+  --text-tertiary: #547B76;
+  --text-low: #769792;
+
+  /* 3. Acentos Cromaticos Oficiales */
+  --accent-violet: #8052FF;
+  --accent-turquoise: #43E7DB;
+  --accent-teal: #15846E;
+  --accent-electric: #72B7FF;
+  --accent-magenta: #E7A4F4;
+  --accent-warm-yellow: #FFD36E;
+
+  /* 4. Gradiente Primario CTA Oficial (#43E7DB -> #8052FF) */
+  --gradient-cta: linear-gradient(135deg, #43E7DB 0%, #8052FF 100%);
+
+  /* 5. Aliasing de compatibilidad con componentes consumidores preexistentes */
+  --surface-liquid-abyss: var(--surface-primary);
+  --surface-liquid-deep: var(--surface-secondary);
+  --surface-liquid-kelp: var(--surface-white);
+  --surface-liquid-lift: var(--surface-interactive);
+  --surface-slate-deep: #B8E0DA;
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-tertiary);
+  --color-stat-ink: #581585;
+  --color-stat-surface: #F9E8FF;
+  --color-hairline: var(--border-subtle);
+  --color-divider: var(--border-divider);
+  --color-kinetic-ink: #D7EBE6;
+  --color-bioluminescent: var(--accent-teal);
+  --color-bioluminescent-soft: var(--accent-turquoise);
+  --color-orchid-glow: var(--accent-violet);
+  --gradient-aurora: var(--gradient-cta);
+  --gradient-bioluminescent: linear-gradient(90deg, #15846E 0%, #43E7DB 50%, #8052FF 100%);
+  --gradient-bioluminescent-radial: radial-gradient(120% 120% at 20% 0%, #DDF3EE 0%, #F2FAF8 55%, #C5E8E1 100%);
+}
+
+/* === B. Ambito del portal comercial: candado de sombras, foco y seleccion === */
+/* Regla inquebrantable: cero sombras en contenedor, descendientes y pseudoelementos */
+[data-portal="commercial-landing"],
+[data-portal="commercial-landing"]::before,
+[data-portal="commercial-landing"]::after,
+[data-portal="commercial-landing"] *,
+[data-portal="commercial-landing"] *::before,
+[data-portal="commercial-landing"] *::after {
+  box-shadow: none !important;
+}
+
+/* Anillo de foco editorial visible sobre cualquier superficie clara */
+[data-portal="commercial-landing"] :focus-visible {
+  outline: 2px solid var(--accent-teal);
+  outline-offset: 2px;
+}
+
+/* Texto seleccionado: agua interactiva en lugar del azul generico */
+[data-portal="commercial-landing"] ::selection {
+  background-color: var(--surface-interactive);
+  color: var(--text-primary);
+}
+
+/* === C. Clases semanticas consolidadas (.oa-*) === */
+/* 1. CTA principal: gradiente turquesa a violeta (#43E7DB -> #8052FF), texto oscuro #062D2A, borde 1px #C5E8E1, radio 6px */
+.oa-gradient-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 24px;
+  border: 1px solid rgba(128, 82, 255, 0.2);
+  border-radius: 9999px;
+  background: #8052FF;
+  color: #FFFFFF;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  text-transform: none;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: 0 4px 14px -2px rgba(128, 82, 255, 0.3) !important;
+  transition: transform 140ms ease, filter 140ms ease, box-shadow 140ms ease;
+  user-select: none;
+}
+
+.oa-gradient-button:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 22px -3px rgba(128, 82, 255, 0.45) !important;
+}
+
+.oa-gradient-button:active {
+  transform: translateY(0);
+}
+
+.oa-gradient-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  filter: none;
+}
+
+@media (max-width: 768px) {
+  .oa-gradient-button {
+    min-height: 42px;
+    padding: 0 22px;
+  }
+}
+
+/* 2. Boton cuadrado accesible con flecha diagonal (minimo 32x32) */
+.oa-arrow-square {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--surface-white);
+  color: var(--text-primary);
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: none !important;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.oa-arrow-square:hover {
+  background: var(--surface-interactive);
+  border-color: var(--border-subtle);
+}
+
+/* 3. Kicker editorial en mayusculas con tracking amplio */
+.oa-kicker {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+/* 4. Tarjeta liquida base: superficie blanca, borde sutil y radio 12px */
+.oa-liquid-card {
+  background: var(--surface-white);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: clamp(14px, 2.5vw, 24px);
+  box-shadow: none !important;
+}
+
+/* 5. Modificadores de tono de tarjeta: kelp (blanco), lift (interactivo) y deep (secundario) */
+.oa-liquid-card--kelp {
+  background: var(--surface-white);
+  border-color: var(--border-subtle);
+}
+
+.oa-liquid-card--lift {
+  background: var(--surface-interactive);
+  border-color: var(--border-subtle);
+}
+
+.oa-liquid-card--deep {
+  background: var(--surface-secondary);
+  border-color: var(--border-divider);
+}
+
+/* 6. Separador capilar de un pixel */
+.oa-hairline {
+  height: 1px;
+  border: none;
+  background: var(--border-divider);
+}
+
+/* 7. Chip de metadatos: pastilla tecnica compacta */
+.oa-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 500;
+  padding: 3px 10px;
+  min-height: 32px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-white);
+  color: var(--text-secondary);
+}
+
+@media (min-width: 640px) {
+  .oa-chip {
+    min-height: 32px;
+  }
+}
+
+/* 8. Punto de estado en vivo con anillo pulsante */
+.oa-live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-turquoise);
+  position: relative;
+}
+
+.oa-live-dot::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: inherit;
+  animation: oa-pulse 2.2s ease-out infinite;
+}
+
+/* 9. Barra del vumetro de voz con nivel dinamico por variable CSS */
+.oa-vu-bar {
+  display: inline-block;
+  width: 4px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--accent-turquoise), var(--accent-teal));
+  transform-origin: bottom;
+  transform: scaleY(var(--oa-vu-level, 0.18));
+  transition: transform 90ms linear;
+}
+
+/* 10. Escenario del demo: contenedor limpio con recorte de bordes */
+.oa-demo-stage {
+  position: relative;
+  background: var(--surface-white);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: none !important;
+}
+
+/* 11. Texto cinetico de fondo con deriva sutil */
+.oa-kinetic {
+  font-size: clamp(32px, 5.5vw, 54px);
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--border-divider);
+  white-space: nowrap;
+  user-select: none;
+  pointer-events: none;
+  animation: oa-drift 18s ease-in-out infinite alternate;
+}
+
+/* 12. Cifra estadistica en tono violeta acento de alta definicion */
+.oa-stat-number {
+  font-size: clamp(26px, 3.5vw, 38px);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--accent-violet);
+}
+
+/* 13. Pastilla de cifra con superficie secundaria */
+.oa-stat-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 6px 14px;
+}
+
+/* 14. Texto con gradiente de alta definicion */
+.oa-aurora-text {
+  background: var(--gradient-cta);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* 15. Controles de rango accesibles (.oa-range) */
+.oa-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-interactive);
+  cursor: pointer;
+  touch-action: pan-y;
+  padding: 12px 0;
+  margin: -12px 0;
+  background-clip: content-box;
+}
+
+.oa-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--gradient-cta);
+  border: 2px solid var(--surface-primary);
+  cursor: pointer;
+}
+
+.oa-range::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--gradient-cta);
+  border: 2px solid var(--surface-primary);
+  cursor: pointer;
+}
+
+.oa-range::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-interactive);
+}
+
+.oa-range:focus-visible {
+  outline: 2px solid var(--accent-teal);
+  outline-offset: 4px;
+}
+
+@media (max-width: 768px) {
+  .oa-range::-webkit-slider-thumb {
+    width: 28px;
+    height: 28px;
+  }
+  .oa-range::-moz-range-thumb {
+    width: 28px;
+    height: 28px;
+  }
+}
+
+/* 16. Utilidad de carrusel tactil sin barra visible */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* 17. Pulsos y utilidades del mapa RAG compacto: pastilla, grafo y panel */
+.oa-chip-pulse { animation: oa-chip-pulse 2s ease-in-out infinite; }
+.oa-graph-pulse { animation: oa-graph-pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+.oa-graph-pulse--svg { transform-box: fill-box; transform-origin: center; }
+.oa-dot-grid { background-image: radial-gradient(var(--accent-teal) 1px, transparent 1px); background-size: 12px 12px; }
+.oa-quick-fade { animation: oa-quick-fade 220ms ease-out both; }
+
+/* === D. Clases Utilitarias de Motion Editorial === */
+/* Revelado suave ascendente editorial */
+.oa-reveal-up {
+  animation: oa-reveal-up 720ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity;
+}
+
+/* Revelado con mascara progresiva */
+.oa-mask-reveal {
+  animation: oa-mask-reveal 850ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: clip-path, opacity, transform;
+}
+
+/* Contenedor de aparicion escalonada para elementos hijos */
+.oa-motion-stagger > * {
+  animation: oa-reveal-up 720ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.oa-motion-stagger > *:nth-child(1) { animation-delay: 60ms; }
+.oa-motion-stagger > *:nth-child(2) { animation-delay: 120ms; }
+.oa-motion-stagger > *:nth-child(3) { animation-delay: 180ms; }
+.oa-motion-stagger > *:nth-child(4) { animation-delay: 240ms; }
+.oa-motion-stagger > *:nth-child(5) { animation-delay: 300ms; }
+.oa-motion-stagger > *:nth-child(6) { animation-delay: 360ms; }
+.oa-motion-stagger > *:nth-child(7) { animation-delay: 420ms; }
+.oa-motion-stagger > *:nth-child(8) { animation-delay: 480ms; }
+
+/* === E. Fotogramas clave (Keyframes) === */
+@keyframes oa-pulse {
+  from {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  to {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+@keyframes oa-vu-breathe {
+  0% {
+    transform: scaleY(0.25);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+  100% {
+    transform: scaleY(0.25);
+  }
+}
+
+@keyframes oa-drift {
+  from {
+    transform: translateX(-2%);
+  }
+  to {
+    transform: translateX(2%);
+  }
+}
+
+@keyframes oa-reveal-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes oa-mask-reveal {
+  from {
+    opacity: 0;
+    clip-path: inset(0 0 100% 0);
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0% 0);
+    transform: translateY(0);
+  }
+}
+
+@keyframes oa-chip-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+@keyframes oa-graph-pulse { 0% { transform: scale(0.95); opacity: 0.8; } 50% { transform: scale(1.35); opacity: 0.15; } 100% { transform: scale(0.95); opacity: 0.8; } }
+@keyframes oa-quick-fade { from { opacity: 0.2; } to { opacity: 1; } }
+
+/* === F. Accesibilidad: reposo total si el usuario reduce el movimiento === */
+@media (prefers-reduced-motion: reduce) {
+  .oa-live-dot::after,
+  .oa-kinetic,
+  .oa-vu-bar,
+  .oa-gradient-button,
+  .oa-reveal-up,
+  .oa-mask-reveal,
+  .oa-motion-stagger > *,
+  .oa-chip-pulse, .oa-graph-pulse, .oa-quick-fade {
+    animation: none !important;
+    transition: none !important;
+  }
+}
