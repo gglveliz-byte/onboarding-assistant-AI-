@@ -65,6 +65,19 @@ const VOICE_MODEL_BY_API_CODE: Readonly<Record<string, string>> = {
   QWEN_3_8_OMNI: 'qwen-3.8-omni',
 };
 
+/** Traducción inversa: la API solo acepta los códigos canónicos del enum de PostgreSQL. */
+const API_CODE_BY_UI_LABEL: Readonly<Record<string, string>> = {
+  'gemini-3.8-live': 'GEMINI_3_8_LIVE',
+  'qwen-3.8-omni': 'QWEN_3_8_OMNI_FLASH_REALTIME',
+};
+
+/** Traducción del nivel de sensibilidad VAD del selector al enum del backend (`BALANCED`, no `MEDIUM`). */
+const VAD_BY_UI_LABEL: Readonly<Record<string, string>> = {
+  LOW: 'LOW',
+  MEDIUM: 'BALANCED',
+  HIGH: 'HIGH',
+};
+
 /** Configuración vacía: se usa mientras el proyecto real todavía no ha llegado. */
 const EMPTY_CONFIG: AssistantPromptConfig = {
   primaryVoiceModel: 'gemini-3.8-live',
@@ -192,6 +205,10 @@ export function useAssistantPromptStudio(projectRef: string) {
       setSaveError('No se pudo resolver el proyecto activo: la sesión no tiene proyectos disponibles.');
       return;
     }
+    if (config.systemPrompt.trim().length < 10) {
+      setSaveError('El System Prompt debe tener al menos 10 caracteres para poder publicarse.');
+      return;
+    }
     setIsSaving(true);
     setSaveError(null);
     setSaveSuccess(false);
@@ -202,11 +219,21 @@ export function useAssistantPromptStudio(projectRef: string) {
         body: {
           systemPrompt: config.systemPrompt,
           onboardingStepsJson: config.onboardingSteps,
-          primaryVoiceModel: config.primaryVoiceModel,
-          fallbackVoiceModel: config.fallbackVoiceModel,
+          primaryVoiceModel: API_CODE_BY_UI_LABEL[config.primaryVoiceModel] ?? config.primaryVoiceModel,
+          fallbackVoiceModel: API_CODE_BY_UI_LABEL[config.fallbackVoiceModel] ?? config.fallbackVoiceModel,
           modelTemperature: config.modelTemperature,
           strictStepEnforcement: config.strictStepEnforcement,
           askConfirmationBeforeSubmit: config.askConfirmationBeforeSubmit,
+        },
+      });
+
+      // La velocidad de voz y la sensibilidad de interrupción no forman parte del contrato del
+      // prompt: se guardan en la configuración del proyecto para no perderlas en silencio.
+      await backendFetch<unknown>(`/api/v1/projects/${project.id}`, {
+        method: 'PUT',
+        body: {
+          speechSpeed: config.speechSpeed,
+          vadBargeInSensitivity: VAD_BY_UI_LABEL[config.vadBargeInSensitivity] ?? config.vadBargeInSensitivity,
         },
       });
 

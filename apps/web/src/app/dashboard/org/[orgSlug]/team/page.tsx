@@ -24,6 +24,7 @@
 import React, { useState } from 'react';
 import { useParams } from 'next/navigation';
 import { DeveloperDashboardShell } from '../../../../../components/dashboard-dev/DeveloperDashboardShell';
+import { backendFetch } from '../../../../../lib/api-client/http-client';
 
 interface TeamMember {
   id: string;
@@ -66,26 +67,34 @@ export default function OrganizationTeamPage() {
       return;
     }
     setMembers(members.map((m) => (m.id === memberId ? { ...m, mfaEnabled: false } : m)));
-    setStatusMessage(`Segundo factor MFA reseteado exitosamente para ${memberEmail}`);
-    setTimeout(() => setStatusMessage(null), 4000);
+    setStatusMessage(
+      `El reseteo de MFA de ${memberEmail} se refleja en la vista, pero el backend aún no expone el `
+      + 'endpoint de administración: no se ha ejecutado en el servidor.',
+    );
+    setTimeout(() => setStatusMessage(null), 6000);
   };
 
-  const handleExportData = () => {
-    const dataToExport = {
-      organizationSlug: orgSlug,
-      exportedAtIso: new Date().toISOString(),
-      members: members.map((m) => ({ email: m.email, role: m.role, joinedAt: m.joinedAtIso })),
-      dataCompliance: 'GDPR_ARTICLE_20_PORTABILITY',
-    };
-    const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `gdpr-export-${orgSlug}-${Date.now()}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-    setStatusMessage('Exportación GDPR generada y descargada.');
-    setTimeout(() => setStatusMessage(null), 4000);
+  /** Descarga la portabilidad GDPR REAL que produce el backend (`GET /api/v1/legal/gdpr/export`). */
+  const handleExportData = async () => {
+    setStatusMessage('Generando la exportación GDPR desde el servidor…');
+    try {
+      const payload = await backendFetch<unknown>('/api/v1/legal/gdpr/export');
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `gdpr-export-${orgSlug}-${new Date().toISOString().slice(0, 10)}.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setStatusMessage('Exportación GDPR descargada desde el servidor.');
+    } catch (caught) {
+      setStatusMessage(
+        caught instanceof Error
+          ? `No fue posible exportar los datos: ${caught.message}`
+          : 'No fue posible exportar los datos personales.',
+      );
+    }
+    setTimeout(() => setStatusMessage(null), 6000);
   };
 
   return (

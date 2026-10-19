@@ -152,12 +152,13 @@ const GENERIC_ERROR_MESSAGE = 'No fue posible completar la solicitud. Inténtalo
 /** Mensaje de indisponibilidad de red cuando `fetch` no logra contactar al servidor. */
 const NETWORK_ERROR_MESSAGE = 'No fue posible contactar el servidor. Revisa tu conexión e inténtalo de nuevo.';
 
-/** Espejo de los 15 códigos públicos del backend para validar sobres de error. */
+/** Espejo de los 16 códigos públicos del backend para validar sobres de error. */
 const BACKEND_ERROR_CODES: readonly string[] = [
   'UNAUTHORIZED', 'TOKEN_VERSION_REVOKED', 'FORBIDDEN', 'VALIDATION_FAILED',
   'NOT_FOUND', 'CONFLICT', 'TENANT_SUSPENDED', 'LEGAL_CONSENT_OUTDATED',
   'DPA_NOT_SIGNED', 'ORIGIN_NOT_ALLOWED', 'SSRF_BLOCKED_IP', 'INSUFFICIENT_FUNDS',
   'RATE_LIMIT_EXCEEDED', 'PROVIDER_UNAVAILABLE', 'INTERNAL_ERROR',
+  'INSUFFICIENT_PERMISSIONS',
 ];
 
 /** Espejo de estado HTTP → código público sintetizado cuando no hay sobre válido. */
@@ -181,7 +182,16 @@ function isAuditSeverity(value: unknown): value is AuditSeverity {
   return value === 'INFO' || value === 'WARN' || value === 'CRITICAL_SECURITY';
 }
 
-/** Valida la forma exacta de `BackendErrorEnvelope` antes de confiar en sus campos. */
+/**
+ * Valida el sobre de error del backend de forma TOLERANTE.
+ *
+ * El plano de control responde dos envoltorios: el completo (`code`, `message`, `httpStatus`,
+ * `wsCloseCode`, `auditSeverity`, `details`) y uno reducido en las capas de borde
+ * (`{ error: { code, message } }`). Antes se exigía la forma completa, así que TODO error se
+ * descartaba y se sustituía por un mensaje genérico: se perdían el código de negocio (por
+ * ejemplo `DPA_NOT_SIGNED` o `LEGAL_CONSENT_OUTDATED`) y nunca se emitían los eventos globales.
+ * Ahora basta con `code` y `message`; el resto se deriva del estado HTTP de la respuesta.
+ */
 function isBackendErrorEnvelope(value: unknown): value is BackendErrorEnvelope {
   if (!isRecord(value) || !isRecord(value['error'])) {
     return false;
@@ -190,10 +200,6 @@ function isBackendErrorEnvelope(value: unknown): value is BackendErrorEnvelope {
   return (
     isBackendErrorCode(errorPayload['code'])
     && typeof errorPayload['message'] === 'string'
-    && typeof errorPayload['httpStatus'] === 'number'
-    && typeof errorPayload['wsCloseCode'] === 'number'
-    && isAuditSeverity(errorPayload['auditSeverity'])
-    && isRecord(errorPayload['details'])
   );
 }
 
@@ -285,7 +291,12 @@ async function readSuccessBody<T>(response: Response): Promise<T> {
   return rawBody.length === 0 ? (undefined as T) : (JSON.parse(rawBody) as T);
 }
 
-/** Construye el error tipado desde la respuesta fallida: sobre válido o síntesis local. */
+/**
+ * Construye el error tipado desde la respuesta fallida.
+ * Acepta el sobre reducido del borde (`{ error: { code, message } }`) y completa los campos
+ * ausentes con el estado HTTP y una severidad informativa, de modo que el mensaje y el código
+ * de negocio del backend llegan intactos a la interfaz.
+ */
 async function buildFailure(response: Response, path: string): Promise<BackendHttpError> {
   const rawBody = await response.text();
   let parsedPayload: unknown = null;
@@ -297,8 +308,11 @@ async function buildFailure(response: Response, path: string): Promise<BackendHt
   if (isBackendErrorEnvelope(parsedPayload)) {
     const envelopeError = parsedPayload.error;
     return new BackendHttpError(
-      envelopeError.message, envelopeError.code, envelopeError.httpStatus,
-      envelopeError.auditSeverity, envelopeError.details,
+      envelopeError.message,
+      envelopeError.code,
+      typeof envelopeError.httpStatus === 'number' ? envelopeError.httpStatus : response.status,
+      isAuditSeverity(envelopeError.auditSeverity) ? envelopeError.auditSeverity : 'INFO',
+      isRecord(envelopeError.details) ? envelopeError.details : { path },
     );
   }
   return new BackendHttpError(

@@ -56,11 +56,13 @@ export function UnifiedSystemPromptEditor({
     onChangePrompt(`${config.systemPrompt}\n${variableTag}`);
   };
 
-  const curlSnippet = `curl -X PUT "https://api.tuonboarding.com/api/v1/projects/${projectId}/prompt" \\
+  // Snippet cURL con la RUTA RELATIVA del API (el proxy del mismo origen) y los códigos de motor
+  // canónicos que exige el backend (`GEMINI_3_8_LIVE`, `QWEN_3_8_OMNI_FLASH_REALTIME`).
+  const curlSnippet = `curl -X PUT "/api/v1/projects/${projectId}/prompt" \\
   -H "Authorization: Bearer sk_live_..." \\
   -H "Content-Type: application/json" \\
   -d '{
-    "primaryVoiceModel": "${config.primaryVoiceModel}",
+    "primaryVoiceModel": "${config.primaryVoiceModel === 'qwen-3.8-omni' ? 'QWEN_3_8_OMNI_FLASH_REALTIME' : 'GEMINI_3_8_LIVE'}",
     "modelTemperature": ${config.modelTemperature},
     "systemPrompt": ${JSON.stringify(config.systemPrompt)}
   }'`;

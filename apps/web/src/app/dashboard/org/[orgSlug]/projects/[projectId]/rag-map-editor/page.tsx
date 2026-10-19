@@ -33,6 +33,8 @@ import { useFunctionalMapDualEditor } from '@/components/rag-editor/useFunctiona
 import { MapVersionHistoryAndShaBar } from '@/components/rag-editor/MapVersionHistoryAndShaBar';
 import { VisualMapTreeAndCardEditor } from '@/components/rag-editor/VisualMapTreeAndCardEditor';
 import { CanonicalJsonCodeEditor } from '@/components/rag-editor/CanonicalJsonCodeEditor';
+import { useDashboardSessionFacts } from '@/components/dashboard-dev/useDashboardWorkspace';
+import { useResolvedProjectId } from '@/components/dashboard-dev/useProjectsAndApiKeys';
 
 export default function RagMapEditorPage() {
   const params = useParams();
@@ -40,6 +42,13 @@ export default function RagMapEditorPage() {
   const orgSlug = String(params?.['orgSlug'] ?? 'default-org');
   const projectId = String(params?.['projectId'] ?? 'proj_default_live');
   const [mobileTab, setMobileTab] = useState<'visual' | 'json'>('visual');
+
+  // Rol y entorno REALES: el rol viene del token de la sesión y el entorno del proyecto.
+  const session = useDashboardSessionFacts();
+  const userRole = session.role ?? 'DEVELOPER';
+  const isReadOnly = userRole === 'VIEWER' || userRole === 'BILLING';
+  const { projects } = useResolvedProjectId(projectId);
+  const environment = projects.find((project) => project.id === projectId || project.slug === projectId)?.environment ?? 'LIVE';
 
   const {
     elements,
@@ -65,8 +74,8 @@ export default function RagMapEditorPage() {
     <DeveloperDashboardShell
       orgSlug={orgSlug}
       projectId={projectId}
-      environment="LIVE"
-      userRole="DEVELOPER"
+      environment={environment}
+      userRole={userRole}
     >
       <div className="flex flex-col h-[calc(100vh-6rem)] -m-3 sm:-m-4 bg-[#f7f7f4] overflow-hidden">
         {/* Barra Superior con Digest SHA-256 e Historial */}
@@ -74,6 +83,8 @@ export default function RagMapEditorPage() {
           currentSha256={sha256Hash}
           publishedVersions={publishedVersions}
           isPublishing={isPublishing}
+          isPublishable={elements.length > 0}
+          isReadOnly={isReadOnly}
           onPublish={publishMapVersion}
           onRollback={rollbackToVersion}
         />

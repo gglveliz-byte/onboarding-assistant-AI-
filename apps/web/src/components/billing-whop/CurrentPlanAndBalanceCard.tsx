@@ -37,10 +37,11 @@ export interface CurrentPlanAndBalanceCardProps {
 
 const PLAN_DISPLAY_NAMES: Record<string, string> = {
   PAYG: 'Pago por Uso (PAYG)',
-  PLAN_5: 'Plan Desarrollador ($5 USD/mes)',
-  PLAN_10: 'Plan Crecimiento ($10 USD/mes)',
+  PLAN_5: 'Plan Starter ($5 USD/mes)',
+  PLAN_10: 'Plan Growth ($10 USD/mes)',
   PLAN_30: 'Plan Pro ($30 USD/mes)',
-  PLAN_50: 'Plan Escala Empresarial ($50 USD/mes)',
+  PLAN_50: 'Plan Scale ($50 USD/mes)',
+  CUSTOM_ENTERPRISE: 'Plan Enterprise a medida',
 };
 
 /**
@@ -301,7 +302,8 @@ export function CurrentPlanAndBalanceCard({
               Tramo de Descuento por Volumen Alcanzado: {consumption.activeVolumeTier.discountPercentage}% Dto.
             </span>
             <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--color-ink, #26251e)' }}>
-              Aplicado a partir del minuto {consumption.activeVolumeTier.fromMinute}. Tarifa resultante:{' '}
+              Tramo de descuento por volumen nº {consumption.activeVolumeTier.tier} aplicado. Tarifa
+              resultante:{' '}
               <span style={{ fontFamily: 'var(--font-berkeleymono, monospace)', fontFeatureSettings: '"tnum"' }}>
                 ${consumption.activeVolumeTier.discountedRatePerMinuteUsd ?? consumption.effectiveRatePerMinuteUsd}/min
               </span>

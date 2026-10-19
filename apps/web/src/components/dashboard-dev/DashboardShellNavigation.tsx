@@ -181,8 +181,8 @@ export function EnvironmentModeBadge({ environment }: { readonly environment: 'L
  * Pastilla de saldo en tiempo real con alerta visual al 85% de consumo.
  */
 export function RealtimeBalancePill({
-  remainingMinutes = 120,
-  totalPurchasedMinutes = 200,
+  remainingMinutes = 0,
+  totalPurchasedMinutes = 0,
 }: {
   readonly remainingMinutes?: number;
   readonly totalPurchasedMinutes?: number;

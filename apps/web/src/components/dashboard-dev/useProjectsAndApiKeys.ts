@@ -33,7 +33,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { backendFetch } from '../../lib/api-client/http-client';
+import { backendFetch, getAccessToken } from '../../lib/api-client/http-client';
 
 export type ProjectEnvironment = 'LIVE' | 'TEST';
 export type ApiKeyType = 'pk' | 'sk';
@@ -90,16 +90,35 @@ export interface CreatedApiKeyResult {
 /** Duración de la caché corta de proyectos para no repetir la misma consulta en cada montaje. */
 const PROJECTS_CACHE_TTL_MS = 15_000;
 
-/** Caché de proyectos y promesa en vuelo compartida entre consumidores del mismo tick. */
-let projectsCache: { readonly items: ProjectItem[]; readonly fetchedAt: number } | null = null;
-let projectsRequest: Promise<ProjectItem[]> | null = null;
+/**
+ * Caché de proyectos PARTICIONADA por token de sesión: la lista de un inquilino nunca puede
+ * servirse a otro (al cambiar de sesión, la clave cambia y la caché anterior no se reutiliza).
+ */
+const projectsCache = new Map<string, { readonly items: ProjectItem[]; readonly fetchedAt: number }>();
+
+/** Promesas en vuelo, una por token, para deduplicar consultas concurrentes del mismo inquilino. */
+const projectsRequests = new Map<string, Promise<ProjectItem[]>>();
+
+/**
+ * Vacía la caché de proyectos (al cerrar sesión o cambiar de inquilino).
+ */
+export function clearProjectsCache(): void {
+  projectsCache.clear();
+  projectsRequests.clear();
+}
+
+/** Clave de partición de la caché: el token vigente o un discriminante «sin sesión». */
+function projectsCacheKey(): string {
+  const token = getAccessToken();
+  return token === null || token.length === 0 ? 'sin-sesion' : token;
+}
 
 /** Determina si un valor desconocido es un registro JSON indexable. */
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** Normaliza un valor temporal del backend (ISO o epoch) a una cadena ISO. */
+/** Normaliza un valor temporal del backend (ISO o epoch) a una cadena ISO; `''` si no existe. */
 function toIsoString(value: unknown): string {
   if (typeof value === 'string' && value.length > 0) {
     return value;
@@ -107,7 +126,8 @@ function toIsoString(value: unknown): string {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return new Date(value).toISOString();
   }
-  return new Date().toISOString();
+  // Sin dato del servidor: se deja vacío en lugar de inventar la fecha de ahora.
+  return '';
 }
 
 /** Convierte un proyecto crudo de la API a la proyección del dashboard. */
@@ -228,10 +248,11 @@ async function requestProjects(): Promise<ProjectItem[]> {
     .filter((item): item is ProjectItem => item !== null);
 }
 
-/** Lee la caché de proyectos si sigue vigente. */
-function readProjectsCache(): ProjectItem[] | null {
-  if (projectsCache !== null && Date.now() - projectsCache.fetchedAt < PROJECTS_CACHE_TTL_MS) {
-    return projectsCache.items;
+/** Lee la caché de proyectos si sigue vigente para la sesión actual. */
+function readProjectsCache(cacheKey: string): ProjectItem[] | null {
+  const entry = projectsCache.get(cacheKey);
+  if (entry !== undefined && Date.now() - entry.fetchedAt < PROJECTS_CACHE_TTL_MS) {
+    return entry.items;
   }
   return null;
 }
@@ -246,7 +267,8 @@ export function useProjects() {
   const [error, setError] = useState<string | null>(null);
 
   const fetchProjects = useCallback(async (): Promise<void> => {
-    const cached = readProjectsCache();
+    const cacheKey = projectsCacheKey();
+    const cached = readProjectsCache(cacheKey);
     if (cached !== null) {
       setProjects(cached);
       setLoading(false);
@@ -256,13 +278,15 @@ export function useProjects() {
     setLoading(true);
     setError(null);
     try {
-      if (projectsRequest === null) {
-        projectsRequest = requestProjects().finally(() => {
-          projectsRequest = null;
+      let pending = projectsRequests.get(cacheKey);
+      if (pending === undefined) {
+        pending = requestProjects().finally(() => {
+          projectsRequests.delete(cacheKey);
         });
+        projectsRequests.set(cacheKey, pending);
       }
-      const items = await projectsRequest;
-      projectsCache = { items, fetchedAt: Date.now() };
+      const items = await pending;
+      projectsCache.set(cacheKey, { items, fetchedAt: Date.now() });
       setProjects(items);
     } catch (caught) {
       setProjects([]);

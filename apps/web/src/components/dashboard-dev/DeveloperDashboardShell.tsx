@@ -271,6 +271,17 @@ export function DeveloperDashboardShell({
           </div>
         </header>
 
+        {/* Aviso de error del workspace (proyectos o consumo no disponibles) */}
+        {workspace.error !== null && (
+          <div
+            className="px-3 sm:px-6 py-1.5 bg-[#cf2d56]/10 border-b border-[#cf2d56]/30 text-[11px] font-sans text-[#cf2d56]"
+            role="status"
+            data-testid="dashboard-workspace-error"
+          >
+            {workspace.error}
+          </div>
+        )}
+
         {/* Lienzo de Contenido */}
         <main className="flex-1 overflow-auto p-3 sm:p-4 bg-[#f7f7f4]">{children}</main>
       </div>

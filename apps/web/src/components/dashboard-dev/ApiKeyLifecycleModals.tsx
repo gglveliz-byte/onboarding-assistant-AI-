@@ -40,7 +40,7 @@ export function CreateApiKeyModal({
 }: CreateApiKeyModalProps) {
   const [name, setName] = useState('');
   const [keyType, setKeyType] = useState<'pk' | 'sk'>('pk');
-  const [scopes, setScopes] = useState<string[]>(['telemetry:write']);
+  const [scopes, setScopes] = useState<string[]>(['sdk:realtime:read', 'sdk:realtime:execute']);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
@@ -107,7 +107,8 @@ export function CreateApiKeyModal({
                 type="button"
                 onClick={() => {
                   setKeyType('pk');
-                  setScopes(['telemetry:write', 'voice:stream']);
+                  // Scopes reales que el backend emite para una clave pública (`pk_`).
+                  setScopes(['sdk:realtime:read', 'sdk:realtime:execute']);
                 }}
                 className={`py-2 text-xs font-sans rounded border text-center transition-colors ${
                   keyType === 'pk'
@@ -122,7 +123,8 @@ export function CreateApiKeyModal({
                 type="button"
                 onClick={() => {
                   setKeyType('sk');
-                  setScopes(['maps:publish', 'prompt:update']);
+                  // Scopes reales que el backend emite para una clave secreta (`sk_`).
+                  setScopes(['admin:all', 'rag:manage', 'telemetry:read']);
                 }}
                 className={`py-2 text-xs font-sans rounded border text-center transition-colors ${
                   keyType === 'sk'

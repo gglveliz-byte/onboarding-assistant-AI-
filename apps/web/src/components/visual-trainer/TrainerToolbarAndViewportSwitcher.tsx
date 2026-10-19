@@ -192,9 +192,11 @@ export function TrainerToolbarAndViewportSwitcher({
           <span
             className="text-[11px] font-mono text-[#1f8a65] bg-[#1f8a65]/10 px-2 py-0.5 rounded"
             style={{ fontVariantNumeric: 'tabular-nums' }}
-            title="Latencia de respuesta de inspección vectorial"
+            title={sessionState.simulationMode
+              ? 'Sin DataChannel: no hay medición real de latencia en modo simulación'
+              : 'Latencia de respuesta de inspección vectorial'}
           >
-            {sessionState.lastInspectLatencyMs}ms
+            {sessionState.simulationMode ? '—' : `${sessionState.lastInspectLatencyMs}ms`}
           </span>
           <button
             type="button"

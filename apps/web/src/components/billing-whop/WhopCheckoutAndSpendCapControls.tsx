@@ -23,8 +23,9 @@
  *   - Configuración persistida en `whop_subscriptions.hard_spend_cap_usd` y pasarela de cobro.
  */
 
-import React, { ReactElement, useState } from 'react';
+import React, { ReactElement, useEffect, useState } from 'react';
 import type { BillingConsumptionState, SpendCapConfig } from './useOrganizationBillingWhop';
+import { usePublicPlanCatalog } from './usePublicPlanCatalog';
 
 export interface WhopCheckoutAndSpendCapControlsProps {
   readonly currentPlanCode: string;
@@ -35,58 +36,6 @@ export interface WhopCheckoutAndSpendCapControlsProps {
   readonly onOpenCustomerPortal: () => Promise<string | null>;
   readonly onSaveSpendCap: (config: SpendCapConfig) => Promise<boolean>;
 }
-
-interface PlanOption {
-  readonly code: 'PAYG' | 'PLAN_5' | 'PLAN_10' | 'PLAN_30' | 'PLAN_50';
-  readonly name: string;
-  readonly priceUsd: string;
-  readonly minutes: string;
-  readonly overageRate: string;
-  readonly buttonId: string;
-}
-
-const AVAILABLE_PLANS: readonly PlanOption[] = [
-  {
-    code: 'PAYG',
-    name: 'Pago por Uso',
-    priceUsd: '$0/mes',
-    minutes: '0 min base',
-    overageRate: '$0.150/min',
-    buttonId: 'btn_switch_to_payg',
-  },
-  {
-    code: 'PLAN_5',
-    name: 'Desarrollador',
-    priceUsd: '$5/mes',
-    minutes: '25 min inc.',
-    overageRate: '$0.120/min',
-    buttonId: 'btn_subscribe_plan_5',
-  },
-  {
-    code: 'PLAN_10',
-    name: 'Crecimiento',
-    priceUsd: '$10/mes',
-    minutes: '60 min inc.',
-    overageRate: '$0.110/min',
-    buttonId: 'btn_subscribe_plan_10',
-  },
-  {
-    code: 'PLAN_30',
-    name: 'Pro',
-    priceUsd: '$30/mes',
-    minutes: '220 min inc.',
-    overageRate: '$0.095/min',
-    buttonId: 'btn_subscribe_plan_30',
-  },
-  {
-    code: 'PLAN_50',
-    name: 'Escala Empresarial',
-    priceUsd: '$50/mes',
-    minutes: '450 min inc.',
-    overageRate: '$0.080/min (+ Dto. volumen)',
-    buttonId: 'btn_subscribe_plan_50',
-  },
-];
 
 /**
  * Controles de cambio de plan y formulario de protección Spend Cap.
@@ -100,12 +49,23 @@ export function WhopCheckoutAndSpendCapControls({
   onOpenCustomerPortal,
   onSaveSpendCap,
 }: WhopCheckoutAndSpendCapControlsProps): ReactElement {
-  const [capAmount, setCapAmount] = useState<string>(consumption?.hardSpendCapUsd ?? '100');
+  const [capAmount, setCapAmount] = useState<string>(consumption?.hardSpendCapUsd ?? '');
   const [alert50, setAlert50] = useState<boolean>(true);
   const [alert80, setAlert80] = useState<boolean>(true);
   const [alert100, setAlert100] = useState<boolean>(true);
   const [isSavingCap, setIsSavingCap] = useState<boolean>(false);
   const [capSuccessMsg, setCapSuccessMsg] = useState<string | null>(null);
+
+  // Catálogo REAL de planes: la matriz de precios pública del backend, sin cifras escritas a mano.
+  const { plans, isLoading: isLoadingCatalog, error: catalogError } = usePublicPlanCatalog();
+
+  // Refleja el tope real del servidor cuando la instantánea de consumo llega (o se actualiza).
+  useEffect((): void => {
+    const serverCap = consumption?.hardSpendCapUsd ?? null;
+    if (serverCap !== null) {
+      setCapAmount(serverCap);
+    }
+  }, [consumption?.hardSpendCapUsd]);
 
   const handleSaveCap = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -202,7 +162,21 @@ export function WhopCheckoutAndSpendCapControls({
             gap: '12px',
           }}
         >
-          {AVAILABLE_PLANS.map((plan) => {
+          {catalogError !== null && (
+            <p
+              role="status"
+              style={{
+                gridColumn: '1 / -1',
+                margin: 0,
+                fontSize: '12px',
+                fontFamily: 'var(--font-berkeleymono, monospace)',
+                color: 'var(--color-crimson, #cf2d56)',
+              }}
+            >
+              No fue posible consultar la matriz real de precios: {catalogError} No se muestran cifras de ejemplo.
+            </p>
+          )}
+          {plans.map((plan) => {
             const isCurrent = currentPlanCode === plan.code;
             return (
               <div

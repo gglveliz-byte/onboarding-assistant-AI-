@@ -34,6 +34,8 @@ import {
   type InspectedElementMetadata,
   type TaggedElementPayload,
 } from '@/components/visual-trainer/useRemoteTrainerSession';
+import { useDashboardSessionFacts } from '@/components/dashboard-dev/useDashboardWorkspace';
+import { useResolvedProjectId } from '@/components/dashboard-dev/useProjectsAndApiKeys';
 import {
   TrainerToolbarAndViewportSwitcher,
   type ViewportPreset,
@@ -57,10 +59,17 @@ export default function VisualTrainerPage() {
     testSelector,
     saveTaggedElement,
     endSession,
+    operationError,
   } = useRemoteTrainerSession(projectId);
 
   const [currentViewport, setCurrentViewport] = useState<ViewportPreset>('DESKTOP');
   const [autoRecalculate, setAutoRecalculate] = useState<boolean>(true);
+
+  // Rol y entorno REALES: el rol viene del token de la sesión y el entorno del proyecto.
+  const session = useDashboardSessionFacts();
+  const userRole = session.role ?? 'DEVELOPER';
+  const { projects } = useResolvedProjectId(projectId);
+  const environment = projects.find((project) => project.id === projectId || project.slug === projectId)?.environment ?? 'LIVE';
   const [activeModalElement, setActiveModalElement] = useState<InspectedElementMetadata | null>(null);
   const [isElementsDrawerOpen, setIsElementsDrawerOpen] = useState<boolean>(false);
 
@@ -72,8 +81,8 @@ export default function VisualTrainerPage() {
     <DeveloperDashboardShell
       orgSlug={orgSlug}
       projectId={projectId}
-      environment="LIVE"
-      userRole="DEVELOPER"
+      environment={environment}
+      userRole={userRole}
     >
       <div className="flex flex-col h-[calc(100vh-6rem)] -m-3 sm:-m-4 bg-[#f7f7f4]">
         {/* Barra de Herramientas Superior */}
@@ -109,6 +118,18 @@ export default function VisualTrainerPage() {
             El backend todavía no expone la sesión de entrenamiento remoto
             (<span className="font-mono">POST /api/v1/projects/:id/training-sessions</span>): el lienzo y las
             inspecciones son sintéticas y no hay un Chromium remoto conectado.
+          </div>
+        )}
+
+        {/* Errores de operación (guardado de elementos, cierre de sesión) */}
+        {operationError !== null && (
+          <div
+            className="px-3 py-2 bg-[#cf2d56]/10 border border-[#cf2d56]/40 text-[12px] font-sans text-[#cf2d56]"
+            style={{ borderRadius: '4px' }}
+            role="alert"
+            data-testid="trainer-operation-error"
+          >
+            {operationError}
           </div>
         )}
 
@@ -161,10 +182,19 @@ export default function VisualTrainerPage() {
                 <h2 className="text-xs font-sans uppercase tracking-wider text-[#84847e]">
                   Elementos Etiquetados ({capturedElements.length})
                 </h2>
-                <p className="text-[11px] text-[#84847e] font-sans mt-0.5">Sesión Activa de Entrenamiento</p>
+                <p className="text-[11px] text-[#84847e] font-sans mt-0.5">
+                  {state.simulationMode
+                    ? 'Sesión simulada (sin navegador remoto)'
+                    : 'Sesión Activa de Entrenamiento'}
+                </p>
               </div>
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-[#1f8a65]" title="Contenedor Chromium en línea" />
+                <span
+                  className={`w-2 h-2 rounded-full ${state.simulationMode ? 'bg-[#c08532]' : 'bg-[#1f8a65]'}`}
+                  title={state.simulationMode
+                    ? 'Sin Chromium remoto conectado: el lienzo es una simulación local'
+                    : 'Contenedor Chromium en línea'}
+                />
                 <button
                   type="button"
                   onClick={() => setIsElementsDrawerOpen(false)}
@@ -228,8 +258,11 @@ export default function VisualTrainerPage() {
           <ElementTaggingModal
             inspectedElement={activeModalElement}
             onSave={(payload: TaggedElementPayload) => {
-              saveTaggedElement(payload);
-              setActiveModalElement(null);
+              // El guardado puede fallar (sin sesión remota real): el modal se cierra solo si
+              // el backend aceptó el elemento.
+              void saveTaggedElement(payload)
+                .then(() => setActiveModalElement(null))
+                .catch(() => undefined);
             }}
             onClose={() => setActiveModalElement(null)}
             onTestHighlight={testSelector}

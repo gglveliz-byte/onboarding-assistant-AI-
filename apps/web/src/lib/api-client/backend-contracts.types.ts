@@ -29,7 +29,10 @@ export type BackendErrorCode =
   | 'UNAUTHORIZED' | 'TOKEN_VERSION_REVOKED' | 'FORBIDDEN' | 'VALIDATION_FAILED'
   | 'NOT_FOUND' | 'CONFLICT' | 'TENANT_SUSPENDED' | 'LEGAL_CONSENT_OUTDATED'
   | 'DPA_NOT_SIGNED' | 'ORIGIN_NOT_ALLOWED' | 'SSRF_BLOCKED_IP' | 'INSUFFICIENT_FUNDS'
-  | 'RATE_LIMIT_EXCEEDED' | 'PROVIDER_UNAVAILABLE' | 'INTERNAL_ERROR';
+  | 'RATE_LIMIT_EXCEEDED' | 'PROVIDER_UNAVAILABLE' | 'INTERNAL_ERROR'
+  // Emitido por la guardia de sesión (`session-auth.middleware.ts`) cuando al token le faltan
+  // los scopes que exige la ruta.
+  | 'INSUFFICIENT_PERMISSIONS';
 
 /** Severidad de auditoria que el backend asocia a cada error en su bitacora inmutable. */
 export type AuditSeverity = 'INFO' | 'WARN' | 'CRITICAL_SECURITY';
@@ -201,10 +204,50 @@ export const PAYG_RATE_PER_MINUTE_USD_FALLBACK = '0.20';
 // --- 4. Sesion de demo publica (Modulo 07: POST /api/v1/public/demo-session) ---
 /** Motor de voz en vivo ofrecible en la demostracion publica (perfil de voz en la interfaz). */
 export type VoiceModelId = 'QWEN' | 'GEMINI';
+/** Descripcion de una voz real disponible para un motor dado (nombre del proveedor + etiqueta). */
+export interface DemoVoiceOption {
+  readonly voiceName: string;
+  readonly label: string;
+}
+/**
+ * Catalogo de voces REALES por motor que la demo publica puede usar. El `voiceName` se envia tal
+ * cual al proveedor segun el protocolo que efectivamente usamos:
+ *   - GEMINI → Gemini **Live API** (`prebuiltVoiceConfig.voiceName`, 30 voces nominales multilingues).
+ *   - QWEN   → Qwen **Omni-Realtime** (`session.update.voice`, voz nominal multilingue; default Tina).
+ * NO son IDs de Cloud Text-to-Speech (`es-XX-Polyglot-N`) ni de Qwen-TTS (`qwen-voice-*`): esos
+ * productos tienen otra API y serian rechazados por los endpoints Live/Omni-Realtime que usamos.
+ */
+export const DEMO_VOICE_CATALOG: Readonly<Record<VoiceModelId, readonly DemoVoiceOption[]>> = {
+  QWEN: [
+    { voiceName: 'Tina', label: 'Tina · clara y asistencial' },
+    { voiceName: 'Cherry', label: 'Cherry · soleada y cercana' },
+    { voiceName: 'Serena', label: 'Serena · suave y dulce' },
+    { voiceName: 'Ethan', label: 'Ethan · cálido y enérgico' },
+    { voiceName: 'Chelsie', label: 'Chelsie · juvenil expresiva' },
+    { voiceName: 'Kiki', label: 'Kiki · dinámica' },
+    { voiceName: 'Cici', label: 'Cici · dulce' },
+    { voiceName: 'Dylan', label: 'Dylan · con carácter' },
+  ],
+  GEMINI: [
+    { voiceName: 'Kore', label: 'Kore · firme' },
+    { voiceName: 'Aoede', label: 'Aoede · fresca' },
+    { voiceName: 'Leda', label: 'Leda · juvenil' },
+    { voiceName: 'Despina', label: 'Despina · sedosa' },
+    { voiceName: 'Sulafat', label: 'Sulafat · cálida' },
+    { voiceName: 'Callirrhoe', label: 'Callirrhoe · relajada' },
+    { voiceName: 'Zephyr', label: 'Zephyr · brillante' },
+    { voiceName: 'Puck', label: 'Puck · animado' },
+    { voiceName: 'Charon', label: 'Charon · informativo' },
+    { voiceName: 'Orus', label: 'Orus · firme' },
+    { voiceName: 'Algieba', label: 'Algieba · suave' },
+  ],
+};
 /** Cuerpo de la solicitud de demostracion publica: verificacion anti-bot y preferencias. */
 export interface PublicDemoSessionRequestDto {
   readonly turnstileToken: string;
   readonly preferredVoiceModel?: VoiceModelId;
+  /** Voz real solicitada para el motor elegido; el backend la valida contra su allowlist. */
+  readonly preferredVoiceName?: string;
   readonly userTimezone?: string;
 }
 /** Sesion efimera de demostracion emitida por el backend para el visitante anonimo. */
@@ -216,6 +259,8 @@ export interface PublicDemoSessionDto {
   readonly websocketUrl: string;
   readonly maxDurationSeconds: number;
   readonly voiceModel: VoiceModelId;
+  /** Voz real efectiva que el backend resolvió y asignó a la sesión. */
+  readonly voiceName: string;
   readonly expiresAtIso: string;
 }
 

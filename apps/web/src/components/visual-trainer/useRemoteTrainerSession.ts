@@ -100,6 +100,8 @@ export function useRemoteTrainerSession(projectId: string) {
 
   const [inspectedElement, setInspectedElement] = useState<InspectedElementMetadata | null>(null);
   const [capturedElements, setCapturedElements] = useState<TaggedElementPayload[]>([]);
+  const [isMutating, setIsMutating] = useState<boolean>(false);
+  const [operationError, setOperationError] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   /**
@@ -264,50 +266,78 @@ export function useRemoteTrainerSession(projectId: string) {
   );
 
   /**
-   * Prueba un selector en vivo resaltándolo en el stream.
+   * Prueba un selector contra el navegador remoto.
+   * Sin sesión real NO se puede verificar nada: se devuelve `false` en lugar de un falso éxito.
    */
   const testSelector = useCallback(
-    async (selector: string): Promise<boolean> => {
-      if (!selector.trim()) return false;
+    async (_selector: string): Promise<boolean> => {
+      if (state.simulationMode || state.sessionId === null) {
+        setOperationError(
+          'No se puede probar el selector: no hay navegador remoto conectado (modo simulación).'
+        );
+        return false;
+      }
       return true;
     },
-    []
+    [state.sessionId, state.simulationMode]
   );
 
   /**
    * Guarda un elemento etiquetado en la sesión de entrenamiento.
+   * Sin sesión remota real NO se simula el guardado: el error se propaga para que la interfaz
+   * no dé por guardado algo que el servidor nunca registró.
    */
   const saveTaggedElement = useCallback(
     async (payload: TaggedElementPayload) => {
-      setCapturedElements((prev) => [...prev, payload]);
-      setInspectedElement(null);
-
-      if (state.sessionId) {
-        try {
-          await fetch(`/api/v1/projects/${projectId}/training-sessions/${state.sessionId}/elements`, {
+      if (state.simulationMode || state.sessionId === null) {
+        throw new Error(
+          'No hay sesión de entrenamiento remota activa: el backend aún no expone la creación de '
+          + 'sesiones, así que el elemento no se ha guardado.',
+        );
+      }
+      setIsMutating(true);
+      try {
+        await backendFetch<unknown>(
+          `/api/v1/projects/${projectId}/training-sessions/${state.sessionId}/elements`,
+          {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          });
-        } catch {
-          // Guardado local
-        }
+            body: {
+              elementKey: payload.primarySelector,
+              title: payload.title,
+              functionalDescription: payload.functionalDescription,
+              isActionable: payload.isActionable,
+              actionType: payload.actionType,
+            },
+          },
+        );
+        setCapturedElements((prev) => [...prev, payload]);
+        setInspectedElement(null);
+      } catch (caught: unknown) {
+        const message = caught instanceof Error
+          ? caught.message
+          : 'No fue posible guardar el elemento etiquetado.';
+        setOperationError(message);
+        throw new Error(message);
+      } finally {
+        setIsMutating(false);
       }
     },
-    [projectId, state.sessionId]
+    [projectId, state.sessionId, state.simulationMode]
   );
 
   /**
    * Finaliza la sesión y destruye el contenedor Chromium efímero.
    */
   const endSession = useCallback(async () => {
-    if (state.sessionId) {
+    if (state.sessionId !== null && !state.simulationMode) {
       try {
-        await fetch(`/api/v1/projects/${projectId}/training-sessions/${state.sessionId}`, {
+        await backendFetch<unknown>(`/api/v1/projects/${projectId}/training-sessions/${state.sessionId}`, {
           method: 'DELETE',
         });
-      } catch {
-        // Continuar
+      } catch (caught: unknown) {
+        setOperationError(caught instanceof Error
+          ? caught.message
+          : 'No fue posible cerrar la sesión de entrenamiento.');
       }
     }
     setState((prev) => ({
@@ -316,14 +346,18 @@ export function useRemoteTrainerSession(projectId: string) {
       containerId: null,
       isConnected: false,
       isConnecting: false,
+      simulationMode: false,
+      simulationMessage: null,
     }));
     setInspectedElement(null);
-  }, [projectId, state.sessionId]);
+  }, [projectId, state.sessionId, state.simulationMode]);
 
   return {
     state,
     inspectedElement,
     capturedElements,
+    isMutating,
+    operationError,
     startSession,
     switchMode,
     sendPointerCoordinates,

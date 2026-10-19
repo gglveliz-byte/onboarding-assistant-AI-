@@ -33,6 +33,8 @@ import { useAssistantPromptStudio } from '@/components/prompt-studio/useAssistan
 import { ModelAndVoiceConfigBar } from '@/components/prompt-studio/ModelAndVoiceConfigBar';
 import { UnifiedSystemPromptEditor } from '@/components/prompt-studio/UnifiedSystemPromptEditor';
 import { StepByStepFlowExtractorAndGuardrails } from '@/components/prompt-studio/StepByStepFlowExtractorAndGuardrails';
+import { useDashboardSessionFacts } from '@/components/dashboard-dev/useDashboardWorkspace';
+import { useResolvedProjectId } from '@/components/dashboard-dev/useProjectsAndApiKeys';
 
 export default function PromptStudioPage() {
   const params = useParams();
@@ -52,12 +54,19 @@ export default function PromptStudioPage() {
     savePromptConfig,
   } = useAssistantPromptStudio(projectId);
 
+  // Rol y entorno REALES: el rol viene del token de la sesión y el entorno del proyecto.
+  const session = useDashboardSessionFacts();
+  const userRole = session.role ?? 'DEVELOPER';
+  const isReadOnly = userRole === 'VIEWER' || userRole === 'BILLING';
+  const { projects } = useResolvedProjectId(projectId);
+  const environment = projects.find((project) => project.id === projectId || project.slug === projectId)?.environment ?? 'LIVE';
+
   return (
     <DeveloperDashboardShell
       orgSlug={orgSlug}
       projectId={projectId}
-      environment="LIVE"
-      userRole="DEVELOPER"
+      environment={environment}
+      userRole={userRole}
     >
       <div className="max-w-5xl mx-auto space-y-6">
         {/* Cabecera Principal */}
@@ -85,6 +94,7 @@ export default function PromptStudioPage() {
         {/* 1. Barra de Configuración de Modelos y Acústica */}
         <ModelAndVoiceConfigBar
           config={config}
+          isReadOnly={isReadOnly}
           onChange={updateConfig}
         />
 
@@ -96,6 +106,7 @@ export default function PromptStudioPage() {
           isSaving={isSaving}
           saveSuccess={saveSuccess}
           saveError={saveError}
+          isReadOnly={isReadOnly}
           onChangePrompt={(prompt: string) => updateConfig('systemPrompt', prompt)}
           onSave={savePromptConfig}
         />
@@ -103,6 +114,7 @@ export default function PromptStudioPage() {
         {/* 3. Secuencia de Pasos y Guardarrailes */}
         <StepByStepFlowExtractorAndGuardrails
           config={config}
+          isReadOnly={isReadOnly}
           onChangeConfig={updateConfig}
         />
       </div>

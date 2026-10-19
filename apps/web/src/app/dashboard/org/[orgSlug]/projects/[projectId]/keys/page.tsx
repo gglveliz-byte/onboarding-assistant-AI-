@@ -43,7 +43,10 @@ export default function ProjectKeysPage() {
   const isReadOnly = userRole === 'VIEWER' || userRole === 'BILLING';
 
   // UUID real del proyecto (la URL puede llevar el slug) para las llamadas a la API.
-  const { projectId: resolvedProjectId } = useResolvedProjectId(projectId);
+  const { projectId: resolvedProjectId, projects } = useResolvedProjectId(projectId);
+  // Entorno REAL del proyecto (LIVE o TEST): condiciona el prefijo de las claves y el bloqueo
+  // anti-localhost de los dominios.
+  const environment = projects.find((project) => project.id === projectId || project.slug === projectId)?.environment ?? 'LIVE';
 
   const { domains, addDomain, removeDomain } = useAllowedDomains(projectId);
   const { apiKeys, createApiKey, rotateApiKey, revokeApiKey } = useApiKeys(projectId);
@@ -53,7 +56,7 @@ export default function ProjectKeysPage() {
       orgSlug={orgSlug}
       projectId={projectId}
       userRole={userRole}
-      environment="LIVE"
+      environment={environment}
     >
       <div className="max-w-5xl mx-auto space-y-8">
         {/* Encabezado Principal */}
@@ -83,7 +86,7 @@ export default function ProjectKeysPage() {
         {/* Sección 1: Gestor de Claves de API */}
         <ApiKeyLifecycleManager
           projectId={projectId}
-          environment="LIVE"
+          environment={environment}
           apiKeys={apiKeys}
           onCreateKey={createApiKey}
           onRotateKey={rotateApiKey}
@@ -94,7 +97,7 @@ export default function ProjectKeysPage() {
         {/* Sección 2: Gestor de Dominios CORS para Handshake */}
         <AllowedDomainsManager
           projectId={projectId}
-          environment="LIVE"
+          environment={environment}
           domains={domains}
           onAddDomain={addDomain}
           onRemoveDomain={removeDomain}

@@ -39,6 +39,7 @@ import type { AuthSessionUserProfile, BackendPublicOrganization, BackendPublicUs
 import { authApiFetch, buildSessionProfile, readTokenExpiryEpochMs } from './auth-api-client';
 import { setAccessToken as setGlobalAccessToken } from '../../lib/api-client/http-client';
 import { setSessionOrgSlug } from '../../lib/api-client/http-client';
+import { clearProjectsCache } from '../dashboard-dev/useProjectsAndApiKeys';
 
 /**
  * Contrato del contexto de sesión: estado inmutable expuesto y las nueve operaciones que el
@@ -156,6 +157,7 @@ export function AuthSessionProvider(props: {
     clearRefreshTimer();
     setGlobalAccessToken(null);
     setSessionOrgSlug(null);
+    clearProjectsCache();
     accessTokenRef.current = null;
     userRef.current = null;
     setAccessToken(null);

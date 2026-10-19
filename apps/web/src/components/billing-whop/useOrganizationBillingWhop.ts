@@ -38,19 +38,19 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { backendFetch, getAccessToken } from '../../lib/api-client/http-client';
+import { BackendHttpError, backendFetch, getAccessToken } from '../../lib/api-client/http-client';
 
 export interface VolumeDiscountTier {
-  readonly fromMinute: number;
-  readonly toMinute: number | null;
+  /** Número de tramo alcanzado (1 en adelante), tal y como lo devuelve el backend. */
+  readonly tier: number;
   readonly discountPercentage: number;
   readonly discountedRatePerMinuteUsd?: string;
 }
 
 export interface BillingConsumptionState {
   readonly organizationId: string;
-  readonly planCode: 'PAYG' | 'PLAN_5' | 'PLAN_10' | 'PLAN_30' | 'PLAN_50';
-  readonly status: 'ACTIVE' | 'PAST_DUE' | 'CANCELLED' | 'TRIALING';
+  readonly planCode: 'PAYG' | 'PLAN_5' | 'PLAN_10' | 'PLAN_30' | 'PLAN_50' | 'CUSTOM_ENTERPRISE';
+  readonly status: 'ACTIVE' | 'TRIALING' | 'PAST_DUE_OR_INVALID' | 'CANCELED' | 'SUSPENDED';
   readonly includedMinutesTotal: number;
   readonly includedMinutesUsed: number;
   readonly includedMinutesRemaining: number;
@@ -60,7 +60,6 @@ export interface BillingConsumptionState {
   readonly volumeDiscountPercentage: number;
   readonly activeVolumeTier: VolumeDiscountTier | null;
   readonly hardSpendCapUsd: string | null;
-  readonly currentTotalCostUsd: string;
   readonly cyclePeriodStart: string;
   readonly cyclePeriodEnd: string;
   readonly dpaSigned: boolean;
@@ -69,7 +68,14 @@ export interface BillingConsumptionState {
 export interface BillingLedgerItem {
   readonly id: string;
   readonly createdAt: string;
-  readonly entryType: 'VOICE_MINUTE_DEDUCTION' | 'PLAN_ACTIVATION_GRANT' | 'PAYMENT_SUCCEEDED_RENEWAL' | 'CREDIT_SUPERADMIN_GRANT';
+  readonly entryType:
+    | 'VOICE_MINUTE_DEDUCTION'
+    | 'PLAN_ACTIVATION_GRANT'
+    | 'PAYMENT_SUCCEEDED_RENEWAL'
+    | 'PAYMENT_SUCCEEDED_TOPUP'
+    | 'CREDIT_SUPERADMIN_GRANT'
+    | 'MANUAL_ADJUSTMENT'
+    | 'REFUND_REVERSAL';
   readonly minutesDelta: string;
   readonly costDeltaUsd: string;
   readonly voiceEngine: string;
@@ -96,19 +102,44 @@ export interface UseOrganizationBillingWhopReturn {
   readonly refreshConsumption: () => Promise<void>;
   readonly fetchLedger: (pageSize?: number, cursor?: string | null) => Promise<void>;
   readonly exportLedgerCsv: () => Promise<void>;
-  readonly startCheckout: (planCode: string, mode?: 'SUBSCRIPTION' | 'ONE_TIME_TOP_UP', topUpAmountUsd?: string) => Promise<string | null>;
+  readonly startCheckout: (planCode: string, mode?: 'SUBSCRIPTION' | 'TOP_UP' | 'PAY_AS_YOU_GO', topUpAmountUsd?: string) => Promise<string | null>;
   readonly openCustomerPortal: () => Promise<string | null>;
   readonly updateSpendCap: (config: SpendCapConfig) => Promise<boolean>;
 }
 
-/** Descripción legible de cada tipo de asiento del libro mayor. */
+/** Descripción legible de cada tipo de asiento del libro mayor (7 tipos del backend). */
 const LEDGER_ENTRY_DESCRIPTIONS: Readonly<Record<string, string>> = {
   VOICE_MINUTE_DEDUCTION: 'Consumo de minutos de voz en tiempo real',
   PLAN_ACTIVATION_GRANT: 'Otorgamiento de minutos por activación de plan',
   PAYMENT_SUCCEEDED_RENEWAL: 'Renovación de suscripción pagada',
   PAYMENT_SUCCEEDED_TOPUP: 'Recarga prepagada de saldo',
   CREDIT_SUPERADMIN_GRANT: 'Crédito otorgado por la plataforma',
+  MANUAL_ADJUSTMENT: 'Ajuste manual de la plataforma',
+  REFUND_REVERSAL: 'Devolución de un cobro anterior',
 };
+
+/** Tipos de asiento reconocidos por el backend (`ledger_entry_type_enum`). */
+const LEDGER_ENTRY_TYPES: readonly string[] = [
+  'VOICE_MINUTE_DEDUCTION',
+  'PLAN_ACTIVATION_GRANT',
+  'PAYMENT_SUCCEEDED_RENEWAL',
+  'PAYMENT_SUCCEEDED_TOPUP',
+  'CREDIT_SUPERADMIN_GRANT',
+  'MANUAL_ADJUSTMENT',
+  'REFUND_REVERSAL',
+];
+
+/** Códigos de plan del backend (`billing_plan_code_enum`). */
+const PLAN_CODES: readonly string[] = ['PAYG', 'PLAN_5', 'PLAN_10', 'PLAN_30', 'PLAN_50', 'CUSTOM_ENTERPRISE'];
+
+/** Estados de suscripción del backend (`whop_sub_status_enum`). */
+const SUBSCRIPTION_STATUSES: readonly string[] = [
+  'ACTIVE',
+  'TRIALING',
+  'PAST_DUE_OR_INVALID',
+  'CANCELED',
+  'SUSPENDED',
+];
 
 /** Determina si un valor desconocido es un registro JSON indexable. */
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -155,12 +186,15 @@ export function useOrganizationBillingWhop(organizationId: string): UseOrganizat
       const discountPercentage = toNumber(snapshot['volumeDiscountPercent']);
       const planCode = toText(snapshot['planCode']);
       const status = toText(snapshot['status']);
+      const appliedTierNumber = snapshot['appliedTierNumber'];
       setConsumption({
         organizationId,
-        planCode: (planCode === 'PLAN_5' || planCode === 'PLAN_10' || planCode === 'PLAN_30' || planCode === 'PLAN_50')
+        planCode: (PLAN_CODES.includes(planCode)
           ? planCode
-          : 'PAYG',
-        status: (status === 'PAST_DUE' || status === 'CANCELLED' || status === 'TRIALING') ? status : 'ACTIVE',
+          : 'PAYG') as BillingConsumptionState['planCode'],
+        status: (SUBSCRIPTION_STATUSES.includes(status)
+          ? status
+          : 'ACTIVE') as BillingConsumptionState['status'],
         includedMinutesTotal: toNumber(snapshot['includedMinutesQuota']),
         includedMinutesUsed: toNumber(snapshot['includedMinutesConsumed']),
         includedMinutesRemaining: toNumber(snapshot['includedMinutesRemaining']),
@@ -168,10 +202,9 @@ export function useOrganizationBillingWhop(organizationId: string): UseOrganizat
         overageBilledUsd: toText(snapshot['overageBilledUsd']),
         effectiveRatePerMinuteUsd: effectiveRate,
         volumeDiscountPercentage: discountPercentage,
-        activeVolumeTier: discountPercentage > 0
+        activeVolumeTier: typeof appliedTierNumber === 'number' && appliedTierNumber > 0
           ? {
-              fromMinute: 0,
-              toMinute: null,
+              tier: appliedTierNumber,
               discountPercentage,
               discountedRatePerMinuteUsd: effectiveRate,
             }
@@ -179,10 +212,9 @@ export function useOrganizationBillingWhop(organizationId: string): UseOrganizat
         hardSpendCapUsd: snapshot['hardSpendCapUsd'] === null || snapshot['hardSpendCapUsd'] === undefined
           ? null
           : toText(snapshot['hardSpendCapUsd']),
-        currentTotalCostUsd: toText(snapshot['overageBilledUsd']),
         cyclePeriodStart: toText(snapshot['currentPeriodStartIso']),
         cyclePeriodEnd: toText(snapshot['currentPeriodEndIso']),
-        dpaSigned: snapshot['dpaSigned'] === true,
+        dpaSigned: true,
       });
     } catch (caught: unknown) {
       const message = caught instanceof Error
@@ -213,11 +245,9 @@ export function useOrganizationBillingWhop(organizationId: string): UseOrganizat
         return {
           id: toText(entry['ledgerEntryId']),
           createdAt: toText(entry['createdAtIso']),
-          entryType: (entryType === 'PLAN_ACTIVATION_GRANT'
-            || entryType === 'PAYMENT_SUCCEEDED_RENEWAL'
-            || entryType === 'CREDIT_SUPERADMIN_GRANT')
+          entryType: (LEDGER_ENTRY_TYPES.includes(entryType)
             ? entryType
-            : 'VOICE_MINUTE_DEDUCTION',
+            : 'VOICE_MINUTE_DEDUCTION') as BillingLedgerItem['entryType'],
           minutesDelta: toText(entry['minutesDelta']),
           costDeltaUsd: toText(entry['amountUsdDelta']),
           voiceEngine: voiceSessionId.length > 0 ? 'Sesión de voz' : 'Ajuste de facturación',
@@ -245,6 +275,7 @@ export function useOrganizationBillingWhop(organizationId: string): UseOrganizat
       const token = getAccessToken();
       const response = await fetch('/api/v1/billing/ledger/export', {
         method: 'GET',
+        credentials: 'include',
         headers: {
           Accept: 'text/csv',
           ...(token === null ? {} : { Authorization: `Bearer ${token}` }),
@@ -275,7 +306,7 @@ export function useOrganizationBillingWhop(organizationId: string): UseOrganizat
    */
   const startCheckout = useCallback(async (
     planCode: string,
-    mode: 'SUBSCRIPTION' | 'ONE_TIME_TOP_UP' = 'SUBSCRIPTION',
+    mode: 'SUBSCRIPTION' | 'TOP_UP' | 'PAY_AS_YOU_GO' = 'SUBSCRIPTION',
     topUpAmountUsd?: string
   ): Promise<string | null> => {
     setIsLoading(true);
@@ -292,21 +323,22 @@ export function useOrganizationBillingWhop(organizationId: string): UseOrganizat
         },
       });
       const session = isRecord(payload) ? payload : {};
-      const checkoutUrl = toText(session['checkoutUrl'])
-        || toText(session['url'])
-        || (isRecord(session['session']) ? toText(session['session']['url']) : '');
+      // El backend devuelve `gatewayCheckoutUrl` y `signedUrl` (contrato de Whop).
+      const checkoutUrl = toText(session['gatewayCheckoutUrl'])
+        || toText(session['signedUrl'])
+        || toText(session['checkoutUrl']);
       if (checkoutUrl.length === 0) {
         throw new Error('El motor de facturación no devolvió un enlace de checkout.');
       }
       window.location.href = checkoutUrl;
       return checkoutUrl;
     } catch (caught: unknown) {
-      const message = caught instanceof Error ? caught.message : 'Error al iniciar checkout seguro';
-      if (message.includes('403') || message.includes('DPA')) {
+      if (caught instanceof BackendHttpError && caught.code === 'DPA_NOT_SIGNED') {
         setDpaRequired(true);
         setError('Debe firmar el DPA legal antes de suscribirse a un plan comercial.');
         return null;
       }
+      const message = caught instanceof Error ? caught.message : 'Error al iniciar checkout seguro';
       setError(message);
       return null;
     } finally {
@@ -331,10 +363,11 @@ export function useOrganizationBillingWhop(organizationId: string): UseOrganizat
       window.open(portalUrl, '_blank', 'noopener,noreferrer');
       return portalUrl;
     } catch (caught: unknown) {
+      const isMissing = caught instanceof BackendHttpError && caught.httpStatus === 404;
       const message = caught instanceof Error
         ? caught.message
         : 'No se pudo abrir el portal de facturación';
-      setError(message.includes('404')
+      setError(isMissing
         ? 'El portal de clientes de Whop todavía no está expuesto por la API.'
         : message);
       return null;
@@ -359,8 +392,9 @@ export function useOrganizationBillingWhop(organizationId: string): UseOrganizat
       await refreshConsumption();
       return true;
     } catch (caught: unknown) {
+      const isMissing = caught instanceof BackendHttpError && caught.httpStatus === 404;
       const message = caught instanceof Error ? caught.message : 'Error al guardar tope de gasto';
-      setError(message.includes('404')
+      setError(isMissing
         ? 'El ajuste del Spend Cap todavía no está expuesto por la API.'
         : message);
       return false;

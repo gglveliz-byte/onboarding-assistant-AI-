@@ -83,6 +83,54 @@ export async function computeSha256Hex(text: string): Promise<string> {
   return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/** Convierte una caja del editor (`x`, `y`) a la caja canónica del backend (`top`, `left`). */
+function toServerBox(box: BoundingBox): {
+  readonly top: number;
+  readonly left: number;
+  readonly width: number;
+  readonly height: number;
+} {
+  return {
+    top: Math.max(0, box.y),
+    left: Math.max(0, box.x),
+    width: Math.max(0, box.width),
+    height: Math.max(0, box.height),
+  };
+}
+
+/**
+ * Convierte un elemento del editor al contrato de publicación del backend
+ * (`mapElementInputSchema`): clave `elementKey`, cajas `{top,left}` y acción coherente.
+ */
+function toPublishableElement(element: FunctionalMapElement): Record<string, unknown> {
+  const sanitizedTitle = element.title
+    .toLowerCase()
+    .replace(/[^a-z0-9_\-.:]+/gu, '_')
+    .slice(0, 120);
+  const elementKey = element.id.length > 0 ? element.id : sanitizedTitle;
+  return {
+    elementKey,
+    urlRoutePattern: element.urlRoutePattern.length > 0 ? element.urlRoutePattern : '/',
+    title: element.title,
+    functionalDescription: element.functionalDescription,
+    isActionable: element.isActionable,
+    actionType: element.isActionable ? element.actionType : 'NONE',
+    primarySelector: element.primarySelector,
+    ...(typeof element.accessibilitySelector === 'string' && element.accessibilitySelector.length > 0
+      ? { accessibilitySelector: element.accessibilitySelector }
+      : {}),
+    ...(typeof element.structuralCssSelector === 'string' && element.structuralCssSelector.length > 0
+      ? { structuralCssSelector: element.structuralCssSelector }
+      : {}),
+    ...(typeof element.xpathFallback === 'string' && element.xpathFallback.length > 0
+      ? { xpathFallback: element.xpathFallback }
+      : {}),
+    desktopBbox: toServerBox(element.desktopBbox),
+    tabletBbox: toServerBox(element.tabletBbox),
+    mobileBbox: toServerBox(element.mobileBbox),
+  };
+}
+
 export function useFunctionalMapDualEditor(projectRef: string) {
   // El identificador de la ruta puede ser el slug: se resuelve al UUID real que exige la API.
   const { projectId: resolvedProjectId } = useResolvedProjectId(projectRef);
@@ -207,25 +255,28 @@ export function useFunctionalMapDualEditor(projectRef: string) {
 
       try {
         const published = await backendFetch<{
-          readonly versionNumber?: number;
-          readonly versionLabel?: string;
-          readonly contentSha256Hash?: string;
-          readonly totalElements?: number;
-          readonly publishedAtIso?: string;
+          readonly map?: {
+            readonly versionNumber?: number;
+            readonly versionLabel?: string;
+            readonly contentSha256Hash?: string;
+            readonly totalElementsCount?: number;
+            readonly publishedAt?: string;
+          };
         }>(`/api/v1/projects/${resolvedProjectId}/functional-maps/publish`, {
           method: 'POST',
           body: {
             versionLabel: newVersionMeta.versionLabel,
-            sourceMode: 'DUAL_RAG_EDITOR',
-            elements,
+            sourceMode: 'JSON_CODE_EDITOR',
+            elements: elements.map(toPublishableElement),
           },
         });
+        const serverMap = published.map ?? {};
         setPublishedVersions((prev) => [{
-          versionNumber: published.versionNumber ?? newVersionMeta.versionNumber,
-          versionLabel: published.versionLabel ?? resolvedLabel,
-          contentSha256Hash: published.contentSha256Hash ?? newVersionMeta.contentSha256Hash,
-          totalElements: published.totalElements ?? newVersionMeta.totalElements,
-          publishedAtIso: published.publishedAtIso ?? newVersionMeta.publishedAtIso,
+          versionNumber: serverMap.versionNumber ?? newVersionMeta.versionNumber,
+          versionLabel: serverMap.versionLabel ?? resolvedLabel,
+          contentSha256Hash: serverMap.contentSha256Hash ?? newVersionMeta.contentSha256Hash,
+          totalElements: serverMap.totalElementsCount ?? newVersionMeta.totalElements,
+          publishedAtIso: serverMap.publishedAt ?? newVersionMeta.publishedAtIso,
         }, ...prev]);
         setIsPublishing(false);
         return newVersionMeta;

@@ -31,6 +31,8 @@ export interface MapVersionHistoryAndShaBarProps {
   readonly onPublish: (versionLabel?: string) => Promise<unknown>;
   readonly onRollback: (versionNumber: number) => Promise<unknown>;
   readonly isReadOnly?: boolean;
+  /** `false` cuando el mapa no tiene elementos publicables (el backend exige al menos uno). */
+  readonly isPublishable?: boolean;
 }
 
 export function MapVersionHistoryAndShaBar({
@@ -40,6 +42,7 @@ export function MapVersionHistoryAndShaBar({
   onPublish,
   onRollback,
   isReadOnly = false,
+  isPublishable = true,
 }: MapVersionHistoryAndShaBarProps) {
   const [isVersionDropdownOpen, setIsVersionDropdownOpen] = useState(false);
   const [publishLabel, setPublishLabel] = useState('');
@@ -66,14 +69,21 @@ export function MapVersionHistoryAndShaBar({
       className="bg-[#f2f1ed] border-b border-[#cdcdc9] px-4 sm:px-5 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3 select-none flex-shrink-0"
       data-testid="map-version-history-and-sha-bar"
     >
-      {/* 1. Sello Criptográfico SHA-256 */}
+      {/* 1. Sello Criptográfico SHA-256: solo se declara VERIFICADO con una versión publicada */}
       <div className="flex flex-wrap items-center gap-2 sm:gap-3">
         <span
-          className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-mono text-[#1f8a65] bg-[#1f8a65]/10 border border-[#1f8a65]/30 rounded font-semibold"
+          className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-mono border rounded font-semibold ${
+            activeVersion !== undefined
+              ? 'text-[#1f8a65] bg-[#1f8a65]/10 border-[#1f8a65]/30'
+              : 'text-[#7a7974] bg-[#e6e5e0] border-[#cdcdc9]'
+          }`}
           style={{ borderRadius: '3px' }}
+          title={activeVersion !== undefined
+            ? 'Sello del registro inmutable publicado por el servidor'
+            : 'Borrador local: el hash se sella al publicar (el backend calcula el digest canónico)'}
         >
-          <span>✓</span>
-          <span>SHA-256 VERIFIED</span>
+          <span>{activeVersion !== undefined ? '✓' : '○'}</span>
+          <span>{activeVersion !== undefined ? 'SHA-256 VERIFIED' : 'SHA-256 BORRADOR'}</span>
         </span>
 
         <span
@@ -151,7 +161,10 @@ export function MapVersionHistoryAndShaBar({
           <button
             type="button"
             onClick={() => setIsPublishModalOpen(true)}
-            disabled={isPublishing}
+            disabled={isPublishing || !isPublishable}
+            title={isPublishable
+              ? 'Publica el mapa actual como versión inmutable'
+              : 'Añade al menos un elemento al mapa para poder publicarlo'}
             className="px-4 py-1.5 text-xs font-sans font-medium bg-[#34785c] text-[#f7f7f4] hover:bg-[#2c654d] disabled:opacity-40 rounded transition-colors shadow-xs"
             style={{ borderRadius: '4px' }}
             data-testid="btn_publish_immutable_map"

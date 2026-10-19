@@ -33,6 +33,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { backendFetch, getAccessToken } from '../../lib/api-client/http-client';
 import { decodeJwtPayloadUnsafe } from '../auth-legal/auth-api-client';
+import { useProjects, type ProjectItem } from './useProjectsAndApiKeys';
 
 /** Roles RBAC reconocidos por el backend y reflejados en la interfaz del dashboard. */
 export type DashboardRole = 'OWNER' | 'DEVELOPER' | 'BILLING' | 'VIEWER';
@@ -49,14 +50,7 @@ export interface DashboardSessionFacts {
 }
 
 /** Proyección de proyecto tal y como la devuelve `GET /api/v1/projects`. */
-export interface DashboardProject {
-  readonly id: string;
-  readonly organizationId: string;
-  readonly name: string;
-  readonly slug: string;
-  readonly environment: 'LIVE' | 'TEST';
-  readonly isActive: boolean;
-}
+export type DashboardProject = ProjectItem;
 
 /** Saldo de voz del ciclo vigente, listo para la pastilla de la cabecera. */
 export interface DashboardBalance {
@@ -165,63 +159,21 @@ export function useDashboardSessionFacts(): DashboardSessionFacts {
   return facts;
 }
 
-/** Normaliza un proyecto crudo de la API a la proyección del dashboard. */
-function coerceProject(raw: unknown): DashboardProject | null {
-  if (!isRecord(raw)) {
-    return null;
-  }
-  const id = raw['id'];
-  const name = raw['name'];
-  const slug = raw['slug'];
-  if (typeof id !== 'string' || typeof name !== 'string' || typeof slug !== 'string') {
-    return null;
-  }
-  const organizationId = raw['organizationId'];
-  const environment = raw['environment'];
-  const isActive = raw['isActive'];
-  return {
-    id,
-    organizationId: typeof organizationId === 'string' ? organizationId : '',
-    name,
-    slug,
-    environment: environment === 'TEST' ? 'TEST' : 'LIVE',
-    isActive: isActive !== false,
-  };
-}
-
 /**
- * Hook de proyectos reales del tenant: `GET /api/v1/projects` con el Bearer de la sesión.
- * No inventa proyectos de respaldo: si la API falla, la lista queda vacía y el error visible.
+ * Hook de proyectos reales del tenant: reutiliza `useProjects()` (única caché y única petición
+ * compartida por el shell y por el resto de paneles). No inventa proyectos de respaldo: si la API
+ * falla, la lista queda vacía y el error es visible.
  */
 export function useDashboardProjects(): DashboardAsyncState<readonly DashboardProject[]> {
-  const [projects, setProjects] = useState<readonly DashboardProject[]>(EMPTY_PROJECTS);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadProjects = useCallback(async (): Promise<void> => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const payload = await backendFetch<unknown>('/api/v1/projects');
-      const rawList = Array.isArray(payload)
-        ? payload
-        : isRecord(payload) && Array.isArray(payload['projects'])
-          ? payload['projects']
-          : [];
-      setProjects(rawList.map(coerceProject).filter((item): item is DashboardProject => item !== null));
-    } catch (caught) {
-      setProjects(EMPTY_PROJECTS);
-      setError(caught instanceof Error ? caught.message : 'No fue posible consultar los proyectos.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect((): void => {
-    void loadProjects();
-  }, [loadProjects]);
-
-  return { data: projects, isLoading, error, reload: loadProjects };
+  const { projects, loading, error, fetchProjects } = useProjects();
+  return {
+    data: projects,
+    isLoading: loading,
+    error,
+    reload: async (): Promise<void> => {
+      await fetchProjects();
+    },
+  };
 }
 
 /**
@@ -292,9 +244,10 @@ export function useDashboardWorkspace(projectHint: string): DashboardWorkspace {
     if (routeSegment === undefined || routeSegment.length === 0) {
       return projectsState.data[0] ?? null;
     }
-    return projectsState.data.find(
+    const matched = projectsState.data.find(
       (project) => project.id === routeSegment || project.slug === routeSegment,
-    ) ?? null;
+    );
+    return matched ?? projectsState.data[0] ?? null;
   }, [pathname, projectHint, projectsState.data]);
 
   const error = projectsState.error ?? balanceState.error;
