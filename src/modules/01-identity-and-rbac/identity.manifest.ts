@@ -36,12 +36,13 @@ import type {
 } from '@shared/infrastructure/http/http-server.types';
 import type { RlsDatabasePool } from '@shared/infrastructure/database/rls-pool';
 import type { RedisClusterClient } from '@shared/infrastructure/redis/redis-cluster.client';
-import { ForbiddenError, UnauthorizedError } from '@shared/kernel/result-and-errors';
+import { ForbiddenError, UnauthorizedError, ValidationError } from '@shared/kernel/result-and-errors';
 import { ROLE_PERMISSIONS_MAP, type RbacPermission } from './domain/identity.entities';
 import { PostgresIdentityRepository } from './infrastructure/postgres-identity.repository';
 import { PostgresAdvancedIdentityRepository } from './infrastructure/postgres-advanced-identity.repository';
 import { JwtEddsaSigner } from './infrastructure/jwt-eddsa.signer';
-import { AuthenticateUserUseCase, RegisterOrganizationOwnerUseCase } from './application/register-and-login.use-case';
+import { AuthenticateUserUseCase } from './application/authenticate-user.use-case';
+import { RegisterOrganizationOwnerUseCase } from './application/register-and-login.use-case';
 import {
   IdentityAuthPortAdapter,
   RevokeAllUserSessionsUseCase,
@@ -96,6 +97,50 @@ function wrapHandler(
 /**
  * Registra y auto-conecta el modulo completo de Identidad y RBAC.
  */
+/**
+ * Nombre de la cookie HttpOnly que transporta el refresh token.
+ * El navegador no puede leerla (ni enviar su valor en un cuerpo JSON), por lo que el refresco
+ * silencioso del frente depende de que el backend la lea de la propia solicitud.
+ */
+const REFRESH_COOKIE_NAME = '__Host-oa_rt';
+
+/**
+ * Extrae el valor de una cookie del encabezado `Cookie` de la solicitud.
+ *
+ * @param cookieHeader - Valor crudo de la cabecera `Cookie` (o su array, según el servidor).
+ * @param cookieName - Nombre exacto de la cookie buscada.
+ * @returns El valor decodificado de la cookie o `''` si no está presente.
+ */
+export function readCookieValue(
+  cookieHeader: string | readonly string[] | undefined,
+  cookieName: string
+): string {
+  if (cookieHeader === undefined) {
+    return '';
+  }
+  const headerText = typeof cookieHeader === 'string' ? cookieHeader : cookieHeader.join('; ');
+  if (headerText.length === 0) {
+    return '';
+  }
+  for (const part of headerText.split(';')) {
+    const separatorIndex = part.indexOf('=');
+    if (separatorIndex <= 0) {
+      continue;
+    }
+    const name = part.slice(0, separatorIndex).trim();
+    if (name !== cookieName) {
+      continue;
+    }
+    const rawValue = part.slice(separatorIndex + 1).trim();
+    try {
+      return decodeURIComponent(rawValue);
+    } catch {
+      return rawValue;
+    }
+  }
+  return '';
+}
+
 export function registerIdentityModule(
   container: DependencyContainer,
   router: HttpRouterRegistry,
@@ -112,7 +157,7 @@ export function registerIdentityModule(
   const identityAuditLogger = new IdentityAuditLoggerAdapter(rlsPool);
 
   // Instanciacion de Casos de Uso
-  const registerUseCase = new RegisterOrganizationOwnerUseCase(rlsPool, identityRepo);
+  const registerUseCase = new RegisterOrganizationOwnerUseCase(rlsPool, identityRepo, advancedRepo);
   const authUseCase = new AuthenticateUserUseCase(identityRepo, identityAuditLogger);
   const rotateRefreshUseCase = new RotateRefreshTokenUseCase(identityRepo, identityAuditLogger);
   const revokeSessionsUseCase = new RevokeAllUserSessionsUseCase(identityRepo, identityAuditLogger);
@@ -145,6 +190,13 @@ export function registerIdentityModule(
     handler: wrapHandler(async (req: HttpRequestLike): Promise<HttpHandlerResult> => {
       const body = (req.body ?? {}) as Record<string, unknown>;
       const userAgent = String(req.headers['user-agent'] ?? 'Unknown');
+      const rawAcceptedCodes = body['acceptedLegalDocumentCodes'];
+      if (rawAcceptedCodes !== undefined && !Array.isArray(rawAcceptedCodes)) {
+        throw new ValidationError('`acceptedLegalDocumentCodes` debe ser un arreglo de codigos legales.', ['acceptedLegalDocumentCodes']);
+      }
+      const acceptedLegalDocumentCodes = Array.isArray(rawAcceptedCodes)
+        ? rawAcceptedCodes.filter((code): code is string => typeof code === 'string')
+        : undefined;
       const result = await registerUseCase.execute({
         email: String(body['ownerEmail'] ?? body['email'] ?? ''),
         fullName: String(body['ownerFullName'] ?? body['fullName'] ?? ''),
@@ -152,6 +204,7 @@ export function registerIdentityModule(
         organizationName: String(body['organizationName'] ?? ''),
         organizationSlug: String(body['organizationSlug'] ?? ''),
         phone: String(body['ownerPhone'] ?? body['phoneNumber'] ?? body['phone'] ?? '').trim(),
+        ...(acceptedLegalDocumentCodes !== undefined ? { acceptedLegalDocumentCodes } : {}),
         ipAddress: req.clientIp,
         userAgent,
       });
@@ -166,6 +219,7 @@ export function registerIdentityModule(
           organization: toPublicOrganization(result.organization),
           accessToken: result.accessToken,
           emailVerificationRequired: true,
+          legalAcceptancesRecorded: result.acceptedLegalDocumentCodes,
         },
         headers: {
           'Set-Cookie': `__Host-oa_rt=${result.rawRefreshToken}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=2592000`,
@@ -193,7 +247,7 @@ export function registerIdentityModule(
         ...(body['organizationSlug'] ? { organizationSlug: String(body['organizationSlug']) } : {}),
       });
 
-      if (result.status === 'MFA_REQUIRED') {
+      if (result.status === 'MFA_REQUIRED' || result.status === 'LEGAL_CONSENT_REQUIRED') {
         return { status: 202, body: result };
       }
 
@@ -224,7 +278,11 @@ export function registerIdentityModule(
     requiresRawBody: false,
     handler: wrapHandler(async (req: HttpRequestLike): Promise<HttpHandlerResult> => {
       const body = (req.body ?? {}) as Record<string, unknown>;
-      const rawToken = String(body['refreshToken'] ?? '');
+      // Fuente primaria: la cookie HttpOnly `__Host-oa_rt` (el navegador no puede copiar su valor
+      // al cuerpo). Fuente de respaldo: el cuerpo JSON, para clientes no navegador.
+      const cookieToken = readCookieValue(req.headers['cookie'], REFRESH_COOKIE_NAME);
+      const bodyToken = String(body['refreshToken'] ?? '');
+      const rawToken = cookieToken.length > 0 ? cookieToken : bodyToken;
       const userAgent = String(req.headers['user-agent'] ?? 'Unknown');
       const result = await rotateRefreshUseCase.execute({
         rawRefreshToken: rawToken,
@@ -328,6 +386,36 @@ export function registerIdentityModule(
     handler: wrapHandler(async (): Promise<HttpHandlerResult> => {
       const docs = await legalUseCase.getActiveMandatoryDocuments();
       return { status: 200, body: { documents: docs } };
+    }),
+  });
+
+  // POST /api/v1/legal/accept-pre-session (Renovacion de consentimiento antes de emitir sesion)
+  router.register({
+    method: 'POST',
+    path: '/api/v1/legal/accept-pre-session',
+    access: 'PUBLIC',
+    requiredScopes: [],
+    ownerModule: '01-identity-and-rbac',
+    requiresRawBody: false,
+    handler: wrapHandler(async (req: HttpRequestLike): Promise<HttpHandlerResult> => {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const rawDocumentIds = Array.isArray(body['legalDocumentIds']) ? body['legalDocumentIds'] : [];
+      const legalDocumentIds = rawDocumentIds.filter((value): value is string => typeof value === 'string');
+      const userAgent = String(req.headers['user-agent'] ?? 'Unknown');
+      const result = await legalUseCase.acceptPendingDocumentsWithChallenge({
+        consentChallengeToken: String(body['consentChallengeToken'] ?? ''),
+        legalDocumentIds,
+        ipAddress: req.clientIp,
+        userAgent,
+      });
+      return {
+        status: 200,
+        body: {
+          accepted: true,
+          acceptedDocumentIds: result.acceptedDocumentIds,
+          pendingDocuments: result.pendingDocuments,
+        },
+      };
     }),
   });
 

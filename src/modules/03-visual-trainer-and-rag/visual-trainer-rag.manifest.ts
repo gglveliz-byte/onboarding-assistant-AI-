@@ -103,7 +103,7 @@ export function registerVisualTrainerRagModule(
     method: 'POST',
     path: '/api/v1/projects/:projectId/functional-maps/publish',
     access: 'TENANT_SESSION',
-    requiredScopes: ['maps:publish'],
+    requiredScopes: ['trainer:publish_map'],
     ownerModule: '03-visual-trainer-and-rag',
     requiresRawBody: false,
     handler: wrapHandler(async (req: HttpRequestLike, ctx: AuthenticatedRequestContext): Promise<HttpHandlerResult> => {
@@ -131,7 +131,7 @@ export function registerVisualTrainerRagModule(
     method: 'POST',
     path: '/api/v1/projects/:projectId/functional-maps/rollback',
     access: 'TENANT_SESSION',
-    requiredScopes: ['maps:publish'],
+    requiredScopes: ['trainer:publish_map'],
     ownerModule: '03-visual-trainer-and-rag',
     requiresRawBody: false,
     handler: wrapHandler(async (req: HttpRequestLike, ctx: AuthenticatedRequestContext): Promise<HttpHandlerResult> => {
@@ -159,7 +159,7 @@ export function registerVisualTrainerRagModule(
     method: 'PUT',
     path: '/api/v1/projects/:projectId/prompt',
     access: 'TENANT_SESSION',
-    requiredScopes: ['projects:update'],
+    requiredScopes: ['trainer:edit_prompt'],
     ownerModule: '03-visual-trainer-and-rag',
     requiresRawBody: false,
     handler: wrapHandler(async (req: HttpRequestLike, ctx: AuthenticatedRequestContext): Promise<HttpHandlerResult> => {

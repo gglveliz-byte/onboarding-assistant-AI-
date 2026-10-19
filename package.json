@@ -18,6 +18,7 @@
     "db:verify": "tsx scripts/verify-env-bootstrap.ts",
     "verify:production": "tsx scripts/verify-production-readiness.ts",
     "test:unit": "tsx tests/unit/env-contract.test.ts",
+    "test:scopes": "tsx tests/unit/route-scope-catalog.test.ts",
     "test:kernel": "tsx tests/unit/kernel.test.ts",
     "test:contracts": "tsx tests/unit/infrastructure-contracts.test.ts",
     "test:ssrf": "tsx tests/unit/anti-ssrf.test.ts",

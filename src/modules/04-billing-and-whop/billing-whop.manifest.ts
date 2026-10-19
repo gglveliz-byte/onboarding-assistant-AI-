@@ -290,7 +290,7 @@ export function registerBillingWhopModule(container: DependencyContainer, router
     method: 'GET',
     path: '/api/v1/billing/ledger/export',
     access: 'TENANT_SESSION',
-    requiredScopes: ['billing:export'],
+    requiredScopes: ['billing:export_invoice'],
     ownerModule: OWNER_MODULE,
     requiresRawBody: false,
     handler: wrapHandler(async (_request: HttpRequestLike, context: AuthenticatedRequestContext): Promise<HttpHandlerResult> => {
@@ -312,7 +312,7 @@ export function registerBillingWhopModule(container: DependencyContainer, router
     method: 'POST',
     path: '/api/v1/billing/checkout',
     access: 'TENANT_SESSION',
-    requiredScopes: ['billing:write'],
+    requiredScopes: ['billing:manage_sub'],
     ownerModule: OWNER_MODULE,
     requiresRawBody: false,
     handler: wrapHandler(async (request: HttpRequestLike, context: AuthenticatedRequestContext): Promise<HttpHandlerResult> => {

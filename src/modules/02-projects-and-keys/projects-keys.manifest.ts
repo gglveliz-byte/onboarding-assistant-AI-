@@ -169,7 +169,7 @@ export function registerProjectsKeysModule(
     method: 'POST',
     path: '/api/v1/projects',
     access: 'TENANT_SESSION',
-    requiredScopes: ['projects:create'],
+    requiredScopes: ['project:create'],
     ownerModule: '02-projects-and-keys',
     requiresRawBody: false,
     handler: wrapHandler(async (req: HttpRequestLike, ctx: AuthenticatedRequestContext): Promise<HttpHandlerResult> => {
@@ -231,7 +231,7 @@ export function registerProjectsKeysModule(
     method: 'PUT',
     path: '/api/v1/projects/:projectId',
     access: 'TENANT_SESSION',
-    requiredScopes: ['projects:update'],
+    requiredScopes: ['project:update'],
     ownerModule: '02-projects-and-keys',
     requiresRawBody: false,
     handler: wrapHandler(async (req: HttpRequestLike, ctx: AuthenticatedRequestContext): Promise<HttpHandlerResult> => {
@@ -285,7 +285,7 @@ export function registerProjectsKeysModule(
     method: 'POST',
     path: '/api/v1/projects/:projectId/domains',
     access: 'TENANT_SESSION',
-    requiredScopes: ['domains:manage'],
+    requiredScopes: ['domain:create'],
     ownerModule: '02-projects-and-keys',
     requiresRawBody: false,
     handler: wrapHandler(async (req: HttpRequestLike, ctx: AuthenticatedRequestContext): Promise<HttpHandlerResult> => {
@@ -320,7 +320,7 @@ export function registerProjectsKeysModule(
     method: 'DELETE',
     path: '/api/v1/projects/:projectId/domains/:domainId',
     access: 'TENANT_SESSION',
-    requiredScopes: ['domains:manage'],
+    requiredScopes: ['domain:delete'],
     ownerModule: '02-projects-and-keys',
     requiresRawBody: false,
     handler: wrapHandler(async (req: HttpRequestLike, ctx: AuthenticatedRequestContext): Promise<HttpHandlerResult> => {
@@ -350,7 +350,7 @@ export function registerProjectsKeysModule(
     method: 'POST',
     path: '/api/v1/projects/:projectId/keys',
     access: 'TENANT_SESSION',
-    requiredScopes: ['apikeys:create'],
+    requiredScopes: ['apikey:create'],
     ownerModule: '02-projects-and-keys',
     requiresRawBody: false,
     handler: wrapHandler(async (req: HttpRequestLike, ctx: AuthenticatedRequestContext): Promise<HttpHandlerResult> => {
@@ -387,7 +387,7 @@ export function registerProjectsKeysModule(
     method: 'POST',
     path: '/api/v1/projects/:projectId/keys/rotate',
     access: 'TENANT_SESSION',
-    requiredScopes: ['apikeys:rotate'],
+    requiredScopes: ['apikey:rotate'],
     ownerModule: '02-projects-and-keys',
     requiresRawBody: false,
     handler: wrapHandler(async (req: HttpRequestLike, ctx: AuthenticatedRequestContext): Promise<HttpHandlerResult> => {
@@ -422,7 +422,7 @@ export function registerProjectsKeysModule(
     method: 'DELETE',
     path: '/api/v1/projects/:projectId/keys/:keyId',
     access: 'TENANT_SESSION',
-    requiredScopes: ['apikeys:revoke'],
+    requiredScopes: ['apikey:revoke'],
     ownerModule: '02-projects-and-keys',
     requiresRawBody: false,
     handler: wrapHandler(async (req: HttpRequestLike, ctx: AuthenticatedRequestContext): Promise<HttpHandlerResult> => {
