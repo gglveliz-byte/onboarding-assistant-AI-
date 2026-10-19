@@ -4,29 +4,41 @@
  * @proposito
  *   Hook reactivo de cliente para la gestión integral de suscripciones, consumo en tiempo
  *   real, apertura de checkout firmado en Whop, portal de autoservicio y configuración de
- *   topes de gasto (Spend Cap) para una organización.
+ *   topes de gasto (Spend Cap) de una organización. Todas las lecturas y mutaciones viajan por
+ *   el cliente HTTP único del frente (`backendFetch`), que adjunta el Bearer de la sesión,
+ *   renueva el token ante un 401 y normaliza el sobre de error del backend. Los campos del
+ *   backend se traducen aquí a la proyección de la interfaz: no se fabrican cifras.
  *
  * @resumen_contenido
  *   - Tipos de estado: `BillingConsumptionState`, `BillingLedgerItem`, `SpendCapConfig`.
  *   - Hook `useOrganizationBillingWhop()`:
- *       * `refreshConsumption()`: Consulta `GET /api/v1/billing/consumption`.
- *       * `fetchLedger()`: Consulta `GET /api/v1/billing/ledger` con paginación por cursor.
- *       * `exportLedgerCsv()`: Descarga `GET /api/v1/billing/ledger/export`.
- *       * `startCheckout()`: Envía `POST /api/v1/billing/checkout` manejando 403 DPA_NOT_SIGNED.
- *       * `openCustomerPortal()`: Redirección al portal de facturas y métodos de pago.
- *       * `updateSpendCap()`: Guarda el tope de gasto mensual y umbrales de alerta.
+ *       * `refreshConsumption()`: `GET /api/v1/billing/consumption` (mapeo de la instantánea real).
+ *       * `fetchLedger()`: `GET /api/v1/billing/ledger` con paginación por cursor ISO.
+ *       * `exportLedgerCsv()`: `GET /api/v1/billing/ledger/export` (CSV crudo, no JSON).
+ *       * `startCheckout()`: `POST /api/v1/billing/checkout` con manejo de 403 DPA_NOT_SIGNED.
+ *       * `openCustomerPortal()`: portal de facturas y métodos de pago.
+ *       * `updateSpendCap()`: tope de gasto mensual y umbrales de alerta.
  *
  * @dependencias_internas
+ *   - `backendFetch`, `getAccessToken` (apps/web/src/lib/api-client/http-client.ts).
  *   - Contratos REST de `src/modules/04-billing-and-whop/billing-whop.manifest.ts`.
  *
  * @dependencias_externas
  *   - `react` (`useState`, `useEffect`, `useCallback`).
+ *
+ * @notas
+ *   - La organización se resuelve en el servidor a partir de la sesión; `organizationId` solo se
+ *     usa como etiqueta local (por ejemplo, en el nombre del archivo CSV exportado).
+ *   - `PUT /api/v1/billing/spend-cap` y `POST /api/v1/billing/whop/customer-portal` todavía NO
+ *     están expuestos por el backend: ante un 404 la interfaz lo dice con claridad en lugar de
+ *     simular un éxito.
  *
  * @tablas_bd_o_redis
  *   - PostgreSQL: `whop_subscriptions`, `usage_ledger`, `organizations` (vía API REST).
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { backendFetch, getAccessToken } from '../../lib/api-client/http-client';
 
 export interface VolumeDiscountTier {
   readonly fromMinute: number;
@@ -89,10 +101,35 @@ export interface UseOrganizationBillingWhopReturn {
   readonly updateSpendCap: (config: SpendCapConfig) => Promise<boolean>;
 }
 
+/** Descripción legible de cada tipo de asiento del libro mayor. */
+const LEDGER_ENTRY_DESCRIPTIONS: Readonly<Record<string, string>> = {
+  VOICE_MINUTE_DEDUCTION: 'Consumo de minutos de voz en tiempo real',
+  PLAN_ACTIVATION_GRANT: 'Otorgamiento de minutos por activación de plan',
+  PAYMENT_SUCCEEDED_RENEWAL: 'Renovación de suscripción pagada',
+  PAYMENT_SUCCEEDED_TOPUP: 'Recarga prepagada de saldo',
+  CREDIT_SUPERADMIN_GRANT: 'Crédito otorgado por la plataforma',
+};
+
+/** Determina si un valor desconocido es un registro JSON indexable. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Convierte un decimal de cadena (Fixed6) en número finito. */
+function toNumber(value: unknown): number {
+  const parsed = typeof value === 'number' ? value : Number(String(value ?? ''));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/** Normaliza un valor textual del backend; `''` cuando no existe. */
+function toText(value: unknown): string {
+  return typeof value === 'string' ? value : (typeof value === 'number' ? String(value) : '');
+}
+
 /**
  * Hook de gestión de facturación, consumo y enlaces seguros de Whop.
  *
- * @param organizationId - Identificador único de la organización en sesión.
+ * @param organizationId - Etiqueta local de la organización (la API resuelve el tenant por la sesión).
  * @returns Funciones operativas y estado reactivo del consumo y libro mayor.
  */
 export function useOrganizationBillingWhop(organizationId: string): UseOrganizationBillingWhopReturn {
@@ -104,52 +141,54 @@ export function useOrganizationBillingWhop(organizationId: string): UseOrganizat
   const [dpaRequired, setDpaRequired] = useState<boolean>(false);
 
   /**
-   * Refresca la instantánea de consumo de minutos y saldo del periodo activo.
+   * Refresca la instantánea real de consumo de minutos y saldo del periodo activo.
    */
   const refreshConsumption = useCallback(async (): Promise<void> => {
-    if (!organizationId) return;
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/v1/billing/consumption', {
-        method: 'GET',
-        headers: { 'Accept': 'application/json' },
-      });
-
-      if (!response.ok) {
-        if (response.status === 403) {
-          const body = await response.json().catch(() => ({}));
-          if (body.code === 'DPA_NOT_SIGNED' || body.code === 'LEGAL_CONSENT_OUTDATED') {
-            setDpaRequired(true);
-            setError('Se requiere la firma del Acuerdo de Procesamiento de Datos (DPA) para operar.');
-            return;
-          }
-        }
-        throw new Error(`Error ${response.status} al obtener consumo de facturación`);
+      const snapshot = await backendFetch<unknown>('/api/v1/billing/consumption');
+      if (!isRecord(snapshot)) {
+        throw new Error('El motor de facturación devolvió una respuesta inesperada.');
       }
-
-      const data = await response.json();
+      const effectiveRate = toText(snapshot['effectiveRatePerMinuteUsd']);
+      const discountPercentage = toNumber(snapshot['volumeDiscountPercent']);
+      const planCode = toText(snapshot['planCode']);
+      const status = toText(snapshot['status']);
       setConsumption({
-        organizationId: data.organizationId ?? organizationId,
-        planCode: data.planCode ?? 'PLAN_5',
-        status: data.status ?? 'ACTIVE',
-        includedMinutesTotal: Number(data.includedMinutesTotal ?? 25),
-        includedMinutesUsed: Number(data.includedMinutesUsed ?? 0),
-        includedMinutesRemaining: Math.max(0, Number(data.includedMinutesTotal ?? 25) - Number(data.includedMinutesUsed ?? 0)),
-        overageMinutesUsed: Number(data.overageMinutesUsed ?? 0),
-        overageBilledUsd: String(data.overageBilledUsd ?? '0.000000'),
-        effectiveRatePerMinuteUsd: String(data.effectiveRatePerMinuteUsd ?? '0.120000'),
-        volumeDiscountPercentage: Number(data.volumeDiscountPercentage ?? 0),
-        activeVolumeTier: data.activeVolumeTier ?? null,
-        hardSpendCapUsd: data.hardSpendCapUsd ? String(data.hardSpendCapUsd) : null,
-        currentTotalCostUsd: String(data.currentTotalCostUsd ?? '5.000000'),
-        cyclePeriodStart: data.cyclePeriodStart ?? new Date(Date.now() - 15 * 86400000).toISOString(),
-        cyclePeriodEnd: data.cyclePeriodEnd ?? new Date(Date.now() + 15 * 86400000).toISOString(),
-        dpaSigned: data.dpaSigned ?? true,
+        organizationId,
+        planCode: (planCode === 'PLAN_5' || planCode === 'PLAN_10' || planCode === 'PLAN_30' || planCode === 'PLAN_50')
+          ? planCode
+          : 'PAYG',
+        status: (status === 'PAST_DUE' || status === 'CANCELLED' || status === 'TRIALING') ? status : 'ACTIVE',
+        includedMinutesTotal: toNumber(snapshot['includedMinutesQuota']),
+        includedMinutesUsed: toNumber(snapshot['includedMinutesConsumed']),
+        includedMinutesRemaining: toNumber(snapshot['includedMinutesRemaining']),
+        overageMinutesUsed: toNumber(snapshot['overageMinutesUsed']),
+        overageBilledUsd: toText(snapshot['overageBilledUsd']),
+        effectiveRatePerMinuteUsd: effectiveRate,
+        volumeDiscountPercentage: discountPercentage,
+        activeVolumeTier: discountPercentage > 0
+          ? {
+              fromMinute: 0,
+              toMinute: null,
+              discountPercentage,
+              discountedRatePerMinuteUsd: effectiveRate,
+            }
+          : null,
+        hardSpendCapUsd: snapshot['hardSpendCapUsd'] === null || snapshot['hardSpendCapUsd'] === undefined
+          ? null
+          : toText(snapshot['hardSpendCapUsd']),
+        currentTotalCostUsd: toText(snapshot['overageBilledUsd']),
+        cyclePeriodStart: toText(snapshot['currentPeriodStartIso']),
+        cyclePeriodEnd: toText(snapshot['currentPeriodEndIso']),
+        dpaSigned: snapshot['dpaSigned'] === true,
       });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al conectar con el servicio de facturación';
-      setError(msg);
+    } catch (caught: unknown) {
+      const message = caught instanceof Error
+        ? caught.message
+        : 'Error al conectar con el servicio de facturación';
+      setError(message);
     } finally {
       setIsLoading(false);
     }
@@ -159,57 +198,61 @@ export function useOrganizationBillingWhop(organizationId: string): UseOrganizat
    * Consulta el historial paginado del libro mayor de consumo minuto a minuto.
    */
   const fetchLedger = useCallback(async (pageSize = 20, cursor: string | null = null): Promise<void> => {
-    if (!organizationId) return;
     try {
-      const url = new URL('/api/v1/billing/ledger', window.location.origin);
-      url.searchParams.set('pageSize', String(pageSize));
-      if (cursor) url.searchParams.set('cursor', cursor);
-
-      const response = await fetch(url.toString(), {
-        method: 'GET',
-        headers: { 'Accept': 'application/json' },
-      });
-
-      if (!response.ok) {
-        throw new Error(`Error ${response.status} al consultar libro mayor`);
+      const query = new URLSearchParams({ pageSize: String(pageSize) });
+      if (cursor !== null) {
+        query.set('cursor', cursor);
       }
-
-      const data = await response.json();
-      const items = Array.isArray(data.items) ? data.items : [];
-      setLedgerItems(items.map((row: Record<string, unknown>, idx: number) => ({
-        id: String(row['id'] ?? `ledger-${idx}`),
-        createdAt: String(row['createdAt'] ?? new Date().toISOString()),
-        entryType: (row['entryType'] as BillingLedgerItem['entryType']) ?? 'VOICE_MINUTE_DEDUCTION',
-        minutesDelta: String(row['minutesDelta'] ?? '-1.000000'),
-        costDeltaUsd: String(row['costDeltaUsd'] ?? '0.120000'),
-        voiceEngine: String(row['voiceEngine'] ?? 'Motor Conversacional en Vivo'),
-        runningBalanceMinutes: String(row['runningBalanceMinutes'] ?? '24.000000'),
-        runningBalanceUsd: String(row['runningBalanceUsd'] ?? '0.120000'),
-        description: String(row['description'] ?? 'Consumo sesión asistente en tiempo real'),
-        projectName: row['projectName'] ? String(row['projectName']) : undefined,
-      })));
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al consultar transacciones del libro mayor';
-      setError(msg);
+      const payload = await backendFetch<unknown>(`/api/v1/billing/ledger?${query.toString()}`);
+      const rawEntries = isRecord(payload) && Array.isArray(payload['entries']) ? payload['entries'] : [];
+      setLedgerItems(rawEntries.map((raw: unknown): BillingLedgerItem => {
+        const entry = isRecord(raw) ? raw : {};
+        const entryType = toText(entry['entryType']);
+        const voiceSessionId = toText(entry['voiceSessionId']);
+        const projectId = toText(entry['projectId']);
+        return {
+          id: toText(entry['ledgerEntryId']),
+          createdAt: toText(entry['createdAtIso']),
+          entryType: (entryType === 'PLAN_ACTIVATION_GRANT'
+            || entryType === 'PAYMENT_SUCCEEDED_RENEWAL'
+            || entryType === 'CREDIT_SUPERADMIN_GRANT')
+            ? entryType
+            : 'VOICE_MINUTE_DEDUCTION',
+          minutesDelta: toText(entry['minutesDelta']),
+          costDeltaUsd: toText(entry['amountUsdDelta']),
+          voiceEngine: voiceSessionId.length > 0 ? 'Sesión de voz' : 'Ajuste de facturación',
+          runningBalanceMinutes: toText(entry['includedMinutesBalanceAfter']),
+          runningBalanceUsd: toText(entry['creditBalanceUsdAfter']),
+          description: LEDGER_ENTRY_DESCRIPTIONS[entryType] ?? 'Asiento contable del ciclo vigente',
+          ...(projectId.length > 0 ? { projectName: projectId } : {}),
+        };
+      }));
+    } catch (caught: unknown) {
+      const message = caught instanceof Error
+        ? caught.message
+        : 'Error al consultar transacciones del libro mayor';
+      setError(message);
     }
-  }, [organizationId]);
+  }, []);
 
   /**
    * Exporta el libro mayor del periodo vigente en formato CSV auditable.
    */
   const exportLedgerCsv = useCallback(async (): Promise<void> => {
-    if (!organizationId) return;
     setIsExportingCsv(true);
+    setError(null);
     try {
+      const token = getAccessToken();
       const response = await fetch('/api/v1/billing/ledger/export', {
         method: 'GET',
-        headers: { 'Accept': 'text/csv' },
+        headers: {
+          Accept: 'text/csv',
+          ...(token === null ? {} : { Authorization: `Bearer ${token}` }),
+        },
       });
-
       if (!response.ok) {
         throw new Error(`Error ${response.status} al exportar archivo CSV`);
       }
-
       const blob = await response.blob();
       const downloadUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -219,9 +262,9 @@ export function useOrganizationBillingWhop(organizationId: string): UseOrganizat
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(downloadUrl);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Fallo en la descarga del CSV';
-      setError(msg);
+    } catch (caught: unknown) {
+      const message = caught instanceof Error ? caught.message : 'Fallo en la descarga del CSV';
+      setError(message);
     } finally {
       setIsExportingCsv(false);
     }
@@ -235,78 +278,65 @@ export function useOrganizationBillingWhop(organizationId: string): UseOrganizat
     mode: 'SUBSCRIPTION' | 'ONE_TIME_TOP_UP' = 'SUBSCRIPTION',
     topUpAmountUsd?: string
   ): Promise<string | null> => {
-    if (!organizationId) return null;
     setIsLoading(true);
     setError(null);
     try {
       const redirectUrl = window.location.href;
-      const response = await fetch('/api/v1/billing/checkout', {
+      const payload = await backendFetch<unknown>('/api/v1/billing/checkout', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: JSON.stringify({
+        body: {
           planCode,
           checkoutMode: mode,
           redirectUrl,
           ...(topUpAmountUsd ? { topUpAmountUsd } : {}),
-        }),
+        },
       });
-
-      if (response.status === 403) {
-        const body = await response.json().catch(() => ({}));
-        if (body.code === 'DPA_NOT_SIGNED' || body.code === 'LEGAL_CONSENT_OUTDATED') {
-          setDpaRequired(true);
-          setError('Debe firmar el DPA legal antes de suscribirse a un plan comercial.');
-          return null;
-        }
+      const session = isRecord(payload) ? payload : {};
+      const checkoutUrl = toText(session['checkoutUrl'])
+        || toText(session['url'])
+        || (isRecord(session['session']) ? toText(session['session']['url']) : '');
+      if (checkoutUrl.length === 0) {
+        throw new Error('El motor de facturación no devolvió un enlace de checkout.');
       }
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'Error en checkout' }));
-        throw new Error(errorData.message ?? `Error HTTP ${response.status}`);
+      window.location.href = checkoutUrl;
+      return checkoutUrl;
+    } catch (caught: unknown) {
+      const message = caught instanceof Error ? caught.message : 'Error al iniciar checkout seguro';
+      if (message.includes('403') || message.includes('DPA')) {
+        setDpaRequired(true);
+        setError('Debe firmar el DPA legal antes de suscribirse a un plan comercial.');
+        return null;
       }
-
-      const data = await response.json();
-      const checkoutUrl = data.checkoutUrl ?? data.url;
-      if (typeof checkoutUrl === 'string' && checkoutUrl.length > 0) {
-        window.location.href = checkoutUrl;
-        return checkoutUrl;
-      }
-      return null;
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al iniciar checkout seguro';
-      setError(msg);
+      setError(message);
       return null;
     } finally {
       setIsLoading(false);
     }
-  }, [organizationId]);
+  }, []);
 
   /**
    * Solicita la URL del portal de gestión de suscripción y facturas del cliente.
    */
   const openCustomerPortal = useCallback(async (): Promise<string | null> => {
-    if (!organizationId) return null;
     try {
-      const response = await fetch('/api/v1/billing/whop/customer-portal', {
+      const payload = await backendFetch<unknown>('/api/v1/billing/whop/customer-portal', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ organizationId, returnUrl: window.location.href }),
+        body: { organizationId, returnUrl: window.location.href },
       });
-
-      if (!response.ok) {
-        throw new Error(`Portal no disponible (${response.status})`);
+      const body = isRecord(payload) ? payload : {};
+      const portalUrl = toText(body['portalUrl']) || toText(body['url']);
+      if (portalUrl.length === 0) {
+        throw new Error('El motor de facturación no devolvió una URL de portal.');
       }
-
-      const data = await response.json();
-      const portalUrl = data.portalUrl ?? data.url;
-      if (portalUrl) {
-        window.open(portalUrl, '_blank', 'noopener,noreferrer');
-        return portalUrl;
-      }
-      return null;
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'No se pudo abrir el portal de facturación';
-      setError(msg);
+      window.open(portalUrl, '_blank', 'noopener,noreferrer');
+      return portalUrl;
+    } catch (caught: unknown) {
+      const message = caught instanceof Error
+        ? caught.message
+        : 'No se pudo abrir el portal de facturación';
+      setError(message.includes('404')
+        ? 'El portal de clientes de Whop todavía no está expuesto por la API.'
+        : message);
       return null;
     }
   }, [organizationId]);
@@ -315,29 +345,24 @@ export function useOrganizationBillingWhop(organizationId: string): UseOrganizat
    * Guarda o actualiza el tope de gasto mensual y umbrales de alerta.
    */
   const updateSpendCap = useCallback(async (config: SpendCapConfig): Promise<boolean> => {
-    if (!organizationId) return false;
     try {
-      const response = await fetch('/api/v1/billing/spend-cap', {
+      await backendFetch<unknown>('/api/v1/billing/spend-cap', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: {
           organizationId,
           hardSpendCapUsd: config.hardSpendCapUsd,
           alertAt50Percent: config.alertAt50Percent,
           alertAt80Percent: config.alertAt80Percent,
           alertAt100Percent: config.alertAt100Percent,
-        }),
+        },
       });
-
-      if (!response.ok) {
-        throw new Error(`Error ${response.status} al actualizar tope de gasto`);
-      }
-
       await refreshConsumption();
       return true;
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al guardar tope de gasto';
-      setError(msg);
+    } catch (caught: unknown) {
+      const message = caught instanceof Error ? caught.message : 'Error al guardar tope de gasto';
+      setError(message.includes('404')
+        ? 'El ajuste del Spend Cap todavía no está expuesto por la API.'
+        : message);
       return false;
     }
   }, [organizationId, refreshConsumption]);

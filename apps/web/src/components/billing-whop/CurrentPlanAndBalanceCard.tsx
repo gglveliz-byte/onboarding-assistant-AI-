@@ -13,6 +13,7 @@
  *       * Indicador de tarifa por minuto en fuente mono con alineación `tnum`.
  *       * Escaparate de tramos de descuento por volumen alcanzados.
  *       * Resumen de ciclo de facturación y costo total acumulado.
+ *       * Estado vacío honesto («Plan no disponible») cuando el consumo aún no está disponible.
  *
  * @dependencias_internas
  *   - Tipos de `useOrganizationBillingWhop.ts` (`BillingConsumptionState`).
@@ -51,7 +52,11 @@ export function CurrentPlanAndBalanceCard({
   onRefresh,
   onOpenManagePlan,
 }: CurrentPlanAndBalanceCardProps): ReactElement {
-  const planName = consumption ? PLAN_DISPLAY_NAMES[consumption.planCode] ?? consumption.planCode : 'Cargando plan...';
+  const planName = consumption
+    ? PLAN_DISPLAY_NAMES[consumption.planCode] ?? consumption.planCode
+    : isLoading
+      ? 'Cargando plan...'
+      : 'Plan no disponible';
 
   const percentUsed = useMemo(() => {
     if (!consumption || consumption.includedMinutesTotal === 0) return 0;
@@ -76,8 +81,8 @@ export function CurrentPlanAndBalanceCard({
       }}
     >
       {/* Cabecera Superior: Título de sección y Botón Gestionar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
-        <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px', marginBottom: '20px' }}>
+        <div style={{ flex: '1 1 220px', minWidth: '0' }}>
           <div
             style={{
               fontSize: '11px',
@@ -102,9 +107,14 @@ export function CurrentPlanAndBalanceCard({
           >
             {planName}
           </h2>
+          {!consumption && !isLoading && (
+            <p style={{ fontSize: '12px', color: 'var(--color-driftwood, #84847e)', margin: '4px 0 0' }}>
+              Sin datos de consumo: la sesión no está autenticada o el motor de facturación no respondió.
+            </p>
+          )}
         </div>
 
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
           <button
             type="button"
             onClick={onRefresh}

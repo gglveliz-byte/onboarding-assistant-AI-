@@ -63,8 +63,8 @@ export function ModelAndVoiceConfigBar({
             className="w-full px-2.5 py-1.5 bg-[#f7f7f4] border border-[#cdcdc9] rounded text-[#26251e] focus:outline-none"
             style={{ borderRadius: '4px' }}
           >
-            <option value="gemini-3.8-live">Motor Ultrarrápido Bidireccional (Bidi Live)</option>
-            <option value="qwen-3.8-omni">Motor de Voz Nativo Omni (Baja Latencia)</option>
+            <option value="gemini-3.8-live">Gemini 3.8 Live · Bidi</option>
+            <option value="qwen-3.8-omni">Qwen 3.8 Omni · Baja latencia</option>
           </select>
         </div>
 
@@ -80,8 +80,8 @@ export function ModelAndVoiceConfigBar({
             className="w-full px-2.5 py-1.5 bg-[#f7f7f4] border border-[#cdcdc9] rounded text-[#26251e] focus:outline-none"
             style={{ borderRadius: '4px' }}
           >
-            <option value="qwen-3.8-omni">Motor de Voz Nativo Omni (Baja Latencia)</option>
-            <option value="gemini-3.8-live">Motor Ultrarrápido Bidireccional (Bidi Live)</option>
+            <option value="qwen-3.8-omni">Qwen 3.8 Omni · Baja latencia</option>
+            <option value="gemini-3.8-live">Gemini 3.8 Live · Bidi</option>
           </select>
         </div>
 

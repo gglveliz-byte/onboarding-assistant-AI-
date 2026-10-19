@@ -29,17 +29,80 @@ import type {
 } from './backend-contracts.types';
 import { HTTP_CLIENT_EVENT_NAMES } from './backend-contracts.types';
 
-/** Token de acceso vigente. Vive SOLO en RAM volátil del módulo: sin persistencia. */
+/** Clave para preservar el token en la sesion de la pestana activa. */
+const SESSION_TOKEN_STORAGE_KEY = 'oa_access_token';
+
+/** Clave para preservar el slug de la organización en la sesión de la pestaña activa. */
+const SESSION_ORG_SLUG_STORAGE_KEY = 'oa_org_slug';
+
+/** Token de acceso vigente en RAM volátil del módulo. */
 let accessTokenInRam: string | null = null;
 
 /** Guarda o limpia el token de acceso tras login, registro, refresco o cierre de sesión. */
 export function setAccessToken(token: string | null): void {
   accessTokenInRam = token;
+  if (typeof window !== 'undefined') {
+    try {
+      if (token !== null && token.length > 0) {
+        window.sessionStorage.setItem(SESSION_TOKEN_STORAGE_KEY, token);
+      } else {
+        window.sessionStorage.removeItem(SESSION_TOKEN_STORAGE_KEY);
+      }
+    } catch {
+      /* sessionStorage restringido por politica del navegador */
+    }
+  }
 }
 
-/** Devuelve el token de acceso en memoria, o `null` si no hay sesión activa. */
+/** Devuelve el token de acceso en memoria o rehidratado desde la sesión activa de la pestaña. */
 export function getAccessToken(): string | null {
-  return accessTokenInRam;
+  if (accessTokenInRam !== null && accessTokenInRam.length > 0) {
+    return accessTokenInRam;
+  }
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = window.sessionStorage.getItem(SESSION_TOKEN_STORAGE_KEY);
+      if (stored !== null && stored.length > 0) {
+        accessTokenInRam = stored;
+        return stored;
+      }
+    } catch {
+      /* sessionStorage no disponible */
+    }
+  }
+  return null;
+}
+
+/**
+ * Guarda el slug de la organización tras autenticarse para que las rutas de entrada del
+ * dashboard (`/dashboard`, `/dashboard/org/[orgSlug]`) puedan reconstruir el destino real.
+ */
+export function setSessionOrgSlug(slug: string | null): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    if (slug !== null && slug.length > 0) {
+      window.sessionStorage.setItem(SESSION_ORG_SLUG_STORAGE_KEY, slug);
+    } else {
+      window.sessionStorage.removeItem(SESSION_ORG_SLUG_STORAGE_KEY);
+    }
+  } catch {
+    /* sessionStorage restringido por política del navegador */
+  }
+}
+
+/** Devuelve el slug de organización persistido en la pestaña activa (`null` si no hay). */
+export function getSessionOrgSlug(): string | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  try {
+    const stored = window.sessionStorage.getItem(SESSION_ORG_SLUG_STORAGE_KEY);
+    return stored !== null && stored.length > 0 ? stored : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Opciones de `backendFetch`: método, cuerpo JSON, cabeceras, aborto y banderas de control. */

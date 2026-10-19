@@ -7,7 +7,7 @@
  *   en color Ember #f54e00 y provee inserción rápida de variables de contexto.
  *
  * @resumen_contenido
- *   - Marco de ventana en #f2f1ed con 3 puntos decorativos y pestañas de archivo.
+ *   - Marco de ventana en #f2f1ed con 3 puntos decorativos y pestañas de archivo (adaptable en móvil).
  *   - Pestaña 1: Editor markdown del System Prompt con variables dinámicas.
  *   - Pestaña 2: Visualizador del esquema JSON de pasos del flujo.
  *   - Pestaña 3: Snippet ejecutable cURL para actualizar el prompt vía API REST.
@@ -72,22 +72,22 @@ export function UnifiedSystemPromptEditor({
       data-testid="unified-system-prompt-editor"
     >
       {/* Barra de Ventana (Window Mockup Frame) */}
-      <div className="h-10 bg-[#e6e5e0] border-b border-[#cdcdc9] px-4 flex items-center justify-between select-none flex-shrink-0">
-        <div className="flex items-center gap-4">
-          <div className="flex gap-1.5">
+      <div className="bg-[#e6e5e0] border-b border-[#cdcdc9] px-3 sm:px-4 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 select-none flex-shrink-0">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="hidden sm:flex gap-1.5 flex-shrink-0">
             <span className="w-2.5 h-2.5 rounded-full bg-[#cdcdc9]" />
             <span className="w-2.5 h-2.5 rounded-full bg-[#cdcdc9]" />
             <span className="w-2.5 h-2.5 rounded-full bg-[#cdcdc9]" />
           </div>
 
           {/* Pestañas en berkeleyMono */}
-          <div className="flex gap-1 text-[11px] font-mono">
+          <div className="flex gap-1 text-[10px] sm:text-[11px] font-mono overflow-x-auto min-w-0">
             {(['system-prompt.md', 'steps-schema.json', 'api-curl-snippet.sh'] as TabKey[]).map((tab) => (
               <button
                 key={tab}
                 type="button"
                 onClick={() => setActiveTab(tab)}
-                className={`px-3 py-1 rounded transition-colors ${
+                className={`px-2 sm:px-3 py-1 rounded transition-colors whitespace-nowrap flex-shrink-0 ${
                   activeTab === tab
                     ? 'bg-[#f7f7f4] text-[#26251e] font-medium border-t-2 border-[#26251e]'
                     : 'text-[#84847e] hover:text-[#26251e]'
@@ -100,11 +100,14 @@ export function UnifiedSystemPromptEditor({
         </div>
 
         {/* Anclas Detectadas */}
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-mono text-[#84847e]">
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <span className="hidden sm:inline text-[11px] font-mono text-[#84847e]">
             Anclas RAG vinculadas:
           </span>
-          <span className="text-[10px] font-mono px-2 py-0.5 bg-[#f54e00]/10 text-[#f54e00] rounded font-semibold">
+          <span className="sm:hidden text-[10px] font-mono text-[#84847e]">
+            Anclas RAG:
+          </span>
+          <span className="text-[10px] font-mono px-2 py-0.5 bg-[#f54e00]/10 text-[#f54e00] rounded font-semibold whitespace-nowrap">
             {extractedAnchors.length} activas
           </span>
         </div>
@@ -177,8 +180,8 @@ export function UnifiedSystemPromptEditor({
       </div>
 
       {/* Barra de Estado y Botón de Publicación */}
-      <div className="p-3 bg-[#e6e5e0]/60 border-t border-[#cdcdc9] flex items-center justify-between">
-        <div>
+      <div className="p-3 bg-[#e6e5e0]/60 border-t border-[#cdcdc9] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className="min-w-0">
           {saveSuccess && (
             <span className="text-xs font-mono text-[#1f8a65] flex items-center gap-1.5">
               <span>✓</span>
@@ -203,7 +206,7 @@ export function UnifiedSystemPromptEditor({
             type="button"
             disabled={isSaving}
             onClick={onSave}
-            className="px-4 py-1.5 text-xs font-sans font-medium bg-[#34785c] text-[#f7f7f4] hover:bg-[#2a644c] disabled:opacity-40 rounded transition-colors shadow-xs"
+            className="px-4 py-1.5 text-xs font-sans font-medium bg-[#34785c] text-[#f7f7f4] hover:bg-[#2a644c] disabled:opacity-40 rounded transition-colors shadow-xs self-end sm:self-auto flex-shrink-0 whitespace-nowrap"
             style={{ borderRadius: '4px' }}
             data-testid="btn_save_system_prompt"
           >

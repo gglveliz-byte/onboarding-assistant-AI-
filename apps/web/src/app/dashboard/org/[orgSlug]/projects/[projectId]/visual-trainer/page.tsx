@@ -75,7 +75,7 @@ export default function VisualTrainerPage() {
       environment="LIVE"
       userRole="DEVELOPER"
     >
-      <div className="flex flex-col h-[calc(100vh-6rem)] -m-6 bg-[#f7f7f4]">
+      <div className="flex flex-col h-[calc(100vh-6rem)] -m-3 sm:-m-4 bg-[#f7f7f4]">
         {/* Barra de Herramientas Superior */}
         <TrainerToolbarAndViewportSwitcher
           sessionState={state}

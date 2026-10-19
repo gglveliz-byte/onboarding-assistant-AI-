@@ -1,50 +1,71 @@
 /**
  * @archivo apps/web/src/app/dashboard/org/[orgSlug]/billing/page.tsx
- * @modulo apps/web (Rutas del Dashboard del Desarrollador - Tema Claro Cursor Atelier)
+ * @modulo 08-frontend-dashboard-dev (Página de Facturación y Consumo dentro del Shell Atelier)
  * @proposito
- *   Vista principal de facturación, suscripciones y consumo minuto a minuto de la organización
- *   bajo la estética de Tema Claro (fondos blanco y pergamino #f7f7f4, tinta mineral #26251e,
- *   bordes capilares #cdcdc9, acentos esmeralda #15846e y lavanda #8052ff).
+ *   Vista de facturación, suscripción y consumo minuto a minuto de la organización, integrada
+ *   en el shell `DeveloperDashboardShell` del Dashboard del Desarrollador (Tema Claro Cursor
+ *   Atelier: pergamino #f7f7f4, hueso #f2f1ed, lino #e6e5e0, tinta #26251e, bordes capilares
+ *   #cdcdc9, acentos Forest #34785c y Ember #f54e00; radios estrictos de 4px).
  *
  * @resumen_contenido
- *   - Componente de página `OrganizationBillingPage`:
- *       * Cabecera de marca con `<Logo size={28} variant="compact" textTheme="dark" />` y migas de pan.
- *       * Barra de pestañas táctil: Resumen, Planes & Spend Cap, y Libro Mayor.
- *       * Integración con `useOrganizationBillingWhop`.
- *       * Renderizado responsivo de `CurrentPlanAndBalanceCard`, `WhopCheckoutAndSpendCapControls` y `MinuteByMinuteUsageLedgerTable`.
+ *   - Componente `OrganizationBillingPage`:
+ *       * Encabezado editorial con título, subtítulo y distintivo técnico del motor de facturación.
+ *       * Pestañas segmentadas de Atelier (Resumen, Planes y Spend Cap, Libro Mayor).
+ *       * Alerta de error con acción de reintento y estado de carga esquelético honesto.
+ *       * Integración con `useOrganizationBillingWhop` (consumo, libro mayor, checkout, spend cap).
+ *       * Renderizado responsivo de `CurrentPlanAndBalanceCard`, `WhopCheckoutAndSpendCapControls`
+ *         y `MinuteByMinuteUsageLedgerTable`.
  *
  * @dependencias_internas
+ *   - `DeveloperDashboardShell` (apps/web/src/components/dashboard-dev/DeveloperDashboardShell.tsx).
  *   - `useOrganizationBillingWhop` (`@/components/billing-whop/useOrganizationBillingWhop`).
  *   - `CurrentPlanAndBalanceCard` (`@/components/billing-whop/CurrentPlanAndBalanceCard`).
  *   - `WhopCheckoutAndSpendCapControls` (`@/components/billing-whop/WhopCheckoutAndSpendCapControls`).
  *   - `MinuteByMinuteUsageLedgerTable` (`@/components/billing-whop/MinuteByMinuteUsageLedgerTable`).
- *   - `Logo` (`@/components/common/Logo`).
  *
  * @dependencias_externas
  *   - `react` (`ReactElement`, `useState`).
+ *
+ * @tablas_bd_o_redis
+ *   - PostgreSQL (vía API REST `/api/v1/billing/*`): `whop_subscriptions`, `usage_ledger`.
  */
 
 'use client';
 
-import React, { ReactElement, useState } from 'react';
+import React, { ReactElement, use, useState } from 'react';
 import { useOrganizationBillingWhop } from '../../../../../components/billing-whop/useOrganizationBillingWhop';
 import { CurrentPlanAndBalanceCard } from '../../../../../components/billing-whop/CurrentPlanAndBalanceCard';
 import { WhopCheckoutAndSpendCapControls } from '../../../../../components/billing-whop/WhopCheckoutAndSpendCapControls';
 import { MinuteByMinuteUsageLedgerTable } from '../../../../../components/billing-whop/MinuteByMinuteUsageLedgerTable';
-import { Logo } from '../../../../../components/common/Logo';
+import { DeveloperDashboardShell } from '../../../../../components/dashboard-dev/DeveloperDashboardShell';
 
 interface PageProps {
-  readonly params: {
+  readonly params: Promise<{
     readonly orgSlug: string;
-  };
+  }>;
 }
 
+type BillingTabValue = 'OVERVIEW' | 'PLANS_AND_CAPS' | 'LEDGER';
+
+interface BillingTabDefinition {
+  readonly id: string;
+  readonly label: string;
+  readonly value: BillingTabValue;
+}
+
+const BILLING_TABS: readonly BillingTabDefinition[] = [
+  { id: 'tab_billing_overview', label: 'Resumen y Estado', value: 'OVERVIEW' },
+  { id: 'tab_billing_plans', label: 'Planes y Spend Cap', value: 'PLANS_AND_CAPS' },
+  { id: 'tab_billing_ledger', label: 'Libro Mayor Auditable', value: 'LEDGER' },
+];
+
 /**
- * Página principal de facturación y consumo Whop para la organización (Tema Claro).
+ * Página de facturación y consumo Whop para la organización (Tema Claro Cursor Atelier).
  */
 export default function OrganizationBillingPage({ params }: PageProps): ReactElement {
-  const { orgSlug } = params;
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'PLANS_AND_CAPS' | 'LEDGER'>('OVERVIEW');
+  // Next.js 15 entrega `params` como Promesa: se desenvuelve con `use()` para evitar el error de acceso directo.
+  const { orgSlug } = use(params);
+  const [activeTab, setActiveTab] = useState<BillingTabValue>('OVERVIEW');
 
   // En producción, orgId se resuelve desde el contexto de sesión o parámetro de ruta
   const organizationId = orgSlug;
@@ -64,123 +85,141 @@ export default function OrganizationBillingPage({ params }: PageProps): ReactEle
     updateSpendCap,
   } = useOrganizationBillingWhop(organizationId);
 
+  const showSkeleton = isLoading && consumption === null;
+
   return (
-    <div className="min-h-screen bg-[#f7f7f4] text-[#26251e] px-4 sm:px-6 py-6 md:py-8 font-sans selection:bg-[#8BC4F8] selection:text-[#26251e]">
-      <div className="mx-auto max-w-7xl flex flex-col gap-6">
-        {/* Cabecera Principal con Identidad Tema Claro */}
-        <header className="border-b border-[#cdcdc9] pb-5">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <Logo size={28} variant="compact" textTheme="dark" />
-              <div className="h-4 w-px bg-[#cdcdc9]" />
-              <div className="flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider text-[#7a7974]">
-                <span>ORG</span>
-                <span>/</span>
-                <span className="text-[#8052ff] font-semibold">{orgSlug}</span>
-                <span>/</span>
-                <span className="text-[#26251e] font-medium">FACTURACIÓN</span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-[#cdcdc9] bg-[#ffffff] px-3 py-1 text-[11px] font-mono text-[#7a7974] shadow-sm">
-                <span className="h-1.5 w-1.5 rounded-full bg-[#15846e]" />
-                Billing Engine v1.0
-              </span>
-            </div>
+    <DeveloperDashboardShell
+      orgSlug={orgSlug}
+      userRole="OWNER"
+      {...(consumption
+        ? {
+            remainingMinutes: consumption.includedMinutesRemaining,
+            totalPurchasedMinutes: consumption.includedMinutesTotal,
+          }
+        : {})}
+    >
+      <div className="max-w-6xl mx-auto space-y-6">
+        {/* Encabezado Editorial */}
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-[26px] font-sans font-normal tracking-[-0.012em] text-[#26251e]">
+              Facturación, Suscripción y Consumo
+            </h1>
+            <p className="text-sm font-sans text-[#84847e] mt-1">
+              Controle su plan de voz, el límite de gasto mensual y audite el consumo minuto a minuto.
+            </p>
           </div>
 
-          <div className="mt-4 flex flex-wrap items-baseline justify-between gap-2">
-            <div>
-              <h1 className="text-[24px] font-normal tracking-tight text-[#26251e] sm:text-[28px]">
-                Gestión de Suscripción, Saldo y Consumo
-              </h1>
-              <p className="mt-1 text-[13px] text-[#7a7974]">
-                Controle su plan de voz, límite de gasto mensual y audite el consumo minuto a minuto.
-              </p>
-            </div>
-          </div>
+          <span
+            className="inline-flex items-center gap-1.5 self-start px-2.5 py-1 text-[11px] font-mono text-[#7a7974] bg-[#f2f1ed] border border-[#cdcdc9] rounded whitespace-nowrap"
+            style={{ borderRadius: '4px' }}
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-[#34785c]" />
+            Billing Engine v1.0
+          </span>
+        </div>
 
-          {/* Selector de Pestañas con Diseño Píldora Tema Claro */}
-          <nav aria-label="Secciones de facturación" className="mt-6 flex flex-wrap gap-2">
-            <button
-              type="button"
-              id="tab_billing_overview"
-              onClick={() => setActiveTab('OVERVIEW')}
-              className={`rounded-full px-4 py-1.5 text-[12px] font-semibold tracking-wider uppercase transition-all ${
-                activeTab === 'OVERVIEW'
-                  ? 'border border-[#26251e] bg-[#26251e] text-white shadow-sm'
-                  : 'border border-[#cdcdc9] bg-[#ffffff] text-[#7a7974] hover:border-[#26251e] hover:text-[#26251e]'
-              }`}
-            >
-              Resumen y Estado
-            </button>
+        {/* Pestañas Segmentadas de Atelier */}
+        <nav
+          aria-label="Secciones de facturación"
+          className="inline-flex flex-wrap p-1 bg-[#e6e5e0] border border-[#cdcdc9] rounded max-w-full"
+          style={{ borderRadius: '4px' }}
+        >
+          {BILLING_TABS.map((tab) => {
+            const isActive = activeTab === tab.value;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                id={tab.id}
+                onClick={() => {
+                  setActiveTab(tab.value);
+                  if (tab.value === 'LEDGER') {
+                    void fetchLedger();
+                  }
+                }}
+                className={`px-3 py-1.5 text-[11px] font-sans uppercase tracking-wider transition-colors whitespace-nowrap ${
+                  isActive
+                    ? 'bg-[#f7f7f4] text-[#26251e] border-t-2 border-[#26251e]'
+                    : 'text-[#84847e] hover:text-[#26251e]'
+                }`}
+                style={{ borderRadius: '3px' }}
+                aria-current={isActive ? 'page' : undefined}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </nav>
 
-            <button
-              type="button"
-              id="tab_billing_plans"
-              onClick={() => setActiveTab('PLANS_AND_CAPS')}
-              className={`rounded-full px-4 py-1.5 text-[12px] font-semibold tracking-wider uppercase transition-all ${
-                activeTab === 'PLANS_AND_CAPS'
-                  ? 'border border-[#26251e] bg-[#26251e] text-white shadow-sm'
-                  : 'border border-[#cdcdc9] bg-[#ffffff] text-[#7a7974] hover:border-[#26251e] hover:text-[#26251e]'
-              }`}
-            >
-              Planes y Spend Cap
-            </button>
-
-            <button
-              type="button"
-              id="tab_billing_ledger"
-              onClick={() => {
-                setActiveTab('LEDGER');
-                fetchLedger();
-              }}
-              className={`rounded-full px-4 py-1.5 text-[12px] font-semibold tracking-wider uppercase transition-all ${
-                activeTab === 'LEDGER'
-                  ? 'border border-[#26251e] bg-[#26251e] text-white shadow-sm'
-                  : 'border border-[#cdcdc9] bg-[#ffffff] text-[#7a7974] hover:border-[#26251e] hover:text-[#26251e]'
-              }`}
-            >
-              Libro Mayor Auditable
-            </button>
-          </nav>
-        </header>
-
-        {/* Mensaje de Error Global si la API falla */}
+        {/* Alerta de Error del Motor de Facturación */}
         {error && (
           <div
             role="alert"
-            className="rounded-[6px] border border-[#cf2d56]/40 bg-[#cf2d56]/10 p-4 text-[13px] text-[#cf2d56]"
+            className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3.5 bg-[#cf2d56]/10 border border-[#cf2d56]/40 rounded"
+            style={{ borderRadius: '4px' }}
           >
-            <strong>Error de Facturación:</strong> {error}
+            <div className="min-w-0">
+              <p className="text-xs font-sans text-[#cf2d56]">Error de Facturación</p>
+              <p className="text-xs font-mono text-[#84847e] mt-0.5 break-words">{error}</p>
+              <p className="text-[11px] font-sans text-[#84847e] mt-1">
+                El consumo y el libro mayor requieren una sesión autenticada en el dashboard.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                void refreshConsumption();
+                void fetchLedger();
+              }}
+              className="self-start sm:self-auto px-3 py-1.5 text-xs font-sans text-[#26251e] bg-[#e6e5e0] border border-[#cdcdc9] rounded transition-colors hover:border-[#26251e] whitespace-nowrap"
+              style={{ borderRadius: '4px' }}
+            >
+              Reintentar
+            </button>
           </div>
         )}
 
         {/* Contenido Dinámico de la Pestaña Activa */}
-        <main className="flex flex-col gap-6">
+        <section className="flex flex-col gap-6">
           {activeTab === 'OVERVIEW' && (
             <div className="flex flex-col gap-6">
-              <CurrentPlanAndBalanceCard
-                consumption={consumption}
-                isLoading={isLoading}
-                onRefresh={refreshConsumption}
-                onOpenManagePlan={() => setActiveTab('PLANS_AND_CAPS')}
-              />
+              {showSkeleton ? (
+                <div
+                  className="p-5 bg-[#f2f1ed] border border-[#cdcdc9] rounded"
+                  style={{ borderRadius: '4px' }}
+                  data-testid="billing-loading-skeleton"
+                >
+                  <p className="text-xs font-mono text-[#84847e]">Sincronizando consumo con el motor de facturación…</p>
+                </div>
+              ) : (
+                <CurrentPlanAndBalanceCard
+                  consumption={consumption}
+                  isLoading={isLoading}
+                  onRefresh={refreshConsumption}
+                  onOpenManagePlan={() => setActiveTab('PLANS_AND_CAPS')}
+                />
+              )}
 
-              <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                <div className="rounded-[6px] border border-[#cdcdc9] bg-[#ffffff] p-5 shadow-sm">
-                  <h3 className="text-[15px] font-medium text-[#26251e] mb-2">Resumen Rápido de Cuota</h3>
-                  <p className="text-[12px] text-[#7a7974] leading-relaxed">
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <div
+                  className="p-5 bg-[#f2f1ed] border border-[#cdcdc9] rounded"
+                  style={{ borderRadius: '4px' }}
+                >
+                  <h3 className="text-[15px] font-sans font-normal text-[#26251e] mb-1.5">Resumen Rápido de Cuota</h3>
+                  <p className="text-[12px] font-sans text-[#84847e] leading-relaxed">
                     Los minutos base incluidos se renuevan en cada ciclo de facturación mensual.
                     Al agotarse la cuota base, el sistema continúa operando sin interrupción aplicando la tarifa
                     de sobreconsumo (overage) correspondiente a su plan.
                   </p>
                 </div>
 
-                <div className="rounded-[6px] border border-[#cdcdc9] bg-[#ffffff] p-5 shadow-sm">
-                  <h3 className="text-[15px] font-medium text-[#26251e] mb-2">Garantía de Protección</h3>
-                  <p className="text-[12px] text-[#7a7974] leading-relaxed">
+                <div
+                  className="p-5 bg-[#f2f1ed] border border-[#cdcdc9] rounded"
+                  style={{ borderRadius: '4px' }}
+                >
+                  <h3 className="text-[15px] font-sans font-normal text-[#26251e] mb-1.5">Garantía de Protección</h3>
+                  <p className="text-[12px] font-sans text-[#84847e] leading-relaxed">
                     Su organización cuenta con la protección activa de gasto máximo (Spend Cap).
                     Si el consumo alcanza el límite configurado, se bloquea la apertura de nuevas llamadas
                     conversacionales para evitar sorpresas en su estado contable.
@@ -211,8 +250,8 @@ export default function OrganizationBillingPage({ params }: PageProps): ReactEle
               onRefresh={fetchLedger}
             />
           )}
-        </main>
+        </section>
       </div>
-    </div>
+    </DeveloperDashboardShell>
   );
 }

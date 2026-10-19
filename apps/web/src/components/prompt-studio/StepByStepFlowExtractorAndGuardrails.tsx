@@ -85,7 +85,7 @@ export function StepByStepFlowExtractorAndGuardrails({
               disabled={isReadOnly}
               checked={config.strictStepEnforcement}
               onChange={(e) => onChangeConfig('strictStepEnforcement', e.target.checked)}
-              className="mt-0.5 rounded border-[#cdcdc9] text-[#26251e] focus:ring-0"
+              className="mt-0.5 rounded border-[#cdcdc9] accent-[#34785c] focus:ring-0"
             />
             <div className="space-y-0.5">
               <span className="font-medium text-[#26251e] block">Secuencia Estricta (Strict Enforcement)</span>
@@ -102,7 +102,7 @@ export function StepByStepFlowExtractorAndGuardrails({
               disabled={isReadOnly}
               checked={config.askConfirmationBeforeSubmit}
               onChange={(e) => onChangeConfig('askConfirmationBeforeSubmit', e.target.checked)}
-              className="mt-0.5 rounded border-[#cdcdc9] text-[#26251e] focus:ring-0"
+              className="mt-0.5 rounded border-[#cdcdc9] accent-[#34785c] focus:ring-0"
             />
             <div className="space-y-0.5">
               <span className="font-medium text-[#26251e] block">Confirmación Verbal Previa a Submit</span>

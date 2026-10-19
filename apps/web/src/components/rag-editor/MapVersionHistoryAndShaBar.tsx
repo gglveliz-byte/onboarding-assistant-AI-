@@ -63,11 +63,11 @@ export function MapVersionHistoryAndShaBar({
 
   return (
     <div
-      className="bg-[#f2f1ed] border-b border-[#cdcdc9] px-5 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3 select-none flex-shrink-0"
+      className="bg-[#f2f1ed] border-b border-[#cdcdc9] px-4 sm:px-5 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3 select-none flex-shrink-0"
       data-testid="map-version-history-and-sha-bar"
     >
       {/* 1. Sello Criptográfico SHA-256 */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3">
         <span
           className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-mono text-[#1f8a65] bg-[#1f8a65]/10 border border-[#1f8a65]/30 rounded font-semibold"
           style={{ borderRadius: '3px' }}
@@ -86,7 +86,7 @@ export function MapVersionHistoryAndShaBar({
       </div>
 
       {/* 2. Selector de Versiones y Publicación */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3">
         {/* Selector de Historial */}
         <div className="relative">
           <button

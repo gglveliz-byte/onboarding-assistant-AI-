@@ -60,6 +60,13 @@ export function ApiKeyLifecycleManager({
   const secretKeysCount = apiKeys.filter((k) => k.keyType === 'sk' && !k.isRevoked).length;
   const publishableKeysCount = apiKeys.filter((k) => k.keyType === 'pk' && !k.isRevoked).length;
 
+  // Último uso real registrado por la API (`last_used_at`); `null` si ninguna clave lo reporta.
+  const usedAtValues = apiKeys
+    .map((key) => key.lastUsedAtIso)
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
+    .sort();
+  const lastUsedAtIso = usedAtValues.length > 0 ? usedAtValues[usedAtValues.length - 1] ?? null : null;
+
   const handleCreateSubmit = async (input: { name: string; keyType: 'pk' | 'sk'; environment: ProjectEnvironment; scopes: string[] }) => {
     const res = await onCreateKey(input);
     if (res.rawSecretKey) {
@@ -103,51 +110,58 @@ export function ApiKeyLifecycleManager({
           </div>
         </div>
 
-        {/* Métrica 2: Consumo Telemetría */}
+        {/* Métrica 2: Claves Publicables (pk_) */}
         <div
           className="flex-shrink-0 w-[240px] sm:w-auto snap-start p-4 bg-[#f2f1ed] border border-[#cdcdc9] rounded space-y-1 transition-all hover:border-[#26251e]/30 shadow-xs"
           style={{ borderRadius: '4px' }}
         >
           <div className="text-[11px] font-sans text-[#7a7974] uppercase tracking-wider flex items-center justify-between">
-            <span>Latencia TTFT</span>
-            <span className="text-[10px] text-[#1f8a65] font-mono">sub-50ms</span>
+            <span>Claves pk_</span>
+            <span className="text-[10px] text-[#1f8a65] font-mono">públicas</span>
           </div>
           <div className="text-[28px] font-mono font-medium tracking-[-1px] text-[#1f8a65] tabular-nums">
-            38<span className="text-sm font-normal text-[#7a7974] ml-0.5">ms</span>
+            {publishableKeysCount}
           </div>
-          <div className="text-[10px] text-[#7a7974] font-mono">Audio PCM16 bidireccional</div>
+          <div className="text-[10px] text-[#7a7974] font-mono">Inicialización del SDK en el navegador</div>
         </div>
 
-        {/* Métrica 3: Peticiones Hoy */}
+        {/* Métrica 3: Claves Secretas (sk_) */}
         <div
           className="flex-shrink-0 w-[240px] sm:w-auto snap-start p-4 bg-[#f2f1ed] border border-[#cdcdc9] rounded space-y-1 transition-all hover:border-[#26251e]/30 shadow-xs"
           style={{ borderRadius: '4px' }}
         >
           <div className="text-[11px] font-sans text-[#7a7974] uppercase tracking-wider flex items-center justify-between">
-            <span>Peticiones Hoy</span>
-            <span className="text-[10px] text-[#c08532] font-mono">24h</span>
+            <span>Claves sk_</span>
+            <span className="text-[10px] text-[#c08532] font-mono">secretas</span>
           </div>
           <div className="text-[28px] font-mono font-medium tracking-[-1px] text-[#c08532] tabular-nums">
-            1,420
+            {secretKeysCount}
           </div>
-          <div className="text-[10px] text-[#7a7974] font-mono">0 errores de firma SHA</div>
+          <div className="text-[10px] text-[#7a7974] font-mono">Control de mapas RAG y backend</div>
         </div>
 
-        {/* Métrica 4: Modo Criptográfico */}
+        {/* Métrica 4: Último Uso Registrado */}
         <div
           className="flex-shrink-0 w-[240px] sm:w-auto snap-start p-4 bg-[#f2f1ed] border border-[#cdcdc9] rounded space-y-1 transition-all hover:border-[#26251e]/30 shadow-xs"
           style={{ borderRadius: '4px' }}
         >
           <div className="text-[11px] font-sans text-[#7a7974] uppercase tracking-wider flex items-center justify-between">
-            <span>Seguridad RLS</span>
-            <span className="text-[10px] text-[#1f8a65] font-mono">RFC 8785</span>
+            <span>Último Uso</span>
+            <span className="text-[10px] text-[#7a7974] font-mono">last_used_at</span>
           </div>
           <div className="text-[28px] font-mono font-medium tracking-[-1px] text-[#26251e] tabular-nums">
-            100<span className="text-sm font-normal text-[#7a7974] ml-0.5">%</span>
+            {lastUsedAtIso === null ? '—' : lastUsedAtIso.split('T')[0]}
           </div>
-          <div className="text-[10px] text-[#7a7974] font-mono">Zero-leak hash en BD</div>
+          <div className="text-[10px] text-[#7a7974] font-mono">
+            {lastUsedAtIso === null ? 'Ninguna clave reporta uso todavía' : 'Consumo más reciente en la API'}
+          </div>
         </div>
       </div>
+
+      {/* Pista de desplazamiento para el carrusel de métricas en móvil */}
+      <p className="sm:hidden -mt-3 text-[10px] font-mono text-[#84847e]">
+        Desliza para ver las 4 métricas →
+      </p>
 
       {/* Barra de Título y Botón de Creación */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">

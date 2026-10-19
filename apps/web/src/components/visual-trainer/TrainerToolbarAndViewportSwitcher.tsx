@@ -11,6 +11,7 @@
  *   - Controles de URL remota con botón de recarga e indicador de IP fijada (DNS Pinning).
  *   - Conmutador segmentado de modos de sesión (Navegación vs Captura).
  *   - Selector de viewports normalizados para cálculo de bounding boxes.
+ *   - Barra adaptable con etiquetas compactas y controles con wrap en móvil.
  *   - Telemetría en tiempo real: latencia DataChannel/WebSocket en berkeleyMono.
  *
  * @dependencias_internas
@@ -73,12 +74,12 @@ export function TrainerToolbarAndViewportSwitcher({
 
   return (
     <div
-      className="bg-[#f2f1ed] border-b border-[#cdcdc9] px-4 py-2.5 flex flex-col md:flex-row md:items-center justify-between gap-3 select-none"
+      className="bg-[#f2f1ed] border-b border-[#cdcdc9] px-3 sm:px-4 py-2.5 flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-3 select-none"
       data-testid="trainer-toolbar"
     >
       {/* 1. Barra de URL y Navegador */}
-      <form onSubmit={handleUrlSubmit} className="flex items-center gap-2 flex-1 max-w-xl">
-        <div className="flex items-center gap-1.5 px-2 py-1 bg-[#f7f7f4] border border-[#cdcdc9] rounded flex-1" style={{ borderRadius: '4px' }}>
+      <form onSubmit={handleUrlSubmit} className="flex items-center gap-2 flex-1 min-w-0 max-w-xl">
+        <div className="flex items-center gap-1.5 px-2 py-1 bg-[#f7f7f4] border border-[#cdcdc9] rounded flex-1 min-w-0" style={{ borderRadius: '4px' }}>
           <span className="text-[#34785c] text-xs">🔒</span>
           <input
             type="text"
@@ -88,11 +89,11 @@ export function TrainerToolbarAndViewportSwitcher({
               onUrlChange(e.target.value);
             }}
             placeholder="https://app.tuempresa.com"
-            className="flex-1 text-xs font-mono bg-transparent text-[#26251e] placeholder:text-[#a1a19f] focus:outline-none"
+            className="flex-1 min-w-0 text-xs font-mono bg-transparent text-[#26251e] placeholder:text-[#a1a19f] focus:outline-none"
           />
           {sessionState.pinnedIp && (
             <span
-              className="text-[10px] font-mono text-[#84847e] bg-[#e6e5e0] px-1.5 py-0.5 rounded"
+              className="hidden sm:inline text-[10px] font-mono text-[#84847e] bg-[#e6e5e0] px-1.5 py-0.5 rounded"
               title="IP fijada por DNS Pinning Anti-SSRF"
             >
               {sessionState.pinnedIp}
@@ -110,7 +111,7 @@ export function TrainerToolbarAndViewportSwitcher({
       </form>
 
       {/* 2. Conmutador de Modo: Navegación vs Captura */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
         <div
           className="inline-flex p-0.5 bg-[#e6e5e0] border border-[#cdcdc9] rounded"
           style={{ borderRadius: '4px' }}
@@ -118,19 +119,20 @@ export function TrainerToolbarAndViewportSwitcher({
           <button
             type="button"
             onClick={() => onModeChange('ACTIVE_NAVIGATION_MODE')}
-            className={`px-3 py-1 text-xs font-sans rounded transition-colors ${
+            className={`px-2 sm:px-3 py-1 text-xs font-sans rounded transition-colors whitespace-nowrap ${
               sessionState.currentMode === 'ACTIVE_NAVIGATION_MODE'
                 ? 'bg-[#26251e] text-[#f7f7f4] font-medium shadow-xs'
                 : 'text-[#84847e] hover:text-[#26251e]'
             }`}
             style={{ borderRadius: '3px' }}
           >
-            Modo Navegación
+            <span className="sm:hidden">Navegación</span>
+            <span className="hidden sm:inline">Modo Navegación</span>
           </button>
           <button
             type="button"
             onClick={() => onModeChange('ACTIVE_CAPTURE_OVERLAY_MODE')}
-            className={`px-3 py-1 text-xs font-sans rounded transition-colors flex items-center gap-1.5 ${
+            className={`px-2 sm:px-3 py-1 text-xs font-sans rounded transition-colors flex items-center gap-1.5 whitespace-nowrap ${
               sessionState.currentMode === 'ACTIVE_CAPTURE_OVERLAY_MODE'
                 ? 'bg-[#26251e] text-[#f7f7f4] font-medium shadow-xs'
                 : 'text-[#84847e] hover:text-[#26251e]'
@@ -138,7 +140,8 @@ export function TrainerToolbarAndViewportSwitcher({
             style={{ borderRadius: '3px' }}
           >
             <span className="w-1.5 h-1.5 rounded-full bg-[#f54e00]" />
-            Modo Captura Overlay
+            <span className="sm:hidden">Captura</span>
+            <span className="hidden sm:inline">Modo Captura Overlay</span>
           </button>
         </div>
 
@@ -179,13 +182,13 @@ export function TrainerToolbarAndViewportSwitcher({
             id="toggle_auto_responsive_recalculation"
             checked={autoRecalculateResponsive}
             onChange={(e) => onToggleAutoRecalculate(e.target.checked)}
-            className="rounded border-[#cdcdc9] text-[#26251e] focus:ring-0"
+            className="rounded border-[#cdcdc9] accent-[#34785c] focus:ring-0"
           />
           <span>Auto Responsive</span>
         </label>
 
         {/* 5. Latencia DataChannel & Botón Salir */}
-        <div className="flex items-center gap-2 pl-2 border-l border-[#cdcdc9]">
+        <div className="flex items-center gap-2 md:pl-2 md:border-l border-[#cdcdc9]">
           <span
             className="text-[11px] font-mono text-[#1f8a65] bg-[#1f8a65]/10 px-2 py-0.5 rounded"
             style={{ fontVariantNumeric: 'tabular-nums' }}
@@ -196,11 +199,12 @@ export function TrainerToolbarAndViewportSwitcher({
           <button
             type="button"
             onClick={onEndSession}
-            className="px-2.5 py-1 text-xs font-sans text-[#cf2d56] hover:bg-[#cf2d56]/10 border border-[#cf2d56]/30 rounded transition-colors"
+            className="px-2.5 py-1 text-xs font-sans text-[#cf2d56] hover:bg-[#cf2d56]/10 border border-[#cf2d56]/30 rounded transition-colors whitespace-nowrap"
             style={{ borderRadius: '4px' }}
             title="Terminar contenedor efímero"
           >
-            Cerrar Sesión
+            <span className="sm:hidden">Salir</span>
+            <span className="hidden sm:inline">Cerrar Sesión</span>
           </button>
         </div>
       </div>

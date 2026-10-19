@@ -9,7 +9,7 @@
  *
  * @resumen_contenido
  *   - Formulario de alta con validación de URL/patrón de origen y advertencia anti-localhost.
- *   - Tabla de orígenes configurados con distintivos de estado y protocolo HTTPS.
+ *   - Tabla de orígenes configurados (sm+) y tarjetas táctiles con acción de revocación en móvil.
  *   - Botón de eliminación de dominios (`btn_delete_domain`).
  *   - Indicador de políticas de seguridad para el Handshake del SDK.
  *
@@ -173,7 +173,7 @@ export function AllowedDomainsManager({
                 type="checkbox"
                 checked={allowLocalhost}
                 onChange={(e) => setAllowLocalhost(e.target.checked)}
-                className="rounded border-[#cdcdc9] text-[#26251e] focus:ring-0"
+                className="rounded border-[#cdcdc9] accent-[#34785c] focus:ring-0"
               />
               <span>Habilitar pruebas en entorno local (`http://localhost:3000`) para este origen</span>
             </label>
@@ -188,8 +188,59 @@ export function AllowedDomainsManager({
         </form>
       )}
 
-      {/* Lista de Dominios Autorizados con scroll horizontal suave sin recorte en móvil */}
-      <div className="border border-[#cdcdc9] rounded overflow-x-auto bg-[#f7f7f4]" style={{ borderRadius: '4px' }}>
+      {/* Vista Móvil (< sm): Tarjetas táctiles con acción Revocar siempre accesible */}
+      <div className="sm:hidden space-y-2" data-testid="allowed-domains-mobile-cards">
+        {domains.length === 0 ? (
+          <div
+            className="p-5 text-center text-xs font-sans text-[#84847e] bg-[#f7f7f4] border border-[#cdcdc9] rounded"
+            style={{ borderRadius: '4px' }}
+          >
+            No hay dominios autorizados. El SDK rechazará las peticiones hasta que configures un origen.
+          </div>
+        ) : (
+          domains.map((dom) => {
+            const isWildcard = dom.originPattern.includes('*');
+            return (
+              <div
+                key={dom.id}
+                className="p-3.5 bg-[#f7f7f4] border border-[#cdcdc9] rounded space-y-2 shadow-xs"
+                style={{ borderRadius: '4px' }}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <span className="flex items-start gap-1.5 font-mono text-xs text-[#26251e] break-all min-w-0">
+                    <span className="text-[#34785c]">●</span>
+                    <span>{dom.originPattern}</span>
+                  </span>
+                  {!isReadOnly && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm(`¿Revocar acceso al origen ${dom.originPattern}?`)) {
+                          onRemoveDomain(dom.id);
+                        }
+                      }}
+                      className="px-2 py-1 text-[11px] font-mono text-[#cf2d56] hover:bg-[#cf2d56]/10 border border-[#cf2d56]/30 rounded transition-colors flex-shrink-0"
+                      style={{ borderRadius: '4px' }}
+                      title="Revocar origen"
+                    >
+                      Revocar
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono text-[#84847e]">
+                  <span className="px-2 py-0.5 bg-[#e6e5e0] text-[#7a7974] rounded" style={{ borderRadius: '3px' }}>
+                    {isWildcard ? 'Comodín (Subdominios)' : 'Exacto'}
+                  </span>
+                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>{dom.createdAtIso.split('T')[0]}</span>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Lista de Dominios Autorizados (sm+): tabla con scroll horizontal suave */}
+      <div className="hidden sm:block border border-[#cdcdc9] rounded overflow-x-auto bg-[#f7f7f4]" style={{ borderRadius: '4px' }}>
         <table className="w-full min-w-[480px] text-left text-xs font-sans">
           <thead className="bg-[#e6e5e0]/70 text-[#84847e] border-b border-[#cdcdc9]">
             <tr>

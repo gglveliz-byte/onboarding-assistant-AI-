@@ -1,34 +1,33 @@
 /**
  * @archivo apps/web/src/app/dashboard/org/[orgSlug]/page.tsx
- * @modulo apps/web/src/app/dashboard (Punto de Entrada por Organización)
+ * @modulo 08-frontend-dashboard-dev (Punto de Entrada por Organización)
  * @proposito
- *   Redirige inmediatamente el acceso raíz a `/dashboard/org/[orgSlug]` hacia la consola
- *   predeterminada del proyecto General (`/dashboard/org/[orgSlug]/projects/general/keys`),
- *   erradicando errores 404 tras el registro o inicio de sesión de cualquier tenant.
+ *   Entrada del Dashboard para una organización concreta. Resuelve en el cliente el primer
+ *   proyecto real del tenant (vía `GET /api/v1/projects` con el token de la sesión) y navega a
+ *   su consola de credenciales, en vez de apuntar a un slug de proyecto fijo.
  *
  * @resumen_contenido
- *   - `OrgDashboardRootPage`: Redirige de forma declarativa y segura en el servidor.
+ *   - `OrgDashboardRootPage`: monta `DashboardEntryRedirect` con el slug de la ruta.
  *
  * @dependencias_internas
- *   - Ninguna.
+ *   - `DashboardEntryRedirect` (apps/web/src/components/dashboard-dev/DashboardEntryRedirect.tsx).
  *
  * @dependencias_externas
- *   - `next/navigation` (`redirect`).
+ *   - `next/navigation` (`useParams`).
+ *   - `react` (tipo `ReactElement`).
  *
  * @tablas_bd_o_redis
- *   - Ninguna.
+ *   - PostgreSQL (vía API REST): `projects` (lectura del tenant de la sesión).
  */
 
-import { redirect } from 'next/navigation';
+'use client';
 
-interface OrgDashboardRootPageProps {
-  params: Promise<{ orgSlug: string }>;
-}
+import type { ReactElement } from 'react';
+import { useParams } from 'next/navigation';
+import { DashboardEntryRedirect } from '@/components/dashboard-dev/DashboardEntryRedirect';
 
-/**
- * Redirige la ruta base de la organización al proyecto activo inicial.
- */
-export default async function OrgDashboardRootPage({ params }: OrgDashboardRootPageProps): Promise<never> {
-  const { orgSlug } = await params;
-  redirect(`/dashboard/org/${encodeURIComponent(orgSlug)}/projects/general/keys`);
+export default function OrgDashboardRootPage(): ReactElement {
+  const params = useParams();
+  const orgSlug = String(params?.['orgSlug'] ?? '');
+  return <DashboardEntryRedirect orgSlug={orgSlug} />;
 }

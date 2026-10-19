@@ -9,14 +9,16 @@
  *   LIVE/TEST y pastilla de saldo en tiempo real con tipografía tabular berkeleyMono.
  *
  * @resumen_contenido
- *   - Componente `OrganizationSwitcher`: Selector con truncado elástico y menú desplegable.
- *   - Componente `ProjectSwitcher`: Selector con truncado fluido de proyectos del tenant.
- *   - Componente `EnvironmentModeBadge`: Distintivo LIVE (#34785c) vs TEST (#c08532).
- *   - Componente `RealtimeBalancePill`: Saldo en minutos en berkeleyMono con alerta >=85%.
- *   - Componente `DeveloperDashboardShell`: Shell maestro con drawer responsive y navegación lateral.
+ *   - `DeveloperDashboardShell`: Shell maestro con drawer responsive y navegación lateral.
+ *   - Controles de navegación (selectores, distintivo de entorno y pastilla de saldo) en
+ *     `DashboardShellNavigation.tsx` (módulo hermano).
+ *   - Datos reales: organización, rol, proyectos y saldo provienen de `useDashboardWorkspace`
+ *     (token de la sesión de la pestaña + `GET /api/v1/projects` + `GET /api/v1/billing/consumption`).
+ *   - Sin sesión activa el shell muestra «Iniciar sesión» en lugar de cifras de demostración.
  *
  * @dependencias_internas
- *   - Ninguna (Componente de presentación y navegación autónomo).
+ *   - `useDashboardWorkspace` (./useDashboardWorkspace.ts): hechos reales de sesión y workspace.
+ *   - `DashboardShellNavigation` (./DashboardShellNavigation.tsx): selectores y pastillas.
  *
  * @tablas_bd_o_redis
  *   - Consume estado del tenant y proyectos desde APIs REST /api/v1/projects.
@@ -27,6 +29,13 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useDashboardWorkspace } from './useDashboardWorkspace';
+import {
+  EnvironmentModeBadge,
+  OrganizationSwitcher,
+  ProjectSwitcher,
+  RealtimeBalancePill,
+} from './DashboardShellNavigation';
 
 export interface DeveloperDashboardShellProps {
   readonly orgSlug: string;
@@ -41,224 +50,63 @@ export interface DeveloperDashboardShellProps {
   readonly children: React.ReactNode;
 }
 
-/**
- * Selector desplegable de organización con truncado fluido.
- */
-export function OrganizationSwitcher({
-  currentOrgSlug,
-  currentOrgName,
-  orgs,
-}: {
-  readonly currentOrgSlug: string;
-  readonly currentOrgName: string;
-  readonly orgs: Array<{ slug: string; name: string }>;
-}) {
-  const [isOpen, setIsOpen] = useState(false);
-
-  return (
-    <div className="relative inline-block text-left" data-testid="organization-switcher">
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 text-xs font-normal text-[#26251e] bg-[#f2f1ed] hover:bg-[#e6e5e0] border border-[#cdcdc9] rounded transition-colors"
-        style={{ borderRadius: '4px' }}
-        aria-label="Seleccionar organización activa"
-        aria-expanded={isOpen}
-      >
-        <span className="w-2 h-2 rounded-full bg-[#34785c] flex-shrink-0" />
-        <span className="font-sans font-medium tracking-tight truncate max-w-[85px] xs:max-w-[110px] sm:max-w-[140px]">
-          {currentOrgName || currentOrgSlug}
-        </span>
-        <span className="text-[#84847e] text-[10px] flex-shrink-0">▼</span>
-      </button>
-
-      {isOpen && (
-        <div
-          className="absolute left-0 mt-1 w-48 bg-[#f2f1ed] border border-[#cdcdc9] rounded shadow-sm z-50 py-1"
-          style={{ borderRadius: '4px' }}
-        >
-          <div className="px-3 py-1 text-[11px] font-sans text-[#84847e] uppercase tracking-wider border-b border-[#cdcdc9]/50">
-            Organizaciones
-          </div>
-          {orgs.map((org) => (
-            <Link
-              key={org.slug}
-              href={`/dashboard/org/${org.slug}`}
-              onClick={() => setIsOpen(false)}
-              className={`block px-3 py-1.5 text-xs font-sans text-[#26251e] hover:bg-[#e6e5e0] transition-colors ${
-                org.slug === currentOrgSlug ? 'bg-[#e6e5e0] font-medium' : ''
-              }`}
-            >
-              <span className="truncate block">{org.name}</span>
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
- * Selector desplegable de proyectos con truncado fluido.
- */
-export function ProjectSwitcher({
-  orgSlug,
-  currentProjectId,
-  projects,
-}: {
-  readonly orgSlug: string;
-  readonly currentProjectId?: string;
-  readonly projects: Array<{ id: string; name: string; slug: string; environment: 'LIVE' | 'TEST' }>;
-}) {
-  const [isOpen, setIsOpen] = useState(false);
-  const activeProject = projects.find((p) => p.id === currentProjectId) ?? projects[0];
-
-  return (
-    <div className="relative inline-block text-left" data-testid="project-switcher">
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 text-xs font-normal text-[#26251e] bg-[#f2f1ed] hover:bg-[#e6e5e0] border border-[#cdcdc9] rounded transition-colors"
-        style={{ borderRadius: '4px' }}
-        aria-label="Seleccionar proyecto activo"
-        aria-expanded={isOpen}
-      >
-        <span className="text-[#84847e] font-sans hidden sm:inline">Proyecto:</span>
-        <span className="font-sans font-medium tracking-tight truncate max-w-[80px] xs:max-w-[100px] sm:max-w-[130px]">
-          {activeProject?.name ?? 'Sin proyecto'}
-        </span>
-        <span className="text-[#84847e] text-[10px] flex-shrink-0">▼</span>
-      </button>
-
-      {isOpen && (
-        <div
-          className="absolute left-0 mt-1 w-52 bg-[#f2f1ed] border border-[#cdcdc9] rounded shadow-sm z-50 py-1"
-          style={{ borderRadius: '4px' }}
-        >
-          <div className="px-3 py-1 text-[11px] font-sans text-[#84847e] uppercase tracking-wider border-b border-[#cdcdc9]/50">
-            Proyectos del Tenant
-          </div>
-          {projects.map((proj) => (
-            <Link
-              key={proj.id}
-              href={`/dashboard/org/${orgSlug}/projects/${proj.id}/keys`}
-              onClick={() => setIsOpen(false)}
-              className={`flex items-center justify-between px-3 py-1.5 text-xs font-sans text-[#26251e] hover:bg-[#e6e5e0] transition-colors ${
-                proj.id === currentProjectId ? 'bg-[#e6e5e0] font-medium' : ''
-              }`}
-            >
-              <span className="truncate">{proj.name}</span>
-              <span
-                className={`text-[10px] px-1.5 py-0.2 rounded font-mono ml-2 flex-shrink-0 ${
-                  proj.environment === 'LIVE' ? 'bg-[#34785c]/10 text-[#34785c]' : 'bg-[#c08532]/10 text-[#c08532]'
-                }`}
-              >
-                {proj.environment}
-              </span>
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
- * Pastilla de entorno (LIVE vs TEST).
- */
-export function EnvironmentModeBadge({ environment }: { readonly environment: 'LIVE' | 'TEST' }) {
-  const isLive = environment === 'LIVE';
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-mono border rounded ${
-        isLive
-          ? 'bg-[#34785c]/10 text-[#34785c] border-[#34785c]/30'
-          : 'bg-[#c08532]/10 text-[#c08532] border-[#c08532]/30'
-      }`}
-      style={{ borderRadius: '4px', fontVariantNumeric: 'tabular-nums' }}
-    >
-      <span className={`w-1.5 h-1.5 rounded-full ${isLive ? 'bg-[#34785c]' : 'bg-[#c08532]'}`} />
-      {environment}
-    </span>
-  );
-}
-
-/**
- * Pastilla de saldo en tiempo real con alerta visual al 85% de consumo.
- */
-export function RealtimeBalancePill({
-  remainingMinutes = 120,
-  totalPurchasedMinutes = 200,
-}: {
-  readonly remainingMinutes?: number;
-  readonly totalPurchasedMinutes?: number;
-}) {
-  const consumedMinutes = Math.max(0, totalPurchasedMinutes - remainingMinutes);
-  const consumptionPercentage =
-    totalPurchasedMinutes > 0 ? (consumedMinutes / totalPurchasedMinutes) * 100 : 0;
-  const isNearLimit = consumptionPercentage >= 85;
-
-  return (
-    <div
-      className={`inline-flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 py-1 text-xs font-mono border rounded transition-colors ${
-        isNearLimit
-          ? 'bg-[#cf2d56]/10 text-[#cf2d56] border-[#cf2d56]/40'
-          : 'bg-[#f2f1ed] text-[#26251e] border-[#cdcdc9]'
-      }`}
-      style={{ borderRadius: '4px', fontVariantNumeric: 'tabular-nums' }}
-      title={`Consumo: ${consumptionPercentage.toFixed(1)}% (${consumedMinutes}/${totalPurchasedMinutes} min)`}
-    >
-      <span className="text-[11px] text-[#84847e] font-sans hidden sm:inline">Saldo Voz:</span>
-      <span className="font-semibold">{remainingMinutes.toFixed(1)}m</span>
-      {isNearLimit && (
-        <span
-          className="text-[10px] px-1 py-0.2 bg-[#cf2d56] text-[#f7f7f4] rounded font-sans uppercase font-medium"
-          style={{ borderRadius: '2px' }}
-        >
-          85%
-        </span>
-      )}
-    </div>
-  );
-}
 
 /**
  * Shell maestro del Dashboard del Desarrollador con Drawer deslizante para móviles.
  */
 export function DeveloperDashboardShell({
   orgSlug,
-  projectId = 'default',
-  orgName = 'Organización Principal',
-  availableOrgs = [{ slug: orgSlug, name: orgName }],
-  availableProjects = [{ id: projectId, name: 'Proyecto Principal', slug: 'main', environment: 'LIVE' }],
-  remainingMinutes = 245.5,
-  totalPurchasedMinutes = 300,
+  projectId = '',
+  orgName = '',
+  availableOrgs = [],
+  availableProjects = [],
+  remainingMinutes = 0,
+  totalPurchasedMinutes = 0,
   environment = 'LIVE',
   userRole = 'OWNER',
   children,
 }: DeveloperDashboardShellProps) {
   const pathname = usePathname();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const workspace = useDashboardWorkspace(projectId);
+
+  // Hechos reales: rol del token de la sesión, proyectos del tenant y saldo del ciclo.
+  const session = workspace.session;
+  const hasSession = session.isAuthenticated;
+  const effectiveRole = session.role ?? userRole;
+  const displayOrgName = orgName.length > 0 ? orgName : orgSlug;
+  const activeProjectId = workspace.activeProject?.id ?? projectId;
+  const resolvedProjects = workspace.projects.length > 0
+    ? workspace.projects.map((project) => ({
+        id: project.id,
+        name: project.name,
+        slug: project.slug,
+        environment: project.environment,
+      }))
+    : availableProjects;
+  const resolvedOrgs = availableOrgs.length > 0 ? availableOrgs : [{ slug: orgSlug, name: displayOrgName }];
+  const balanceMinutes = hasSession ? workspace.balance.remainingMinutes : remainingMinutes;
+  const balanceTotal = hasSession ? workspace.balance.totalPurchasedMinutes : totalPurchasedMinutes;
 
   const navItems = [
     {
       label: 'Visor Trainer DOM',
-      href: `/dashboard/org/${orgSlug}/projects/${projectId}/visual-trainer`,
+      href: `/dashboard/org/${orgSlug}/projects/${activeProjectId}/visual-trainer`,
       icon: '◎',
     },
     {
       label: 'Mapa RAG Dual',
-      href: `/dashboard/org/${orgSlug}/projects/${projectId}/rag-map-editor`,
+      href: `/dashboard/org/${orgSlug}/projects/${activeProjectId}/rag-map-editor`,
       icon: '☵',
     },
     {
       label: 'Estudio del Prompt',
-      href: `/dashboard/org/${orgSlug}/projects/${projectId}/prompt-studio`,
+      href: `/dashboard/org/${orgSlug}/projects/${activeProjectId}/prompt-studio`,
       icon: '✎',
     },
     {
       label: 'API Keys y Dominios',
-      href: `/dashboard/org/${orgSlug}/projects/${projectId}/keys`,
+      href: `/dashboard/org/${orgSlug}/projects/${activeProjectId}/keys`,
       icon: '⚿',
     },
     {
@@ -352,7 +200,7 @@ export function DeveloperDashboardShell({
         <div className="p-3 border-t border-[#cdcdc9] space-y-2">
           <div className="flex items-center justify-between px-2 text-[11px] text-[#84847e] font-mono">
             <span>Rol:</span>
-            <span className="text-[#26251e] font-medium">{userRole}</span>
+            <span className="text-[#26251e] font-medium">{effectiveRole}</span>
           </div>
           <Link
             href="/docs"
@@ -385,22 +233,41 @@ export function DeveloperDashboardShell({
 
             <OrganizationSwitcher
               currentOrgSlug={orgSlug}
-              currentOrgName={orgName}
-              orgs={availableOrgs}
+              currentOrgName={displayOrgName}
+              orgs={resolvedOrgs}
             />
             <span className="text-[#cdcdc9]">/</span>
             <ProjectSwitcher
               orgSlug={orgSlug}
-              currentProjectId={projectId}
-              projects={availableProjects}
+              currentProjectId={activeProjectId}
+              projects={resolvedProjects}
             />
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            <RealtimeBalancePill
-              remainingMinutes={remainingMinutes}
-              totalPurchasedMinutes={totalPurchasedMinutes}
-            />
+            {!session.isResolved ? (
+              <span
+                className="inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1 text-xs font-mono text-[#84847e] bg-[#f2f1ed] border border-[#cdcdc9] rounded whitespace-nowrap"
+                style={{ borderRadius: '4px', fontVariantNumeric: 'tabular-nums' }}
+                title="Resolviendo la sesión de la pestaña"
+              >
+                Saldo Voz: —
+              </span>
+            ) : hasSession ? (
+              <RealtimeBalancePill
+                remainingMinutes={balanceMinutes}
+                totalPurchasedMinutes={balanceTotal}
+              />
+            ) : (
+              <Link
+                href="/auth/login"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-sans text-[#f54e00] bg-[#f2f1ed] border border-[#cdcdc9] rounded hover:border-[#26251e] transition-colors whitespace-nowrap"
+                style={{ borderRadius: '4px' }}
+                title="Inicia sesión para consultar los datos reales de tu organización"
+              >
+                Iniciar sesión
+              </Link>
+            )}
           </div>
         </header>
 

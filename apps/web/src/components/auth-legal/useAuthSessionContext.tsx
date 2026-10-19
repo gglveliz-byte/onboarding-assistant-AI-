@@ -37,6 +37,8 @@ import type { ReactElement, ReactNode } from 'react';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { AuthSessionUserProfile, BackendPublicOrganization, BackendPublicUser } from './auth-api-client';
 import { authApiFetch, buildSessionProfile, readTokenExpiryEpochMs } from './auth-api-client';
+import { setAccessToken as setGlobalAccessToken } from '../../lib/api-client/http-client';
+import { setSessionOrgSlug } from '../../lib/api-client/http-client';
 
 /**
  * Contrato del contexto de sesión: estado inmutable expuesto y las nueve operaciones que el
@@ -152,6 +154,8 @@ export function AuthSessionProvider(props: {
   /** Limpia el estado de sesión y lo deja en la fase indicada (sin llamadas de red). */
   const clearSessionState = useCallback((nextPhase: 'anonymous' | 'expired'): void => {
     clearRefreshTimer();
+    setGlobalAccessToken(null);
+    setSessionOrgSlug(null);
     accessTokenRef.current = null;
     userRef.current = null;
     setAccessToken(null);
@@ -163,6 +167,8 @@ export function AuthSessionProvider(props: {
 
   /** Re-autentica la sesión: fija token y perfil, limpia retos y programa la rotación. */
   const applyAuthenticatedSession = useCallback((nextToken: string, nextProfile: AuthSessionUserProfile): void => {
+    setGlobalAccessToken(nextToken);
+    setSessionOrgSlug(nextProfile.orgSlug.length > 0 ? nextProfile.orgSlug : null);
     accessTokenRef.current = nextToken;
     userRef.current = nextProfile;
     setAccessToken(nextToken);

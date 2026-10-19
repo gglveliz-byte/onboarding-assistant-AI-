@@ -23,21 +23,27 @@
 
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import { useParams } from 'next/navigation';
 import { DeveloperDashboardShell } from '@/components/dashboard-dev/DeveloperDashboardShell';
 import { AllowedDomainsManager } from '@/components/dashboard-dev/AllowedDomainsManager';
 import { ApiKeyLifecycleManager } from '@/components/dashboard-dev/ApiKeyLifecycleManager';
-import { useAllowedDomains, useApiKeys, type ApiKeyItem } from '@/components/dashboard-dev/useProjectsAndApiKeys';
+import { useResolvedProjectId, type ApiKeyItem } from '@/components/dashboard-dev/useProjectsAndApiKeys';
+import { useAllowedDomains, useApiKeys } from '@/components/dashboard-dev/useAllowedDomainsAndApiKeys';
+import { useDashboardSessionFacts } from '@/components/dashboard-dev/useDashboardWorkspace';
 
 export default function ProjectKeysPage() {
   const params = useParams();
   const orgSlug = String(params?.['orgSlug'] ?? 'default-org');
   const projectId = String(params?.['projectId'] ?? 'proj_default_live');
 
-  // En una sesión real se obtiene del contexto de autenticación
-  const [userRole] = useState<'OWNER' | 'DEVELOPER' | 'BILLING' | 'VIEWER'>('DEVELOPER');
+  // Rol real de la sesión vigente (reclamo `role` del token de acceso de la pestaña).
+  const session = useDashboardSessionFacts();
+  const userRole = session.role ?? 'DEVELOPER';
   const isReadOnly = userRole === 'VIEWER' || userRole === 'BILLING';
+
+  // UUID real del proyecto (la URL puede llevar el slug) para las llamadas a la API.
+  const { projectId: resolvedProjectId } = useResolvedProjectId(projectId);
 
   const { domains, addDomain, removeDomain } = useAllowedDomains(projectId);
   const { apiKeys, createApiKey, rotateApiKey, revokeApiKey } = useApiKeys(projectId);
@@ -67,6 +73,12 @@ export default function ProjectKeysPage() {
             </div>
           )}
         </div>
+
+        {/* Aviso de cobertura de la API: el listado de claves y orígenes aún no está expuesto */}
+        <p className="text-[11px] font-mono text-[#84847e]">
+          El backend expone la creación, rotación y revocación de claves y orígenes, pero todavía no
+          su listado: las tablas reflejan únicamente lo emitido en esta sesión.
+        </p>
 
         {/* Sección 1: Gestor de Claves de API */}
         <ApiKeyLifecycleManager
@@ -110,7 +122,7 @@ export default function ProjectKeysPage() {
 // Inicialización en el cliente web
 const assistant = await OnboardingAssistant.init({
   publishableKey: '${apiKeys.find((k: ApiKeyItem) => k.keyType === 'pk')?.keyPrefix || 'pk_live_...' }...',
-  projectId: '${projectId}',
+  projectId: '${resolvedProjectId ?? projectId}',
 });`}
           </pre>
         </div>

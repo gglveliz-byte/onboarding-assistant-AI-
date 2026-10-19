@@ -23,12 +23,15 @@
 import React, { ReactElement } from 'react';
 import OrganizationBillingPage from '../dashboard/org/[orgSlug]/billing/page';
 
+const DEFAULT_ORG_PARAMS: Promise<{ readonly orgSlug: string }> = Promise.resolve({
+  orgSlug: 'default-org',
+});
+
 /**
  * Entrada directa a /billing para acceso rápido o navegación desde la landing comercial.
  */
 export default function BillingDirectPortalPage(): ReactElement {
-  // Organización predeterminada para navegación directa o sesión actual
-  const defaultOrgParams = { orgSlug: 'default-org' };
-
-  return <OrganizationBillingPage params={defaultOrgParams} />;
+  // Organización predeterminada para navegación directa o sesión actual.
+  // La promesa se define a nivel de módulo para conservar una identidad estable entre renders.
+  return <OrganizationBillingPage params={DEFAULT_ORG_PARAMS} />;
 }

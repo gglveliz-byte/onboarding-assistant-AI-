@@ -67,7 +67,7 @@ export default function RagMapEditorPage() {
       environment="LIVE"
       userRole="DEVELOPER"
     >
-      <div className="flex flex-col h-[calc(100vh-6rem)] -m-6 bg-[#f7f7f4] overflow-hidden">
+      <div className="flex flex-col h-[calc(100vh-6rem)] -m-3 sm:-m-4 bg-[#f7f7f4] overflow-hidden">
         {/* Barra Superior con Digest SHA-256 e Historial */}
         <MapVersionHistoryAndShaBar
           currentSha256={sha256Hash}
@@ -111,7 +111,7 @@ export default function RagMapEditorPage() {
         <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
           {/* Panel Izquierdo 50%: Árbol de Rutas y Tarjetas */}
           <div
-            className={`w-full md:w-1/2 h-full overflow-hidden ${
+            className={`w-full md:w-1/2 h-full min-w-0 overflow-hidden ${
               mobileTab === 'visual' ? 'block' : 'hidden md:block'
             }`}
           >
@@ -125,7 +125,7 @@ export default function RagMapEditorPage() {
 
           {/* Panel Derecho 50%: Editor de Código JSON Canónico */}
           <div
-            className={`w-full md:w-1/2 h-full overflow-hidden ${
+            className={`w-full md:w-1/2 h-full min-w-0 overflow-hidden ${
               mobileTab === 'json' ? 'block' : 'hidden md:block'
             }`}
           >

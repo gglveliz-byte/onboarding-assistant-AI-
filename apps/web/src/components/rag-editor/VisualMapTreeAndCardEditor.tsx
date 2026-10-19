@@ -68,7 +68,7 @@ export function VisualMapTreeAndCardEditor({
             {elements.length} nodos interactivos organizados en {routes.length} ruta(s)
           </p>
         </div>
-        <span className="text-xs font-mono text-[#84847e] bg-[#e6e5e0] px-2 py-0.5 rounded" style={{ borderRadius: '3px' }}>
+        <span className="hidden md:inline text-xs font-mono text-[#84847e] bg-[#e6e5e0] px-2 py-0.5 rounded" style={{ borderRadius: '3px' }}>
           50% Vista Visual
         </span>
       </div>

@@ -7,7 +7,7 @@
  *   de factores MFA ante pérdida de dispositivos, y ejercer derechos GDPR (portabilidad y supresión).
  *
  * @resumen_contenido
- *   - Tabla de integrantes con estado de MFA y acciones por fila.
+ *   - Tabla de integrantes con scroll horizontal en móvil (mín. 720 px) y acciones por fila.
  *   - Modal de invitación de nuevo miembro con asignación de rol.
  *   - Botón administrativo de reseteo sudo de MFA (`btn_reset_member_mfa`).
  *   - Panel de gobernanza GDPR con exportación de datos (`btn_export_org_data`) y borrado.
@@ -38,32 +38,9 @@ export default function OrganizationTeamPage() {
   const params = useParams();
   const orgSlug = String(params?.['orgSlug'] ?? 'default-org');
 
-  const [members, setMembers] = useState<TeamMember[]>([
-    {
-      id: 'usr_owner_01',
-      email: 'alex@empresa.com',
-      fullName: 'Alex Vance',
-      role: 'OWNER',
-      mfaEnabled: true,
-      joinedAtIso: '2026-01-10T14:32:00Z',
-    },
-    {
-      id: 'usr_dev_02',
-      email: 'clara@empresa.com',
-      fullName: 'Clara Oswald',
-      role: 'DEVELOPER',
-      mfaEnabled: false,
-      joinedAtIso: '2026-02-15T09:12:00Z',
-    },
-    {
-      id: 'usr_fin_03',
-      email: 'rodrigo@empresa.com',
-      fullName: 'Rodrigo Méndez',
-      role: 'BILLING',
-      mfaEnabled: true,
-      joinedAtIso: '2026-03-01T11:45:00Z',
-    },
-  ]);
+  // El backend aún no expone el listado de miembros del tenant: la tabla arranca vacía y
+  // refleja solo lo que la API entregue. Nada de integrantes de demostración.
+  const [members, setMembers] = useState<TeamMember[]>([]);
 
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'DEVELOPER' | 'BILLING' | 'VIEWER'>('DEVELOPER');
@@ -75,19 +52,13 @@ export default function OrganizationTeamPage() {
     e.preventDefault();
     if (!inviteEmail) return;
 
-    const newMember: TeamMember = {
-      id: `usr_${Date.now()}`,
-      email: inviteEmail,
-      fullName: inviteEmail.split('@')[0] ?? 'Nuevo Miembro',
-      role: inviteRole,
-      mfaEnabled: false,
-      joinedAtIso: new Date().toISOString(),
-    };
-
-    setMembers([...members, newMember]);
+    // El envío de invitaciones todavía no está expuesto por la API: se informa con claridad en
+    // lugar de simular un alta que el servidor nunca registró.
     setInviteEmail('');
-    setStatusMessage(`Invitación enviada a ${inviteEmail} con rol ${inviteRole}`);
-    setTimeout(() => setStatusMessage(null), 4000);
+    setStatusMessage(
+      `El envío de invitaciones aún no está expuesto por la API: la solicitud para ${inviteEmail} no se registró.`
+    );
+    setTimeout(() => setStatusMessage(null), 6000);
   };
 
   const handleResetMemberMfa = (memberId: string, memberEmail: string) => {
@@ -182,13 +153,17 @@ export default function OrganizationTeamPage() {
           className="bg-[#f2f1ed] border border-[#cdcdc9] rounded overflow-hidden"
           style={{ borderRadius: '4px' }}
         >
-          <div className="px-5 py-3 border-b border-[#cdcdc9] flex justify-between items-center bg-[#e6e5e0]/40">
+          <div className="px-5 py-3 border-b border-[#cdcdc9] flex items-center justify-between gap-3 bg-[#e6e5e0]/40">
             <h2 className="text-xs font-sans uppercase tracking-wider text-[#84847e]">
               Miembros Activos ({members.length})
             </h2>
+            <span className="sm:hidden text-[10px] font-mono text-[#84847e] whitespace-nowrap">
+              Desliza →
+            </span>
           </div>
 
-          <table className="w-full text-left text-xs font-sans">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] text-left text-xs font-sans">
             <thead className="bg-[#e6e5e0]/60 text-[#84847e] border-b border-[#cdcdc9]">
               <tr>
                 <th className="px-5 py-2.5 font-normal">Usuario</th>
@@ -199,7 +174,16 @@ export default function OrganizationTeamPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#cdcdc9]">
-              {members.map((member) => (
+              {members.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-5 py-6 text-xs font-sans text-[#84847e]">
+                    No hay miembros que mostrar: el backend aún no expone el listado de miembros del
+                    tenant (endpoint de lectura pendiente). Los roles reales se reflejarán aquí en
+                    cuanto la API los entregue.
+                  </td>
+                </tr>
+              ) : (
+                members.map((member) => (
                 <tr key={member.id} className="hover:bg-[#e6e5e0]/30 transition-colors">
                   <td className="px-5 py-3">
                     <div className="font-medium text-[#26251e]">{member.fullName}</div>
@@ -247,9 +231,11 @@ export default function OrganizationTeamPage() {
                     )}
                   </td>
                 </tr>
-              ))}
+              ))
+            )}
             </tbody>
-          </table>
+            </table>
+          </div>
         </div>
 
         {/* Sección 3: Cumplimiento GDPR y Privacidad */}
@@ -315,7 +301,7 @@ export default function OrganizationTeamPage() {
                   type="button"
                   disabled={confirmDeleteText !== orgSlug}
                   onClick={() => {
-                    alert('Solicitud de baja registrada.');
+                    alert('El backend aún no expone el borrado de organizaciones: no se ejecutó ninguna baja.');
                     setIsDeletingOrg(false);
                   }}
                   className="px-3 py-1.5 text-xs font-sans bg-[#cf2d56] text-[#f7f7f4] rounded disabled:opacity-40 transition-opacity"
