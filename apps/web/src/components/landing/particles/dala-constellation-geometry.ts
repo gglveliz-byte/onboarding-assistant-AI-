@@ -14,7 +14,7 @@
  *   - `BackdropGlyph`: glifo ambiental flotante (triángulo wireframe de polvo estelar).
  *   - `BackdropBuild`: par de colecciones devueltas por el ensamblador de esculturas.
  *   - `BACKDROP_COLORS` + `AMBIENT_PALETTE`: paleta ámbar/violeta/turquesa/magenta/índigo.
- *   - `fract`, `hash`, `hash3`, `noise3D`, `lerp`, `smootherstep`: matemática pura del motor.
+ *   - `fract`, `hash`, `hash3`, `noise3D`, `lerp`, `smootherstep`, `fluidMorphStep`: matemática pura del motor.
  *   - `BrainSample`, `NetworkSample`, `WorldSample`: contratos de salida de los escultores analíticos.
  *   - `ProjectedTriangle`, `PointerState`, `StageScreenTransform` y constantes del lienzo (FOV,
  *     densidades, presupuesto de píxeles, rangos de scroll y deriva del Cerebro).
@@ -172,6 +172,21 @@ export function smoothstep(edge0: number, edge1: number, x: number): number {
   return t * t * (3 - 2 * t);
 }
 
+/** Peso del tramo quintic en la curva fluida (el resto lo aporta el ease-out cuadrático). */
+const FLUID_SMOOTH_WEIGHT = 0.45;
+
+/**
+ * Curva de morphing con respuesta inmediata: mezcla el arranque perceptible de un ease-out
+ * cuadrático (derivada inicial ≈ 1.1, sin zona muerta al empezar a scrollear) con la llegada
+ * sedosa del quintic smootherstep. Gobierna los pesos de las tres esculturas del fondo.
+ */
+export function fluidMorphStep(edge0: number, edge1: number, x: number): number {
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+  const quintic = t * t * t * (t * (t * 6 - 15) + 10);
+  const easeOut = 1 - (1 - t) * (1 - t);
+  return quintic * FLUID_SMOOTH_WEIGHT + easeOut * (1 - FLUID_SMOOTH_WEIGHT);
+}
+
 /**
  * Triángulo proyectado en pantalla con lote cromático cuantizado: `colorId` indexa la tabla de
  * colores del estado del compositor, `alphaLevel` cubre 0..15 niveles y `widthId` 0/1 selecciona
@@ -251,10 +266,10 @@ export const MIN_DEVICE_PIXEL_RATIO = 0.75;
 export const PERSPECTIVE_FOV = 780;
 /** Tiempo congelado (segundos) del fotograma único cuando el usuario reduce el movimiento. */
 export const STATIC_MOTION_TIME = 2.6;
-/** Rango de transición Cerebro → Red Neuronal viva: inicia de inmediato con el scroll (0.00..0.48). */
-export const BRAIN_TO_NETWORK_RANGE: readonly [number, number] = [0.00, 0.48];
-/** Rango de transición Red Neuronal → Planeta Tierra: solapado para flujo continuo (0.42..0.95). */
-export const NETWORK_TO_WORLD_RANGE: readonly [number, number] = [0.42, 0.95];
+/** Rango de transición Cerebro → Red de nodos: respuesta desde el primer píxel de scroll (0.00..0.52). */
+export const BRAIN_TO_NETWORK_RANGE: readonly [number, number] = [0.00, 0.52];
+/** Rango de transición Red de nodos → Planeta Tierra: solapado para flujo continuo (0.44..0.96). */
+export const NETWORK_TO_WORLD_RANGE: readonly [number, number] = [0.44, 0.96];
 
 /** Transformación de pantalla de una etapa: deriva relativa y escala uniforme de la escultura. */
 export interface StageScreenTransform {

@@ -36,7 +36,7 @@ Las partículas representan unidades de información, relaciones, percepción, r
 2. **Red de nodos y conectores** (tramo medio): cinco anillos de concentradores unidos por cadenas radiales, cuerdas y diagonales largas (el «mapa» enlazando información).
 3. **Planeta Tierra cartográfico** (final): costas, masa continental, retícula oceánica y anillo orbital.
 
-- Progreso dirigido por `scrollY / (scrollHeight − innerHeight)` con ventanas `smootherstep` [0.12–0.42] y [0.58–0.88] y suavizado por fotograma.
+- Progreso dirigido por `scrollY / (scrollHeight − innerHeight)` con la curva `fluidMorphStep` (respuesta perceptible desde el primer píxel de scroll, llegada sedosa) y ventanas solapadas [0.00–0.52] y [0.44–0.96]; suavizado exponencial por tiempo (~85 ms) y deriva elástica por velocidad de scroll.
 - **Anclaje del hero:** al inicio (scroll 0) el Cerebro deriva a la **zona derecha del viewport** (~0,82 W × 0,48 H, escala 0,7) para no tapar el titular editorial; en móvil se recentra (~0,62 W, escala 0,84). La deriva se disuelve junto con el peso del Cerebro durante el morphing.
 - Densidad: ~3.000 microtriángulos wireframe + 96 glifos ambientales (escritorio); 1.500 + 56 en móvil (calibradas para 60 fps; parámetros en §5.2).
 - **Elementos geométricos:** microtriángulos huecos de 1–1.45 px, glifos wireframe y segmentos finos; proyección en perspectiva (FOV 780), orden por profundidad con conteo por rodajas (sin `sort`) y trazo agrupado en lotes cromáticos cuantizados (centenas de `stroke()` por fotograma).
@@ -111,19 +111,19 @@ Tipografía geométrica de alta precisión (Inter / PP Neue Montreal / sans-seri
 #### 5.1. Fondo Vivo de Constelación Dala (8 módulos, carpeta `particles/`)
 | Módulo | Rol |
 | :--- | :--- |
-| `DalaConstellationBackdrop.tsx` | Canvas `fixed inset-0 z-0`: ciclo de vida, DPR acotado por presupuesto de píxeles, gobernador de cadencia adaptativo (fotogramas alternos si el coste > ~11 ms), pausa con pestaña oculta y `prefers-reduced-motion`; delega la pintura en el compositor. |
-| `dala-constellation-render.ts` | Compositor por fotograma: rotaciones con senos/cosenos precalculados por escultura, deriva lateral del Cerebro, orden por profundidad con conteo por rodajas y trazo por lotes cromáticos; `ConstellationScene` + `renderConstellationFrame()`. |
+| `DalaConstellationBackdrop.tsx` | Canvas `fixed inset-0 z-0`: ciclo de vida, DPR acotado por presupuesto de píxeles, gobernador de cadencia adaptativo (fotogramas alternos si el coste > ~11 ms), suavizado exponencial por tiempo del scroll (independiente del refresco), velocidad elástica, pausa con pestaña oculta y `prefers-reduced-motion`; delega la pintura en el compositor. |
+| `dala-constellation-render.ts` | Compositor por fotograma: curva fluida de pesos, rotaciones con senos/cosenos por escultura y rotación propia incremental (cero trigonometría por nodo), pulsos por suma de ángulos, deriva elástica por velocidad, deriva lateral del Cerebro, orden por profundidad con conteo por rodajas y trazo por lotes cromáticos; `ConstellationScene` + `renderConstellationFrame()`. |
 | `dala-constellation-render-state.ts` | Estado persistente del compositor: búfer de triángulos, tabla cromática por nodo, rejillas de conteo por profundidad, lotes con reciclado y constantes `DEPTH_SLICES`/`ALPHA_STEPS`; `createConstellationRenderState()`. |
 | `dala-constellation-sculptures.ts` | Escultores analíticos de las 3 etapas (cerebro, red de nodos y Tierra) y `buildConstellation()`: tres posiciones precalculadas por nodo (la red delega en su mapa). |
 | `dala-constellation-network-map.ts` | Mapa estático de la Red de nodos (etapa 2): 5 anillos de 41 concentradores, 65 conectores en cadenas proporcionales a su longitud (paso 10) y polvo de datos envolvente; `resolveNetworkSample()` en O(1). |
-| `dala-constellation-geometry.ts` | Matemática (hash/ruido determinista, `smootherstep`, `lerp`), tipos, paleta y constantes del lienzo (FOV, densidades 3.000/1.500, presupuesto de píxeles 2,6 M, rangos de scroll y transformación de pantalla por etapa) — **punto único de calibración**. |
+| `dala-constellation-geometry.ts` | Matemática (hash/ruido determinista, `smootherstep`, `fluidMorphStep`, `lerp`), tipos, paleta y constantes del lienzo (FOV, densidades 3.000/1.500, presupuesto de píxeles 2,6 M, rangos de scroll [0.00–0.52]/[0.44–0.96] y transformación de pantalla por etapa) — **punto único de calibración**. |
 | `dala-constellation-ambient.ts` | Glifos ambientales de polvo estelar: deriva vertical envolvente, oscilación horizontal y rotación propia (`drawAmbientGlyphs()`). |
 | `dala-constellation-earth-map.ts` | Malla cartográfica 96×48 con regiones continentales (costas con trazo nítido vs. masa continental). |
 
 #### 5.2. Comportamiento del motor
 - Canvas 2D con `alpha: false`; `devicePixelRatio` acotado por presupuesto de píxeles (`MAX_CANVAS_PIXELS` ≈ 2,6 M; techo 1,5 / suelo 0,75); `requestAnimationFrame` con delta time y estado 100 % reutilizado (cero asignaciones en el bucle caliente).
 - **Gobernador de cadencia:** si el coste de pintura supera ~11 ms sostenidos, se pinta en fotogramas alternos (30 fps estables) y se libera al bajar de ~7 ms.
-- Progreso del morphing = `scrollY / (scrollHeight − innerHeight)`; suavizado por fotograma; rango re-medido con `ResizeObserver`.
+- Progreso del morphing = `scrollY / (scrollHeight − innerHeight)`; suavizado exponencial por tiempo con constante ~85 ms (idéntico en 60 y 120 Hz) y derivada de velocidad suavizada ~160 ms para la deriva elástica; rango re-medido con `ResizeObserver`.
 - Pausa automática con pestaña oculta (`document.hidden`).
 - `prefers-reduced-motion`: fotograma estático que solo se redibuja al hacer scroll o resize.
 - Cursor: repulsión elástica sin romper la silueta principal; no aplica a punteros táctiles.

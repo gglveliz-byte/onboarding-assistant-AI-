@@ -54,6 +54,20 @@ export interface ConstellationRenderState {
   /** Coseno/seno de la torsión espiral por carril (`i % 4`) durante las transiciones. */
   readonly twistCos: Float64Array;
   readonly twistSin: Float64Array;
+  /** Rotación propia incremental por nodo: cos/sin vivos y sus pasos por fotograma. */
+  readonly cosZ: Float64Array;
+  readonly sinZ: Float64Array;
+  readonly cosX: Float64Array;
+  readonly sinX: Float64Array;
+  readonly stepCosZ: Float64Array;
+  readonly stepSinZ: Float64Array;
+  readonly stepCosX: Float64Array;
+  readonly stepSinX: Float64Array;
+  /** Fases precalculadas de los pulsos neurales (suma de ángulos sin trigonometría por nodo). */
+  readonly brainPulseCos: Float64Array;
+  readonly brainPulseSin: Float64Array;
+  readonly networkPhaseCos: Float64Array;
+  readonly networkPhaseSin: Float64Array;
 }
 
 /** Prepara el estado del compositor: tabla cromática, búfer y rejillas de conteo. */
@@ -76,6 +90,18 @@ export function createConstellationRenderState(nodes: readonly BackdropNode[]): 
   const brainColorIds = new Uint8Array(count);
   const networkColorIds = new Uint8Array(count);
   const worldColorIds = new Uint8Array(count);
+  const cosZ = new Float64Array(count);
+  const sinZ = new Float64Array(count);
+  const cosX = new Float64Array(count);
+  const sinX = new Float64Array(count);
+  const stepCosZ = new Float64Array(count);
+  const stepSinZ = new Float64Array(count);
+  const stepCosX = new Float64Array(count);
+  const stepSinX = new Float64Array(count);
+  const brainPulseCos = new Float64Array(count);
+  const brainPulseSin = new Float64Array(count);
+  const networkPhaseCos = new Float64Array(count);
+  const networkPhaseSin = new Float64Array(count);
 
   for (let i = 0; i < count; i += 1) {
     const node = nodes[i];
@@ -86,6 +112,23 @@ export function createConstellationRenderState(nodes: readonly BackdropNode[]): 
     networkColorIds[i] = registerColor(node.networkColor);
     worldColorIds[i] = registerColor(node.worldColor);
     buffer[i] = { sx: 0, sy: 0, z: 0, r: 0, cosZ: 1, sinZ: 0, squash: 1, colorId: 0, alphaLevel: ALPHA_STEPS, widthId: 0 };
+
+    // Rotación propia: cos/sin iniciales y pasos constantes (se actualizan por composición).
+    cosZ[i] = Math.cos(node.rotZ);
+    sinZ[i] = Math.sin(node.rotZ);
+    cosX[i] = Math.cos(node.rotX);
+    sinX[i] = Math.sin(node.rotX);
+    stepCosZ[i] = Math.cos(node.vRotZ);
+    stepSinZ[i] = Math.sin(node.vRotZ);
+    stepCosX[i] = Math.cos(node.vRotX);
+    stepSinX[i] = Math.sin(node.vRotX);
+
+    // Fases de los pulsos: sin(ωt + θ) = sin(ωt)·cosθ + cos(ωt)·sinθ.
+    const brainTheta = node.phase - node.bx * 0.018;
+    brainPulseCos[i] = Math.cos(brainTheta);
+    brainPulseSin[i] = Math.sin(brainTheta);
+    networkPhaseCos[i] = Math.cos(node.phase);
+    networkPhaseSin[i] = Math.sin(node.phase);
   }
 
   return {
@@ -103,5 +146,17 @@ export function createConstellationRenderState(nodes: readonly BackdropNode[]): 
     bucketPool: [],
     twistCos: new Float64Array(4),
     twistSin: new Float64Array(4),
+    cosZ,
+    sinZ,
+    cosX,
+    sinX,
+    stepCosZ,
+    stepSinZ,
+    stepCosX,
+    stepSinX,
+    brainPulseCos,
+    brainPulseSin,
+    networkPhaseCos,
+    networkPhaseSin,
   };
 }

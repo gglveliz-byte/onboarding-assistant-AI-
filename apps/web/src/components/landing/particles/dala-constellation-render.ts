@@ -3,7 +3,8 @@
  * @modulo apps/web/src/components/landing/particles (Constelación Dala de fondo — compositor por lotes)
  * @proposito
  *   Compositor por fotograma del fondo vivo de constelación: proyecta los nodos con rotaciones
- *   in situ (senos/cosenos precalculados por escultura, sin asignaciones por nodo), aplica la
+ *   in situ (senos/cosenos por escultura y rotación propia incremental, sin asignaciones ni
+ *   trigonometría por nodo), aplica la
  *   transformación de pantalla de la etapa (el Cerebro deriva a la zona derecha del hero, libre
  *   de texto), ordena por profundidad con conteo por rodajas (sin `sort`) y agrupa los
  *   microtriángulos en lotes cromáticos cuantizados para reducir miles de llamadas `stroke()`
@@ -35,8 +36,8 @@ import {
   CANVAS_BACKGROUND,
   NETWORK_TO_WORLD_RANGE,
   PERSPECTIVE_FOV,
+  fluidMorphStep,
   lerp,
-  smoothstep,
   type BackdropGlyph,
   type BackdropNode,
   type PointerState,
@@ -59,6 +60,7 @@ export interface ConstellationScene {
   readonly height: number;
   readonly time: number;
   readonly scroll: number;
+  readonly scrollVelocity: number;
   readonly nodes: readonly BackdropNode[];
   readonly glyphs: readonly BackdropGlyph[];
   readonly pointer: PointerState;
@@ -68,8 +70,8 @@ export interface ConstellationScene {
 export function renderConstellationFrame(scene: ConstellationScene, state: ConstellationRenderState): void {
   const { ctx, width, height, time, scroll, nodes, glyphs, pointer } = scene;
 
-  const tBrainToNetwork = smoothstep(BRAIN_TO_NETWORK_RANGE[0], BRAIN_TO_NETWORK_RANGE[1], scroll);
-  const tNetworkToWorld = smoothstep(NETWORK_TO_WORLD_RANGE[0], NETWORK_TO_WORLD_RANGE[1], scroll);
+  const tBrainToNetwork = fluidMorphStep(BRAIN_TO_NETWORK_RANGE[0], BRAIN_TO_NETWORK_RANGE[1], scroll);
+  const tNetworkToWorld = fluidMorphStep(NETWORK_TO_WORLD_RANGE[0], NETWORK_TO_WORLD_RANGE[1], scroll);
   const wBrain = 1 - tBrainToNetwork;
   const wNetwork = tBrainToNetwork * (1 - tNetworkToWorld);
   const wWorld = tNetworkToWorld;
@@ -84,9 +86,11 @@ export function renderConstellationFrame(scene: ConstellationScene, state: Const
 
   drawAmbientGlyphs(ctx, glyphs, width, height, time, cx, cy, fov, baseScale);
 
-  // Rotación continua inducida por scroll: respuesta fluida inmediata desde el primer píxel
-  const scrollOrbitY = scroll * 0.88;
-  const scrollTiltX = scroll * 0.30;
+  // Rotación inducida por scroll + deriva elástica por velocidad: el campo responde al impulso
+  // del usuario y se disuelve suavemente al detenerse (sin saltos ni zonas muertas).
+  const velocitySway = Math.max(-1.2, Math.min(1.2, scene.scrollVelocity * 0.6));
+  const scrollOrbitY = scroll * 0.88 + velocitySway * 0.30;
+  const scrollTiltX = scroll * 0.30 + velocitySway * 0.10;
 
   // Rotaciones por escultura: senos y cosenos una sola vez por fotograma (antes: 6 por nodo).
   const brainRotY = Math.sin(time * 0.38) * 0.14 + pointer.smoothX * 0.28 + scrollOrbitY * 0.45;
@@ -141,6 +145,23 @@ export function renderConstellationFrame(scene: ConstellationScene, state: Const
     state.twistSin[lane] = Math.sin(twistAngle);
   }
   const buffer = state.buffer;
+  // Pulsos neurales por suma de ángulos: trigonometría global una vez por fotograma (no por nodo).
+  const pulseSinTime = Math.sin(time * 2.8);
+  const pulseCosTime = Math.cos(time * 2.8);
+  const axonSinTime = Math.sin(time * 4.8);
+  const axonCosTime = Math.cos(time * 4.8);
+  const brainPulseCos = state.brainPulseCos;
+  const brainPulseSin = state.brainPulseSin;
+  const networkPhaseCos = state.networkPhaseCos;
+  const networkPhaseSin = state.networkPhaseSin;
+  const cosZState = state.cosZ;
+  const sinZState = state.sinZ;
+  const cosXState = state.cosX;
+  const sinXState = state.sinX;
+  const stepCosZState = state.stepCosZ;
+  const stepSinZState = state.stepSinZ;
+  const stepCosXState = state.stepCosX;
+  const stepSinXState = state.stepSinX;
   let zMin = Number.POSITIVE_INFINITY;
   let zMax = Number.NEGATIVE_INFINITY;
 
@@ -156,7 +177,9 @@ export function renderConstellationFrame(scene: ConstellationScene, state: Const
     let by = node.by;
     let bz = node.bz;
     if (wBrain > 0.001) {
-      const neuralPulse = 1 + 0.014 * Math.sin(time * 2.8 - bx * 0.018 + node.phase);
+      // sin(ωt + fase) resuelto con suma de ángulos: cos/sin de fase precalculados por nodo.
+      const phaseSin = pulseSinTime * (brainPulseCos[i] ?? 0) + pulseCosTime * (brainPulseSin[i] ?? 0);
+      const neuralPulse = 1 + 0.014 * phaseSin;
       const px = bx * neuralPulse;
       const py = by * neuralPulse;
       const pz = bz * neuralPulse;
@@ -238,8 +261,24 @@ export function renderConstellationFrame(scene: ConstellationScene, state: Const
       }
     }
 
-    node.rotZ += node.vRotZ;
-    node.rotX += node.vRotX;
+    // Rotación propia incremental por composición (cos/sin + pasos precalculados): cero trigonometría.
+    const stepCosZ = stepCosZState[i] ?? 1;
+    const stepSinZ = stepSinZState[i] ?? 0;
+    const prevCosZ = cosZState[i] ?? 1;
+    const prevSinZ = sinZState[i] ?? 0;
+    const nextCosZ = prevCosZ * stepCosZ - prevSinZ * stepSinZ;
+    const nextSinZ = prevSinZ * stepCosZ + prevCosZ * stepSinZ;
+    cosZState[i] = nextCosZ;
+    sinZState[i] = nextSinZ;
+
+    const stepCosX = stepCosXState[i] ?? 1;
+    const stepSinX = stepSinXState[i] ?? 0;
+    const prevCosX = cosXState[i] ?? 1;
+    const prevSinX = sinXState[i] ?? 0;
+    const nextCosX = prevCosX * stepCosX - prevSinX * stepSinX;
+    const nextSinX = prevSinX * stepCosX + prevCosX * stepSinX;
+    cosXState[i] = nextCosX;
+    sinXState[i] = nextSinX;
 
     // Transición cromática continua por pesos de etapa: el color dominante fluye con el morphing
     let colorId: number;
@@ -278,11 +317,13 @@ export function renderConstellationFrame(scene: ConstellationScene, state: Const
     let axonSpark = 0;
     if (wNetwork > 0.1) {
       if (node.isNetworkHub) {
-        const hubPulse = 0.5 + 0.5 * Math.sin(time * 2.8 + node.phase);
+        const hubWave = pulseSinTime * (networkPhaseCos[i] ?? 0) + pulseCosTime * (networkPhaseSin[i] ?? 0);
+        const hubPulse = 0.5 + 0.5 * hubWave;
         alpha = Math.min(0.98, (0.70 + 0.28 * hubPulse) * wNetwork + alpha * (1 - wNetwork));
       } else if (node.isNetworkEdge) {
-        const wave = Math.sin(time * 4.8 - node.phase);
-        axonSpark = Math.pow(Math.max(0, wave), 3.5);
+        const wave = axonSinTime * (networkPhaseCos[i] ?? 0) - axonCosTime * (networkPhaseSin[i] ?? 0);
+        const positiveWave = wave > 0 ? wave : 0;
+        axonSpark = positiveWave * positiveWave * positiveWave * Math.sqrt(positiveWave);
         alpha = Math.min(0.95, (0.48 + 0.46 * axonSpark) * wNetwork + alpha * (1 - wNetwork));
       } else {
         // Polvo ambiental estelar muy sutil para dar aire y máxima limpieza a la silueta
@@ -299,9 +340,9 @@ export function renderConstellationFrame(scene: ConstellationScene, state: Const
         ? 0.12 + axonSpark * 0.4
         : -0.32;
     item.r = node.size * depthScale * baseScale * (1 + wNetwork * sizeMultiplier) * stageScale;
-    item.cosZ = Math.cos(node.rotZ);
-    item.sinZ = Math.sin(node.rotZ);
-    item.squash = 0.42 + 0.58 * Math.abs(Math.cos(node.rotX));
+    item.cosZ = nextCosZ;
+    item.sinZ = nextSinZ;
+    item.squash = 0.42 + 0.58 * Math.abs(nextCosX);
     item.colorId = colorId;
     item.alphaLevel = Math.max(0, Math.min(ALPHA_STEPS, Math.round(alpha * ALPHA_STEPS)));
     item.widthId = (node.isRim && wBrain > 0.3) || (node.isCoastline && wWorld > 0.3) || (node.isNetworkHub && wNetwork > 0.3) ? 1 : 0;

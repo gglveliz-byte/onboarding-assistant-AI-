@@ -15,7 +15,8 @@
  *     sobre el lienzo `#f2fbf9` del portal Auros Light; delega la pintura en el compositor por
  *     lotes (`dala-constellation-render`) y aquí viven el ciclo de vida, el DPR acotado por
  *     presupuesto de píxeles, el gobernador de cadencia adaptativo (fotogramas alternos cuando
- *     la máquina sufre) y `prefers-reduced-motion` (fotograma estático redibujado con scroll).
+ *     la máquina sufre), el suavizado exponencial por tiempo del scroll, la velocidad elástica
+ *     y `prefers-reduced-motion` (fotograma estático redibujado con scroll).
  *
  * @dependencias_internas
  *   - `./dala-constellation-geometry` (densidades, presupuesto de píxeles y tipos).
@@ -54,6 +55,10 @@ const STRIDE_UPGRADE_COST_MS = 11;
 const STRIDE_DOWNGRADE_COST_MS = 7;
 /** Fotogramas entre reevaluaciones del gobernador de cadencia. */
 const STRIDE_DECISION_WINDOW = 45;
+/** Constantes de tiempo (segundos) del suavizado exponencial: independiente del refresco. */
+const SCROLL_SMOOTHING_TAU = 0.085;
+const SCROLL_VELOCITY_TAU = 0.16;
+const POINTER_SMOOTHING_TAU = 0.12;
 
 export interface DalaConstellationBackdropProps {
   /** Clases adicionales del lienzo (por defecto cubre el viewport por completo). */
@@ -93,6 +98,8 @@ export function DalaConstellationBackdrop({ className = '' }: DalaConstellationB
     let maxScroll = 1;
     let targetScroll = 0;
     let currentScroll = 0;
+    let scrollVelocity = 0;
+    let lastFrameMs = 0;
     let animationFrameId: number | null = null;
     let staticDrawHandle: number | null = null;
     let isPageVisible = document.hidden === false;
@@ -141,7 +148,7 @@ export function DalaConstellationBackdrop({ className = '' }: DalaConstellationB
     const paintFrame = (time: number): number => {
       const startedAt = performance.now();
       renderConstellationFrame(
-        { ctx: context, width, height, time, scroll: currentScroll, nodes, glyphs, pointer },
+        { ctx: context, width, height, time, scroll: currentScroll, scrollVelocity, nodes, glyphs, pointer },
         renderState
       );
       return performance.now() - startedAt;
@@ -169,17 +176,29 @@ export function DalaConstellationBackdrop({ className = '' }: DalaConstellationB
     const animate = (now: number): void => {
       animationFrameId = window.requestAnimationFrame(animate);
       if (!isPageVisible) {
+        lastFrameMs = now;
         return;
       }
+      // Suavizado exponencial por tiempo: 60 Hz y 120 Hz se sienten idénticos y el morphing
+      // arranca con el primer gesto del scroll (sin zona muerta).
+      const deltaSeconds = lastFrameMs === 0 ? 1 / 60 : Math.min(0.05, Math.max(0.001, (now - lastFrameMs) / 1000));
+      lastFrameMs = now;
+
       readScrollTarget();
-      const scrollDelta = targetScroll - currentScroll;
-      if (Math.abs(scrollDelta) < 0.001) {
+      const previousScroll = currentScroll;
+      const scrollAlpha = 1 - Math.exp(-deltaSeconds / SCROLL_SMOOTHING_TAU);
+      currentScroll += (targetScroll - currentScroll) * scrollAlpha;
+      if (Math.abs(targetScroll - currentScroll) < 0.0005) {
         currentScroll = targetScroll;
-      } else {
-        currentScroll += scrollDelta * 0.35;
       }
-      pointer.smoothX += (pointer.normX - pointer.smoothX) * 0.12;
-      pointer.smoothY += (pointer.normY - pointer.smoothY) * 0.12;
+
+      // Velocidad de scroll suavizada: alimenta la deriva elástica del compositor.
+      const instantVelocity = (currentScroll - previousScroll) / deltaSeconds;
+      scrollVelocity += (instantVelocity - scrollVelocity) * (1 - Math.exp(-deltaSeconds / SCROLL_VELOCITY_TAU));
+
+      const pointerAlpha = 1 - Math.exp(-deltaSeconds / POINTER_SMOOTHING_TAU);
+      pointer.smoothX += (pointer.normX - pointer.smoothX) * pointerAlpha;
+      pointer.smoothY += (pointer.normY - pointer.smoothY) * pointerAlpha;
 
       frameTick += 1;
       if (frameStride > 1 && frameTick % frameStride !== 0) {
