@@ -47,10 +47,14 @@ export interface ProjectItem {
   readonly environment: ProjectEnvironment;
   readonly primaryVoiceModel?: string;
   readonly fallbackVoiceModel?: string;
+  readonly voicePersonaCode?: string;
   readonly speechSpeed?: number;
   readonly vadBargeInSensitivity?: 'LOW' | 'MEDIUM' | 'HIGH';
   readonly modelTemperature?: number;
   readonly systemPrompt?: string;
+  readonly onboardingStepsJson?: readonly Record<string, unknown>[];
+  readonly strictStepEnforcement?: boolean;
+  readonly askConfirmationBeforeSubmit?: boolean;
   readonly isActive: boolean;
   readonly createdAtIso: string;
 }
@@ -121,6 +125,15 @@ function coerceProject(raw: unknown): ProjectItem | null {
   const environment = raw['environment'];
   const isActive = raw['isActive'];
   const primaryVoiceModel = raw['primaryVoiceModel'];
+  const fallbackVoiceModel = raw['fallbackVoiceModel'];
+  const voicePersonaCode = raw['voicePersonaCode'];
+  const speechSpeed = raw['speechSpeed'];
+  const vadBargeInSensitivity = raw['vadBargeInSensitivity'];
+  const modelTemperature = raw['modelTemperature'];
+  const systemPrompt = raw['systemPrompt'];
+  const onboardingStepsJson = raw['onboardingStepsJson'];
+  const strictStepEnforcement = raw['strictStepEnforcement'];
+  const askConfirmationBeforeSubmit = raw['askConfirmationBeforeSubmit'];
   return {
     id,
     organizationId: typeof organizationId === 'string' ? organizationId : '',
@@ -128,6 +141,19 @@ function coerceProject(raw: unknown): ProjectItem | null {
     slug,
     environment: environment === 'TEST' ? 'TEST' : 'LIVE',
     ...(typeof primaryVoiceModel === 'string' ? { primaryVoiceModel } : {}),
+    ...(typeof fallbackVoiceModel === 'string' ? { fallbackVoiceModel } : {}),
+    ...(typeof voicePersonaCode === 'string' ? { voicePersonaCode } : {}),
+    ...(typeof speechSpeed === 'number' ? { speechSpeed } : {}),
+    ...(vadBargeInSensitivity === 'LOW' || vadBargeInSensitivity === 'MEDIUM' || vadBargeInSensitivity === 'HIGH'
+      ? { vadBargeInSensitivity }
+      : {}),
+    ...(typeof modelTemperature === 'number' ? { modelTemperature } : {}),
+    ...(typeof systemPrompt === 'string' ? { systemPrompt } : {}),
+    ...(Array.isArray(onboardingStepsJson)
+      ? { onboardingStepsJson: onboardingStepsJson as readonly Record<string, unknown>[] }
+      : {}),
+    ...(typeof strictStepEnforcement === 'boolean' ? { strictStepEnforcement } : {}),
+    ...(typeof askConfirmationBeforeSubmit === 'boolean' ? { askConfirmationBeforeSubmit } : {}),
     isActive: isActive !== false,
     createdAtIso: toIsoString(raw['createdAt']),
   };

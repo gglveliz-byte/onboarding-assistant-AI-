@@ -45,6 +45,9 @@ export default function PromptStudioPage() {
     isSaving,
     saveSuccess,
     saveError,
+    isLoading,
+    loadError,
+    projectFound,
     updateConfig,
     savePromptConfig,
   } = useAssistantPromptStudio(projectId);
@@ -66,6 +69,18 @@ export default function PromptStudioPage() {
             Diseña las instrucciones del Asistente vocal, vincula elementos del Mapa RAG y fija guardarrailes de ejecución estricta.
           </p>
         </div>
+
+        {/* Estado de carga real del proyecto (sin prompt de demostración por delante) */}
+        {isLoading && (
+          <div className="px-3 py-2 bg-[#f2f1ed] border border-[#cdcdc9] text-[12px] font-mono text-[#84847e]" style={{ borderRadius: '4px' }}>
+            Cargando la configuración real del proyecto…
+          </div>
+        )}
+        {!isLoading && !projectFound && (
+          <div className="px-3 py-2 bg-[#cf2d56]/10 border border-[#cf2d56]/40 text-[12px] font-sans text-[#cf2d56]" style={{ borderRadius: '4px' }} role="status">
+            {loadError ?? 'No se encontró el proyecto solicitado en tu organización.'}
+          </div>
+        )}
 
         {/* 1. Barra de Configuración de Modelos y Acústica */}
         <ModelAndVoiceConfigBar

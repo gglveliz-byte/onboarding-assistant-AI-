@@ -135,11 +135,12 @@ export function UnifiedSystemPromptEditor({
           </button>
           <button
             type="button"
-            onClick={() => insertVariable('@[Botón Crear Factura](elem_factura_btn)')}
+            onClick={() => insertVariable('@[Nombre del Elemento](id_del_elemento)')}
             className="px-2 py-0.5 text-[11px] font-mono bg-[#f54e00]/10 text-[#f54e00] hover:bg-[#f54e00]/20 rounded border border-[#f54e00]/30"
             style={{ borderRadius: '3px' }}
+            title="Inserta una ancla con la sintaxis @[Título](id). Sustituye el título y el id por los del mapa funcional real de tu proyecto."
           >
-            + Ancla @[Botón Crear Factura]
+            + Ancla @[Elemento]
           </button>
         </div>
       )}

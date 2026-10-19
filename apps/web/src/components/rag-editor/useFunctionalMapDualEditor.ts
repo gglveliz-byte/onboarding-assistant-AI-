@@ -27,6 +27,8 @@
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import type { BoundingBox } from '../visual-trainer/useRemoteTrainerSession';
+import { useResolvedProjectId } from '../dashboard-dev/useProjectsAndApiKeys';
+import { backendFetch } from '../../lib/api-client/http-client';
 
 export interface FunctionalMapElement {
   id: string;
@@ -81,57 +83,20 @@ export async function computeSha256Hex(text: string): Promise<string> {
   return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-export function useFunctionalMapDualEditor(projectId: string) {
-  const initialElements: FunctionalMapElement[] = useMemo(
-    () => [
-      {
-        id: 'elem_factura_btn',
-        title: 'Botón Crear Factura',
-        functionalDescription: 'Inicia el formulario modal de emisión fiscal para clientes recurrentes.',
-        isActionable: true,
-        actionType: 'CLICK',
-        primarySelector: '[data-oa-id="btn-create-invoice"]',
-        accessibilitySelector: 'button[aria-label="Crear Factura"]',
-        structuralCssSelector: 'main > div:nth-child(2) > button.primary-btn',
-        xpathFallback: '//button[contains(text(),"Crear Factura")]',
-        urlRoutePattern: '/dashboard/invoices',
-        desktopBbox: { x: 420, y: 120, width: 140, height: 38 },
-        tabletBbox: { x: 340, y: 110, width: 130, height: 38 },
-        mobileBbox: { x: 200, y: 95, width: 110, height: 36 },
-      },
-      {
-        id: 'elem_rfc_input',
-        title: 'Campo Identificación Fiscal / RFC',
-        functionalDescription: 'Input donde el usuario ingresa la clave de registro de contribuyente.',
-        isActionable: true,
-        actionType: 'TYPE',
-        primarySelector: '[data-oa-id="input-company-tax"]',
-        structuralCssSelector: 'form#invoice-form input[name="tax_id"]',
-        xpathFallback: '//input[@name="tax_id"]',
-        urlRoutePattern: '/dashboard/invoices/new',
-        desktopBbox: { x: 180, y: 220, width: 280, height: 40 },
-        tabletBbox: { x: 150, y: 200, width: 240, height: 38 },
-        mobileBbox: { x: 40, y: 180, width: 200, height: 36 },
-      },
-    ],
-    []
-  );
+export function useFunctionalMapDualEditor(projectRef: string) {
+  // El identificador de la ruta puede ser el slug: se resuelve al UUID real que exige la API.
+  const { projectId: resolvedProjectId } = useResolvedProjectId(projectRef);
+  // El mapa arranca VACÍO: el backend todavía no expone la lectura del mapa publicado, así que
+  // no se siembran elementos, hash ni historial de versiones de demostración.
+  const initialElements: FunctionalMapElement[] = useMemo(() => [], []);
 
   const [elements, setElements] = useState<FunctionalMapElement[]>(initialElements);
   const [jsonCode, setJsonCode] = useState<string>(() => JSON.stringify(initialElements, null, 2));
-  const [sha256Hash, setSha256Hash] = useState<string>('e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855');
+  const [sha256Hash, setSha256Hash] = useState<string>('');
   const [syntaxError, setSyntaxError] = useState<string | null>(null);
   const [isPublishing, setIsPublishing] = useState<boolean>(false);
-  const [publishedVersions, setPublishedVersions] = useState<MapVersionMetadata[]>([
-    {
-      versionNumber: 1,
-      versionLabel: 'v1.0.0 Inicial Producción',
-      contentSha256Hash: '9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a',
-      totalElements: 2,
-      publishedAtIso: '2026-03-28T14:30:00Z',
-      publishedByEmail: 'dev@empresa.com',
-    },
-  ]);
+  const [publishError, setPublishError] = useState<string | null>(null);
+  const [publishedVersions, setPublishedVersions] = useState<MapVersionMetadata[]>([]);
 
   // Recalcula el SHA-256 y sincroniza cuando cambia el árbol de elementos
   useEffect(() => {
@@ -224,36 +189,54 @@ export function useFunctionalMapDualEditor(projectId: string) {
       if (syntaxError) {
         throw new Error('No es posible publicar un mapa con errores sintácticos o IDs duplicados.');
       }
+      if (resolvedProjectId === null) {
+        throw new Error('No se pudo resolver el proyecto activo: inicia sesión y recarga la vista.');
+      }
       setIsPublishing(true);
+      setPublishError(null);
 
       const nextVersionNumber = (publishedVersions[0]?.versionNumber ?? 0) + 1;
+      const resolvedLabel = versionLabel || `v${nextVersionNumber}.0.0`;
       const newVersionMeta: MapVersionMetadata = {
         versionNumber: nextVersionNumber,
-        versionLabel: versionLabel || `v${nextVersionNumber}.0.0`,
+        versionLabel: resolvedLabel,
         contentSha256Hash: sha256Hash,
         totalElements: elements.length,
         publishedAtIso: new Date().toISOString(),
       };
 
       try {
-        await fetch(`/api/v1/projects/${projectId}/functional-maps/publish`, {
+        const published = await backendFetch<{
+          readonly versionNumber?: number;
+          readonly versionLabel?: string;
+          readonly contentSha256Hash?: string;
+          readonly totalElements?: number;
+          readonly publishedAtIso?: string;
+        }>(`/api/v1/projects/${resolvedProjectId}/functional-maps/publish`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+          body: {
             versionLabel: newVersionMeta.versionLabel,
             sourceMode: 'DUAL_RAG_EDITOR',
             elements,
-          }),
+          },
         });
-      } catch {
-        // Fallback optimista
+        setPublishedVersions((prev) => [{
+          versionNumber: published.versionNumber ?? newVersionMeta.versionNumber,
+          versionLabel: published.versionLabel ?? resolvedLabel,
+          contentSha256Hash: published.contentSha256Hash ?? newVersionMeta.contentSha256Hash,
+          totalElements: published.totalElements ?? newVersionMeta.totalElements,
+          publishedAtIso: published.publishedAtIso ?? newVersionMeta.publishedAtIso,
+        }, ...prev]);
+        setIsPublishing(false);
+        return newVersionMeta;
+      } catch (caught: unknown) {
+        const message = caught instanceof Error ? caught.message : 'Error al publicar el mapa';
+        setPublishError(message);
+        setIsPublishing(false);
+        throw new Error(message);
       }
-
-      setPublishedVersions((prev) => [newVersionMeta, ...prev]);
-      setIsPublishing(false);
-      return newVersionMeta;
     },
-    [elements, projectId, publishedVersions, sha256Hash, syntaxError]
+    [elements, resolvedProjectId, publishedVersions, sha256Hash, syntaxError]
   );
 
   /**
@@ -261,17 +244,22 @@ export function useFunctionalMapDualEditor(projectId: string) {
    */
   const rollbackToVersion = useCallback(
     async (targetVersionNumber: number) => {
+      if (resolvedProjectId === null) {
+        throw new Error('No se pudo resolver el proyecto activo: inicia sesión y recarga la vista.');
+      }
+      setPublishError(null);
       try {
-        await fetch(`/api/v1/projects/${projectId}/functional-maps/rollback`, {
+        await backendFetch<unknown>(`/api/v1/projects/${resolvedProjectId}/functional-maps/rollback`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ targetVersionNumber }),
+          body: { targetVersionNumber },
         });
-      } catch {
-        // Fallback
+      } catch (caught: unknown) {
+        const message = caught instanceof Error ? caught.message : 'Error al restaurar la versión';
+        setPublishError(message);
+        throw new Error(message);
       }
     },
-    [projectId]
+    [resolvedProjectId]
   );
 
   return {
@@ -280,6 +268,7 @@ export function useFunctionalMapDualEditor(projectId: string) {
     sha256Hash,
     syntaxError,
     isPublishing,
+    publishError,
     publishedVersions,
     updateElementFromTree,
     removeElementFromTree,

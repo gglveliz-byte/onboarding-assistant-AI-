@@ -2,28 +2,34 @@
  * @archivo apps/web/src/components/prompt-studio/useAssistantPromptStudio.ts
  * @modulo 08-frontend-prompt-studio (Hook de Administración del Prompt del Asistente y Guardrails)
  * @proposito
- *   Administra el estado y la sincronización del System Prompt unificado, la configuración
- *   de motores de voz dual (Gemini 3.8 Live / Qwen3.8-Omni), los guardarrailes de ejecución
- *   estricta y el extractor de pasos secuenciales contra `PUT /api/v1/projects/:id/prompt`.
+ *   Administra el estado y la sincronización del System Prompt unificado, la configuración de
+ *   motores de voz dual (Gemini 3.8 Live / Qwen3.8-Omni), los guardarrailes de ejecución estricta
+ *   y el extractor de pasos secuenciales. La configuración SE LEE del proyecto real
+ *   (`GET /api/v1/projects`) y se guarda con `PUT /api/v1/projects/:id/prompt`: no se siembran
+ *   prompts ni pasos de demostración.
  *
  * @resumen_contenido
  *   - Interfaces: `OnboardingStep`, `AssistantPromptConfig`, `ExtractedRagAnchor`.
  *   - Función `extractRagAnchorsFromPrompt`: Parsea menciones `@[Título Elemento](id)`.
  *   - Hook `useAssistantPromptStudio`:
+ *       * Carga la configuración real del proyecto (prompt, pasos, motores, VAD y guardarraíles).
  *       * Sincronización bidireccional de configuración y pasos de onboarding.
  *       * Mutación segura contra el backend con feedback de guardado.
  *       * Extracción reactiva de anclas RAG presentes en el texto del prompt.
  *
  * @dependencias_internas
- *   - Ninguna (Lógica de estado y sincronización HTTP pura).
+ *   - `useProjects` (apps/web/src/components/dashboard-dev/useProjectsAndApiKeys.ts).
+ *   - `backendFetch` (apps/web/src/lib/api-client/http-client.ts).
  *
  * @tablas_bd_o_redis
- *   - PostgreSQL: `projects`, `prompt_versions`.
+ *   - PostgreSQL: `projects` (lectura), `prompt_versions` (escritura vía API REST).
  */
 
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useProjects } from '../dashboard-dev/useProjectsAndApiKeys';
+import { backendFetch } from '../../lib/api-client/http-client';
 
 export interface OnboardingStep {
   readonly id: string;
@@ -52,8 +58,32 @@ export interface ExtractedRagAnchor {
   readonly elementId: string;
 }
 
-/**
- * Extrae todas las menciones a elementos RAG en formato @[Título Elemento](id).
+/** Traducción de los códigos de motor que devuelve la API a las etiquetas del selector. */
+const VOICE_MODEL_BY_API_CODE: Readonly<Record<string, string>> = {
+  GEMINI_3_8_LIVE: 'gemini-3.8-live',
+  QWEN_3_8_OMNI_FLASH_REALTIME: 'qwen-3.8-omni',
+  QWEN_3_8_OMNI: 'qwen-3.8-omni',
+};
+
+/** Configuración vacía: se usa mientras el proyecto real todavía no ha llegado. */
+const EMPTY_CONFIG: AssistantPromptConfig = {
+  primaryVoiceModel: 'gemini-3.8-live',
+  fallbackVoiceModel: 'qwen-3.8-omni',
+  speechSpeed: 1,
+  vadBargeInSensitivity: 'MEDIUM',
+  modelTemperature: 0.2,
+  systemPrompt: '',
+  onboardingSteps: [],
+  strictStepEnforcement: true,
+  askConfirmationBeforeSubmit: true,
+};
+
+/** Determina si un valor desconocido es un registro JSON indexable. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Extrae todas las menciones a elementos RAG en formato @[Título Elemento](id).
  */
 export function extractRagAnchorsFromPrompt(text: string): ExtractedRagAnchor[] {
   const regex = /@\[([^\]]+)\]\(([^)]+)\)/g;
@@ -67,52 +97,84 @@ export function extractRagAnchorsFromPrompt(text: string): ExtractedRagAnchor[] 
   return matches;
 }
 
-export function useAssistantPromptStudio(projectId: string) {
-  const initialConfig: AssistantPromptConfig = useMemo(
-    () => ({
-      primaryVoiceModel: 'gemini-3.8-live',
-      fallbackVoiceModel: 'qwen-3.8-omni',
-      speechSpeed: 1.0,
-      vadBargeInSensitivity: 'MEDIUM',
-      modelTemperature: 0.2,
-      systemPrompt: `# Rol del Asistente
-Eres el Guía Inteligente de Onboarding de la plataforma. Tu objetivo es acompañar al usuario paso a paso con voz natural, cálida y ejecutiva.
+/** Traduce el nivel de sensibilidad VAD del backend a la etiqueta del selector. */
+function coerceVadSensitivity(value: unknown): 'LOW' | 'MEDIUM' | 'HIGH' {
+  if (value === 'LOW' || value === 'HIGH') {
+    return value;
+  }
+  return 'MEDIUM';
+}
 
-## Reglas de Interacción
-1. Saluda al usuario por su nombre {{user.name}} de la empresa {{company.name}}.
-2. Para crear una factura, indícale presionar @[Botón Crear Factura](elem_factura_btn).
-3. Cuando el modal se abra, solicita el RFC en @[Campo Identificación Fiscal / RFC](elem_rfc_input).
-4. Jamás solicites contraseñas ni números completos de tarjetas de crédito.`,
-      onboardingSteps: [
-        {
-          id: 'step_01',
-          stepNumber: 1,
-          title: 'Iniciar Emisión de Factura',
-          instruction: 'Haz click en el botón de Crear Factura para comenzar.',
-          targetElementId: 'elem_factura_btn',
-          targetRoutePattern: '/dashboard/invoices',
-          completionCondition: 'element_clicked',
-        },
-        {
-          id: 'step_02',
-          stepNumber: 2,
-          title: 'Llenado de Identificación Fiscal',
-          instruction: 'Escribe el RFC o identificación fiscal del cliente.',
-          targetElementId: 'elem_rfc_input',
-          targetRoutePattern: '/dashboard/invoices/new',
-          completionCondition: 'input_filled',
-        },
-      ],
-      strictStepEnforcement: true,
-      askConfirmationBeforeSubmit: true,
-    }),
-    []
-  );
+/** Convierte un paso de onboarding almacenado por el backend a la forma de la interfaz. */
+function coerceStep(raw: unknown, index: number): OnboardingStep | null {
+  if (!isRecord(raw)) {
+    return null;
+  }
+  const title = raw['title'];
+  const instruction = raw['instruction'];
+  if (typeof title !== 'string' || typeof instruction !== 'string') {
+    return null;
+  }
+  const id = raw['id'];
+  const stepNumber = raw['stepNumber'];
+  const targetElementId = raw['targetElementId'];
+  const targetRoutePattern = raw['targetRoutePattern'];
+  const completionCondition = raw['completionCondition'];
+  return {
+    id: typeof id === 'string' && id.length > 0 ? id : `step_${index + 1}`,
+    stepNumber: typeof stepNumber === 'number' ? stepNumber : index + 1,
+    title,
+    instruction,
+    ...(typeof targetElementId === 'string' && targetElementId.length > 0 ? { targetElementId } : {}),
+    targetRoutePattern: typeof targetRoutePattern === 'string' ? targetRoutePattern : '/',
+    completionCondition: completionCondition === 'input_filled' || completionCondition === 'route_reached'
+      ? completionCondition
+      : 'element_clicked',
+  };
+}
 
-  const [config, setConfig] = useState<AssistantPromptConfig>(initialConfig);
+/**
+ * Hook de administración del Prompt del asistente y sus guardarrailes.
+ *
+ * @param projectRef - Segmento de la URL del proyecto (UUID o slug).
+ */
+export function useAssistantPromptStudio(projectRef: string) {
+  const { projects, loading: isLoadingProjects, error: projectsError } = useProjects();
+  const [config, setConfig] = useState<AssistantPromptConfig>(EMPTY_CONFIG);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const hydratedProjectIdRef = useRef<string | null>(null);
+
+  const project = useMemo((): (typeof projects)[number] | undefined => {
+    return projects.find((item) => item.id === projectRef || item.slug === projectRef);
+  }, [projects, projectRef]);
+
+  // Hidrata la configuración con los datos REALES del proyecto una sola vez por proyecto.
+  useEffect((): void => {
+    if (project === undefined) {
+      return;
+    }
+    if (hydratedProjectIdRef.current === project.id) {
+      return;
+    }
+    hydratedProjectIdRef.current = project.id;
+    const primaryVoiceModel = project.primaryVoiceModel ?? '';
+    const fallbackVoiceModel = project.fallbackVoiceModel ?? '';
+    setConfig({
+      primaryVoiceModel: VOICE_MODEL_BY_API_CODE[primaryVoiceModel] ?? (primaryVoiceModel.length > 0 ? primaryVoiceModel : EMPTY_CONFIG.primaryVoiceModel),
+      fallbackVoiceModel: VOICE_MODEL_BY_API_CODE[fallbackVoiceModel] ?? (fallbackVoiceModel.length > 0 ? fallbackVoiceModel : EMPTY_CONFIG.fallbackVoiceModel),
+      speechSpeed: typeof project.speechSpeed === 'number' ? project.speechSpeed : EMPTY_CONFIG.speechSpeed,
+      vadBargeInSensitivity: coerceVadSensitivity(project.vadBargeInSensitivity),
+      modelTemperature: typeof project.modelTemperature === 'number' ? project.modelTemperature : EMPTY_CONFIG.modelTemperature,
+      systemPrompt: project.systemPrompt ?? '',
+      onboardingSteps: (project.onboardingStepsJson ?? [])
+        .map(coerceStep)
+        .filter((step): step is OnboardingStep => step !== null),
+      strictStepEnforcement: project.strictStepEnforcement ?? EMPTY_CONFIG.strictStepEnforcement,
+      askConfirmationBeforeSubmit: project.askConfirmationBeforeSubmit ?? EMPTY_CONFIG.askConfirmationBeforeSubmit,
+    });
+  }, [project]);
 
   // Anclas RAG extraídas en tiempo real del prompt
   const extractedAnchors = useMemo(
@@ -126,15 +188,18 @@ Eres el Guía Inteligente de Onboarding de la plataforma. Tu objetivo es acompa�
   }, []);
 
   const savePromptConfig = useCallback(async () => {
+    if (project === undefined) {
+      setSaveError('No se pudo resolver el proyecto activo: la sesión no tiene proyectos disponibles.');
+      return;
+    }
     setIsSaving(true);
     setSaveError(null);
     setSaveSuccess(false);
 
     try {
-      const response = await fetch(`/api/v1/projects/${projectId}/prompt`, {
+      await backendFetch<unknown>(`/api/v1/projects/${project.id}/prompt`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: {
           systemPrompt: config.systemPrompt,
           onboardingStepsJson: config.onboardingSteps,
           primaryVoiceModel: config.primaryVoiceModel,
@@ -142,22 +207,17 @@ Eres el Guía Inteligente de Onboarding de la plataforma. Tu objetivo es acompa�
           modelTemperature: config.modelTemperature,
           strictStepEnforcement: config.strictStepEnforcement,
           askConfirmationBeforeSubmit: config.askConfirmationBeforeSubmit,
-        }),
+        },
       });
-
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.message || 'Error al actualizar el System Prompt');
-      }
 
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 4000);
-    } catch (err: any) {
-      setSaveError(err.message || 'Error de red al guardar');
+    } catch (err: unknown) {
+      setSaveError(err instanceof Error ? err.message : 'Error de red al guardar');
     } finally {
       setIsSaving(false);
     }
-  }, [config, projectId]);
+  }, [config, project]);
 
   return {
     config,
@@ -165,6 +225,9 @@ Eres el Guía Inteligente de Onboarding de la plataforma. Tu objetivo es acompa�
     isSaving,
     saveSuccess,
     saveError,
+    isLoading: isLoadingProjects,
+    loadError: projectsError,
+    projectFound: project !== undefined,
     updateConfig,
     savePromptConfig,
   };

@@ -89,6 +89,29 @@ export default function VisualTrainerPage() {
           onEndSession={endSession}
         />
 
+        {/* Aviso explícito: el lienzo del visor es una simulación local */}
+        {state.simulationMessage !== null ? (
+          <div
+            className="px-3 py-2 bg-[#c08532]/10 border border-[#c08532]/40 text-[12px] font-sans text-[#7a5a1f]"
+            style={{ borderRadius: '4px' }}
+            role="status"
+            data-testid="trainer-simulation-notice"
+          >
+            {state.simulationMessage}
+          </div>
+        ) : (
+          <div
+            className="px-3 py-2 bg-[#f2f1ed] border border-[#cdcdc9] text-[11px] font-sans text-[#84847e]"
+            style={{ borderRadius: '4px' }}
+            role="note"
+            data-testid="trainer-simulation-hint"
+          >
+            El backend todavía no expone la sesión de entrenamiento remoto
+            (<span className="font-mono">POST /api/v1/projects/:id/training-sessions</span>): el lienzo y las
+            inspecciones son sintéticas y no hay un Chromium remoto conectado.
+          </div>
+        )}
+
         {/* Cuerpo Principal Dividido: Lienzo de Stream + Panel de Elementos Retráctil */}
         <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
           {/* 1. Lienzo Interactivo con Overlay (evita colapsar a 0px en < 1024px) */}

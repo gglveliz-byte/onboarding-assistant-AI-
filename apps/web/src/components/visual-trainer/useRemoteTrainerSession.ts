@@ -26,6 +26,7 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { BackendHttpError, backendFetch } from '../../lib/api-client/http-client';
 
 export type TrainingSessionMode = 'ACTIVE_NAVIGATION_MODE' | 'ACTIVE_CAPTURE_OVERLAY_MODE';
 
@@ -46,6 +47,8 @@ export interface InspectedElementMetadata {
   readonly boundingBox: BoundingBox;
   readonly isSensitive: boolean;
   readonly textSnippet?: string;
+  /** `true` cuando el nodo fue sintetizado en cliente y no proviene del navegador remoto. */
+  readonly isSynthetic?: boolean;
 }
 
 export interface TaggedElementPayload {
@@ -74,6 +77,9 @@ export interface TrainingSessionState {
   readonly isConnecting: boolean;
   readonly ssrfBlockedMessage: string | null;
   readonly lastInspectLatencyMs: number;
+  /** `true` cuando el backend no expone la sesión de entrenamiento y se opera en modo simulado. */
+  readonly simulationMode: boolean;
+  readonly simulationMessage: string | null;
 }
 
 export function useRemoteTrainerSession(projectId: string) {
@@ -81,13 +87,15 @@ export function useRemoteTrainerSession(projectId: string) {
     sessionId: null,
     containerId: null,
     currentMode: 'ACTIVE_NAVIGATION_MODE',
-    targetUrl: 'https://demo-app.internal/dashboard',
+    targetUrl: '',
     validatedUrl: null,
     pinnedIp: null,
     isConnected: false,
     isConnecting: false,
     ssrfBlockedMessage: null,
     lastInspectLatencyMs: 4,
+    simulationMode: false,
+    simulationMessage: null,
   });
 
   const [inspectedElement, setInspectedElement] = useState<InspectedElementMetadata | null>(null);
@@ -127,56 +135,60 @@ export function useRemoteTrainerSession(projectId: string) {
       }
 
       try {
-        const response = await fetch(`/api/v1/projects/${projectId}/training-sessions`, {
+        const sessionData = await backendFetch<{
+          readonly trainingSessionId?: string;
+          readonly containerId?: string;
+          readonly validatedUrl?: string;
+          readonly pinnedIp?: string;
+        }>(`/api/v1/projects/${projectId}/training-sessions`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+          body: {
             initialUrl: urlToTrain,
             accessChannel: 'DASHBOARD_UI',
-          }),
+          },
         });
 
-        if (response.status === 403) {
-          const errData = await response.json().catch(() => ({}));
+        setState((prev) => ({
+          ...prev,
+          sessionId: sessionData.trainingSessionId ?? null,
+          containerId: sessionData.containerId ?? null,
+          validatedUrl: sessionData.validatedUrl ?? urlToTrain,
+          pinnedIp: sessionData.pinnedIp ?? null,
+          isConnected: true,
+          isConnecting: false,
+          simulationMode: false,
+          simulationMessage: null,
+        }));
+        return;
+      } catch (caught: unknown) {
+        const status = caught instanceof BackendHttpError ? caught.httpStatus : 0;
+        const message = caught instanceof Error ? caught.message : 'HTTP desconocido';
+        if (status === 403) {
           setState((prev) => ({
             ...prev,
             isConnecting: false,
             isConnected: false,
-            ssrfBlockedMessage:
-              errData.message ||
-              'SSRF_BLOCKED_IP_RANGE: Acceso denegado por políticas de ciberseguridad Anti-SSRF (DNS Pinning).',
+            ssrfBlockedMessage: message,
           }));
           return;
         }
-
-        if (response.ok) {
-          const sessionData = await response.json();
-          setState((prev) => ({
-            ...prev,
-            sessionId: sessionData.trainingSessionId,
-            containerId: sessionData.containerId,
-            validatedUrl: sessionData.validatedUrl ?? urlToTrain,
-            pinnedIp: sessionData.pinnedIp ?? '142.250.190.46',
-            isConnected: true,
-            isConnecting: false,
-          }));
-          return;
-        }
-      } catch {
-        // Fallback para ejecución en modo simulado de sandbox
+        // El backend todavía no expone la sesión de entrenamiento: se avisa de forma explícita
+        // y se opera en modo simulado, sin presentarlo como una sesión real.
+        setState((prev) => ({
+          ...prev,
+          sessionId: `sim_${Math.random().toString(36).substring(2, 9)}`,
+          containerId: null,
+          validatedUrl: urlToTrain,
+          pinnedIp: null,
+          isConnected: true,
+          isConnecting: false,
+          simulationMode: true,
+          simulationMessage:
+            `MODO SIMULACIÓN: el backend no expone la sesión de entrenamiento remoto (${message}). `
+            + 'El lienzo y las inspecciones son sintéticas; no hay navegador remoto conectado.',
+        }));
+        return;
       }
-
-      // Inicialización de sesión simulada para desarrollo
-      const generatedSessionId = `trn_${Math.random().toString(36).substring(2, 9)}`;
-      setState((prev) => ({
-        ...prev,
-        sessionId: generatedSessionId,
-        containerId: `docker_cdp_${Math.random().toString(36).substring(2, 8)}`,
-        validatedUrl: urlToTrain,
-        pinnedIp: '198.51.100.24',
-        isConnected: true,
-        isConnecting: false,
-      }));
     },
     [projectId]
   );
@@ -241,6 +253,7 @@ export function useRemoteTrainerSession(projectId: string) {
         },
         isSensitive: isSensitiveField,
         textSnippet: isSensitiveField ? '••• Privado •••' : 'Crear Nueva Factura',
+        isSynthetic: true,
       };
 
       setInspectedElement(mockInspected);

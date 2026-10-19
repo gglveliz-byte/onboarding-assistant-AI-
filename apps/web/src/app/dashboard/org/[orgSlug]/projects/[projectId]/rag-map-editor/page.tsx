@@ -47,6 +47,7 @@ export default function RagMapEditorPage() {
     sha256Hash,
     syntaxError,
     isPublishing,
+    publishError,
     publishedVersions,
     updateElementFromTree,
     removeElementFromTree,
@@ -76,6 +77,17 @@ export default function RagMapEditorPage() {
           onPublish={publishMapVersion}
           onRollback={rollbackToVersion}
         />
+
+        {/* Avisos honestos del editor: mapa vacío de partida y errores de publicación */}
+        <div className="px-3 py-2 bg-[#f2f1ed] border-b border-[#cdcdc9] text-[11px] font-sans text-[#84847e] flex flex-col gap-1">
+          <span>
+            El editor arranca vacío: el backend todavía no expone la lectura del mapa publicado ni su
+            historial de versiones, así que no se muestran elementos de ejemplo.
+          </span>
+          {publishError !== null && (
+            <span className="text-[#cf2d56]">{publishError}</span>
+          )}
+        </div>
 
         {/* Conmutador de Pestañas Segmentadas en Móvil (< md) para evitar aplastar paneles */}
         <div className="md:hidden flex items-center p-2.5 bg-[#f2f1ed] border-b border-[#cdcdc9] shrink-0">
