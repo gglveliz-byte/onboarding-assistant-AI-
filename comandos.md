@@ -132,3 +132,45 @@ npm run verify:part15      # Batería: check:lines + typecheck + public-sdk
 - **«El puerto ya está en uso»** → usa el bloque de la sección 6️⃣ y reintenta.
 - **La demo no responde a la voz** → confirma que el servicio `:3002` está arriba y que `.env` tiene las claves de voz (`GEMINI_LIVE_*`, `VOICE_PROVIDER_*`).
 - **El front muestra datos viejos** → el API `:3000` debe estar arriba; el proxy de desarrollo lo reenvía desde `:3001`.
+
+---
+
+# 🌐 Guía del Servidor VPS en Producción (Hetzner CX23)
+
+### 📌 Datos de Acceso
+- **IP:** `2.31.37.155`
+- **Usuario:** `root`
+- **Contraseña:** `NeuroChat2026!Onboarding` *(Actualizada en el primer ingreso obligatorio de Hetzner)*
+- **Dominio Gratis Activo con SSL:** [https://2.31.37.155.sslip.io](https://2.31.37.155.sslip.io)
+
+### 💻 Cómo conectarte desde tu PowerShell o CMD:
+```powershell
+ssh root@2.31.37.155
+```
+*(Escribes o pegas la contraseña `NeuroChat2026!Onboarding` y presionas Enter)*
+
+### 📊 Cómo ver los terminales y procesos en el VPS:
+En el servidor no usamos terminales abiertas una por una porque si cierras la ventana se apagarían. En su lugar, usamos **PM2** (Process Manager 2):
+
+```bash
+# 1. Ver la lista de microservicios y su estado (online, RAM, CPU):
+pm2 list
+
+# 2. Ver la consola y logs en vivo de todos los microservicios:
+pm2 logs
+
+# 3. Ver logs de un servicio específico:
+pm2 logs oa-web      # Frontend Next.js
+pm2 logs oa-api      # Backend Fastify
+pm2 logs oa-voice    # Gateway de Voz WebSocket
+
+# 4. Monitor gráfico interactivo estilo consola:
+pm2 monit
+
+# 5. Reiniciar servicios tras actualizar código:
+cd /var/www/onboarding-assistant
+git pull origin main
+npm run build:web
+pm2 restart all
+```
+
