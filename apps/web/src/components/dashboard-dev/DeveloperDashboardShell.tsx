@@ -29,6 +29,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { setAccessToken } from '../../lib/api-client/http-client';
 import { useDashboardWorkspace } from './useDashboardWorkspace';
 import {
   EnvironmentModeBadge,
@@ -67,8 +68,22 @@ export function DeveloperDashboardShell({
   children,
 }: DeveloperDashboardShellProps) {
   const pathname = usePathname();
+  const isTrainerRoute = Boolean(pathname?.includes('/visual-trainer'));
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(isTrainerRoute);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const workspace = useDashboardWorkspace(projectId);
+
+  const handleLogout = async (): Promise<void> => {
+    try {
+      await fetch('/api/v1/auth/logout', { credentials: 'include', method: 'POST' });
+    } catch {
+      /* Red o token ya revocado */
+    }
+    setAccessToken(null);
+    if (typeof window !== 'undefined') {
+      window.location.replace('/auth/login');
+    }
+  };
 
   // Hechos reales: rol del token de la sesión, proyectos del tenant y saldo del ciclo.
   const session = workspace.session;
@@ -123,7 +138,7 @@ export function DeveloperDashboardShell({
 
   return (
     <div
-      className="min-h-screen flex bg-[#f7f7f4] text-[#26251e] font-sans selection:bg-[#8BC4F8] selection:text-[#26251e]"
+      className={`${isTrainerRoute ? 'h-screen overflow-hidden' : 'min-h-screen'} flex bg-[#f7f7f4] text-[#26251e] font-sans selection:bg-[#8BC4F8] selection:text-[#26251e]`}
       data-portal="workspace-atelier"
     >
       {/* Backdrop táctil oscurecido (#26251e/40) en < md */}
@@ -135,9 +150,11 @@ export function DeveloperDashboardShell({
         />
       )}
 
-      {/* Barra lateral Drawer deslizante: fija a la izquierda en < md, estática w-[220px] md:w-56 en desktop */}
+      {/* Barra lateral Drawer: fija a la izquierda en < md, colapsable en desktop */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 md:static w-[220px] md:w-56 flex-shrink-0 bg-[#f2f1ed] border-r border-[#cdcdc9] flex flex-col justify-between select-none transform transition-transform duration-200 ease-in-out ${
+        className={`fixed inset-y-0 left-0 z-50 md:static ${
+          isSidebarCollapsed ? 'md:hidden' : 'md:w-56'
+        } w-[220px] flex-shrink-0 bg-[#f2f1ed] border-r border-[#cdcdc9] flex flex-col justify-between select-none transform transition-transform duration-200 ease-in-out ${
           isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
         }`}
         aria-label="Navegación principal del dashboard"
@@ -196,7 +213,7 @@ export function DeveloperDashboardShell({
           </nav>
         </div>
 
-        {/* Pie de Sidebar con Rol y Documentación */}
+        {/* Pie de Sidebar con Rol, Documentación y Cerrar Sesión */}
         <div className="p-3 border-t border-[#cdcdc9] space-y-2">
           <div className="flex items-center justify-between px-2 text-[11px] text-[#84847e] font-mono">
             <span>Rol:</span>
@@ -210,12 +227,22 @@ export function DeveloperDashboardShell({
           >
             Ver Documentación Técnica
           </Link>
+          {hasSession && (
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="w-full text-center px-3 py-1.5 text-xs text-[#cf2d56] hover:bg-[#cf2d56]/10 border border-[#cf2d56]/30 rounded transition-colors cursor-pointer"
+              style={{ borderRadius: '4px' }}
+            >
+              Cerrar Sesión
+            </button>
+          )}
         </div>
       </aside>
 
       {/* Contenedor Principal */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Barra Superior Fija con botón hamburguesa accesible en < md */}
+        {/* Barra Superior Fija con botones hamburguesa y colapso de escritorio */}
         <header className="h-11 px-3 sm:px-6 bg-[#f7f7f4] border-b border-[#cdcdc9] flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-2 sm:gap-3">
             <button
@@ -228,6 +255,24 @@ export function DeveloperDashboardShell({
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+
+            {/* Toggle de barra lateral en escritorio (Pantalla Completa) */}
+            <button
+              type="button"
+              onClick={() => setIsSidebarCollapsed((prev) => !prev)}
+              className="hidden md:inline-flex items-center justify-center p-1.5 text-[#26251e] bg-[#f2f1ed] hover:bg-[#e6e5e0] border border-[#cdcdc9] rounded transition-colors cursor-pointer"
+              style={{ borderRadius: '4px' }}
+              aria-label={isSidebarCollapsed ? 'Expandir barra lateral' : 'Ocultar barra lateral'}
+              title={isSidebarCollapsed ? 'Expandir menú de navegación' : 'Ocultar menú para pantalla completa'}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                {isSidebarCollapsed ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h7M4 18h16" />
+                )}
               </svg>
             </button>
 
@@ -283,7 +328,15 @@ export function DeveloperDashboardShell({
         )}
 
         {/* Lienzo de Contenido */}
-        <main className="flex-1 overflow-auto p-3 sm:p-4 bg-[#f7f7f4]">{children}</main>
+        <main
+          className={`flex-1 ${
+            isTrainerRoute
+              ? 'p-0 overflow-hidden h-[calc(100vh-2.75rem)] flex flex-col min-h-0'
+              : 'overflow-auto p-3 sm:p-4'
+          } bg-[#f7f7f4]`}
+        >
+          {children}
+        </main>
       </div>
     </div>
   );

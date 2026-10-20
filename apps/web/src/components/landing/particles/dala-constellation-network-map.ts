@@ -1,344 +1,459 @@
 /**
  * @archivo apps/web/src/components/landing/particles/dala-constellation-network-map.ts
- * @modulo apps/web/src/components/landing/particles (Constelación Dala de fondo — Grafo Neuronal RAG 3D)
+ * @modulo apps/web/src/components/landing/particles (Constelación Dala — Isotipo Oficial 3D del Logotipo)
  * @proposito
- *   Geometría analítica pura del Grafo Neuronal y Memoria RAG 3D:
- *   Sustituye cualquier nube informe por una escultura icónica con silueta reconocible al instante:
- *   - 15 nodos neuronales con anillos circulares definidos (núcleo central SHA-256 dorado radiante,
- *     anillo interior cognitivo en rombo y anillo exterior de efectores y percepción).
- *   - 32 vías axonales nítidas con amplio espacio negativo (sin cruces masivos que empasten).
- *   - 2 anillos giroscópicos orbitales que abrazan el núcleo SHA-256.
- *   - Polvo de fondo sutil y disperso que da profundidad sin ensuciar la silueta central.
+ *   Mapeo analítico y renderizado vectorial 100% exacto del Isotipo Oficial de Onboarding Assistant (Logo.tsx):
+ *   Modela el Prisma Neuronal Hexagonal Facetado con su Diamante Central (Saffron Spark)
+ *   en proporciones 1:1 directas del SVG vectorial:
+ *   - 16 aristas estructurales de trazo continuo y denso que dibujan el contorno y las líneas del prisma.
+ *   - Diamante Central en relieve frontal (+16 Z) en oro radiante (#ffb829, #ffe680).
+ *   - Facetas Superiores completas en Violeta Electric Iris (#8052ff, #9b72ff).
+ *   - Facetas Inferiores completas en Verde Esmeralda Deep Verdant (#15846e, #00b894).
+ *   - Facetas Laterales completas en transición (#297775, #6653c7).
+ *   - Función `drawLogoPrismStructure`: proyecta y traza la geometría estructural del prisma con
+ *     facetas translúcidas de cristal, aristas continuas y nodos de bioluminiscencia en los vértices.
  *
  * @resumen_contenido
- *   - `GRAPH_NODES`: 15 nodos con posiciones 3D, roles, radios y colores Auros.
- *   - `GRAPH_EDGES`: 32 conexiones axonales seleccionadas con aire y respiración visual.
- *   - `ORBITAL_RINGS`: 2 órbitas inclinadas que rodean el núcleo SHA-256.
- *   - `resolveNetworkSample(index)`: resuelve nodos, axones, órbitas o polvo ambiental en O(1).
+ *   - Vértices del prisma escalados a 3.4x del viewBox 100x100 de Logo.tsx (ancho ~260, alto ~300).
+ *   - `OFFICIAL_EDGES`: 16 aristas vectoriales oficiales (contorno hexagonal + radios + diamante).
+ *   - `OFFICIAL_FACETS`: 14 facetas triangulares del logotipo que cubren la geometría 100% sin huecos.
+ *   - `resolveNetworkSample(index)`: resolución determinista O(1) de aristas, diamante y facetas.
+ *   - `drawLogoPrismStructure(params)`: dibuja el prisma oficial con facetas vítreas, aristas y nodos.
  *
  * @dependencias_internas
- *   - `./dala-constellation-geometry` (paleta, hash y tipo `NetworkSample`).
+ *   - `./dala-constellation-geometry` (paleta de colores, función hash y tipo `NetworkSample`).
  *
  * @dependencias_externas
- *   - Ninguna.
+ *   - Ninguna (utilidad matemática pura sin efectos secundarios de red).
  *
  * @tablas_bd_o_redis
- *   - Ninguna (módulo puramente matemático de renderizado 3D).
+ *   - Ninguna (módulo puramente matemático de presentación).
  */
 
 import { BACKDROP_COLORS as COLORS, hash, type NetworkSample } from './dala-constellation-geometry';
 
-/** Nodo funcional del grafo neuronal con posición tridimensional y parámetros de anillo. */
-interface GraphNode {
+export interface Point3D {
   readonly x: number;
   readonly y: number;
   readonly z: number;
+}
+
+// -----------------------------------------------------------------------------
+// VÉRTICES EXACTOS DEL LOGOTIPO OFICIAL (Centro en 50,50 de Logo.tsx x 3.4)
+// -----------------------------------------------------------------------------
+
+/** 6 Vértices del contorno hexagonal exterior (Logo.tsx: 50,6 | 88,28 | 88,72 | 50,94 | 12,72 | 12,28) */
+const P_TOP: Point3D = { x: 0, y: -149.6, z: 0 };
+const P_TR: Point3D = { x: 129.2, y: -74.8, z: 8 };
+const P_BR: Point3D = { x: 129.2, y: 74.8, z: -8 };
+const P_BOTTOM: Point3D = { x: 0, y: 149.6, z: 0 };
+const P_BL: Point3D = { x: -129.2, y: 74.8, z: 8 };
+const P_TL: Point3D = { x: -129.2, y: -74.8, z: -8 };
+
+/** 4 Vértices del Diamante Central (Logo.tsx: 50,22 | 72,50 | 50,78 | 28,50) con relieve frontal */
+const D_TOP: Point3D = { x: 0, y: -95.2, z: 16 };
+const D_RIGHT: Point3D = { x: 74.8, y: 0, z: 16 };
+const D_BOTTOM: Point3D = { x: 0, y: 95.2, z: 16 };
+const D_LEFT: Point3D = { x: -74.8, y: 0, z: 16 };
+const D_CORE: Point3D = { x: 0, y: 0, z: 28 }; // Cúspide frontal en relieve del diamante de oro
+
+// -----------------------------------------------------------------------------
+// MALLA DE 16 ARISTAS DEL LOGOTIPO (Líneas vectoriales nítidas continuas)
+// -----------------------------------------------------------------------------
+
+interface LogoEdge {
+  readonly a: Point3D;
+  readonly b: Point3D;
+  readonly colorA: string;
+  readonly colorB: string;
+  readonly isDiamond?: boolean;
+}
+
+const OFFICIAL_EDGES: readonly LogoEdge[] = [
+  // Contorno hexagonal exterior (6 aristas)
+  { a: P_TOP, b: P_TR, colorA: '#9b72ff', colorB: COLORS.violet },
+  { a: P_TR, b: P_BR, colorA: COLORS.violet, colorB: COLORS.teal },
+  { a: P_BR, b: P_BOTTOM, colorA: COLORS.teal, colorB: '#00b894' },
+  { a: P_BOTTOM, b: P_BL, colorA: '#00b894', colorB: COLORS.teal },
+  { a: P_BL, b: P_TL, colorA: COLORS.teal, colorB: COLORS.violet },
+  { a: P_TL, b: P_TOP, colorA: COLORS.violet, colorB: '#9b72ff' },
+
+  // Líneas interiores que conectan vértices exteriores con el diamante (6 aristas)
+  { a: P_TOP, b: D_TOP, colorA: '#9b72ff', colorB: COLORS.amberBright },
+  { a: P_BOTTOM, b: D_BOTTOM, colorA: '#00b894', colorB: COLORS.amberBright },
+  { a: P_TL, b: D_LEFT, colorA: COLORS.violet, colorB: COLORS.amberRim },
+  { a: P_BL, b: D_LEFT, colorA: COLORS.teal, colorB: COLORS.amberRim },
+  { a: P_TR, b: D_RIGHT, colorA: COLORS.violet, colorB: COLORS.amberBright },
+  { a: P_BR, b: D_RIGHT, colorA: COLORS.teal, colorB: COLORS.amberBright },
+
+  // Perímetro del Diamante Central (4 aristas doradas)
+  { a: D_TOP, b: D_RIGHT, colorA: COLORS.amberBright, colorB: '#ffe680', isDiamond: true },
+  { a: D_RIGHT, b: D_BOTTOM, colorA: '#ffe680', colorB: COLORS.amberBright, isDiamond: true },
+  { a: D_BOTTOM, b: D_LEFT, colorA: COLORS.amberBright, colorB: '#ffe680', isDiamond: true },
+  { a: D_LEFT, b: D_TOP, colorA: '#ffe680', colorB: COLORS.amberBright, isDiamond: true },
+];
+
+// -----------------------------------------------------------------------------
+// FACETAS TRIANGULARES EXACTAS DEL LOGOTIPO (14 triángulos que cubren las caras)
+// -----------------------------------------------------------------------------
+
+interface LogoFacet {
+  readonly v0: Point3D;
+  readonly v1: Point3D;
+  readonly v2: Point3D;
   readonly color: string;
-  readonly isCore: boolean;
-  readonly ringRadius: number;
-  readonly phase: number;
+  readonly isDiamond?: boolean;
 }
 
-/**
- * 15 nodos distribuidos en una topología elíptica icónica (ancho 270, alto 220, profundidad 60):
- * - Nodo 0: Núcleo central SHA-256 en (0, 0, 0), prominente y radiante.
- * - Nodos 1-4: Anillo cognitivo intermedio en rombo a radio ~68 unidades.
- * - Nodos 5-14: Anillo sensorial y efector exterior a radio ~125 unidades.
- */
-const GRAPH_NODES: readonly GraphNode[] = [
-  // 0. Núcleo central SHA-256 (ancla dorada brillante)
-  { x: 0, y: 0, z: 0, color: COLORS.amberBright, isCore: true, ringRadius: 18, phase: 0.0 },
+const OFFICIAL_FACETS: readonly LogoFacet[] = [
+  // Diamante Central: 4 triángulos hacia la cúspide frontal D_CORE (Saffron Spark)
+  { v0: D_TOP, v1: D_RIGHT, v2: D_CORE, color: '#ffe680', isDiamond: true },
+  { v0: D_RIGHT, v1: D_BOTTOM, v2: D_CORE, color: COLORS.amberBright, isDiamond: true },
+  { v0: D_BOTTOM, v1: D_LEFT, v2: D_CORE, color: COLORS.amberRim, isDiamond: true },
+  { v0: D_LEFT, v1: D_TOP, v2: D_CORE, color: '#ffe680', isDiamond: true },
 
-  // Anillo intermedio cognitivo (rombo a radio ~68)
-  { x: -68, y: -12, z: 20, color: COLORS.cyan, isCore: false, ringRadius: 11, phase: 0.8 }, // 1. Percepción
-  { x: 68, y: -12, z: -20, color: COLORS.amberRim, isCore: false, ringRadius: 11, phase: 1.6 }, // 2. Ejecución
-  { x: 0, y: -68, z: -18, color: COLORS.violet, isCore: false, ringRadius: 11, phase: 2.4 }, // 3. Prompts / Razonamiento
-  { x: 0, y: 68, z: 18, color: COLORS.teal, isCore: false, ringRadius: 11, phase: 3.2 }, // 4. Memoria Vectorial HNSW
+  // Faceta Superior Derecha (cuadrilátero descompuesto en 2 triángulos)
+  { v0: P_TOP, v1: P_TR, v2: D_TOP, color: '#9b72ff' },
+  { v0: P_TR, v1: D_RIGHT, v2: D_TOP, color: '#8052ff' },
 
-  // Anillo exterior perceptual y de acciones (radio ~120 - 135 con amplio espacio negativo)
-  { x: -130, y: -58, z: -24, color: COLORS.cyan, isCore: false, ringRadius: 8.5, phase: 0.4 }, // 5. Audio / VAD Gate
-  { x: -140, y: 0, z: 28, color: COLORS.teal, isCore: false, ringRadius: 8.5, phase: 1.1 }, // 6. Observador DOM
-  { x: -120, y: 60, z: -18, color: COLORS.cyan, isCore: false, ringRadius: 8.5, phase: 1.8 }, // 7. Inspector CDP
-  { x: -50, y: -112, z: 22, color: COLORS.violet, isCore: false, ringRadius: 8.5, phase: 2.5 }, // 8. Clasificador
-  { x: 50, y: -112, z: -22, color: COLORS.magenta, isCore: false, ringRadius: 8.5, phase: 3.1 }, // 9. Guardrails
-  { x: 122, y: -54, z: 25, color: COLORS.amberBright, isCore: false, ringRadius: 8.5, phase: 3.7 }, // 10. Click DOM
-  { x: 138, y: 4, z: -24, color: COLORS.amberRim, isCore: false, ringRadius: 8.5, phase: 4.3 }, // 11. Type DOM
-  { x: 118, y: 62, z: 18, color: COLORS.violet, isCore: false, ringRadius: 8.5, phase: 4.9 }, // 12. Auditoría SOC2
-  { x: 52, y: 110, z: -20, color: COLORS.amberBright, isCore: false, ringRadius: 8.5, phase: 5.5 }, // 13. Tarificación
-  { x: -52, y: 110, z: 20, color: COLORS.teal, isCore: false, ringRadius: 8.5, phase: 6.1 }, // 14. Embeddings 1536d
+  // Faceta Superior Izquierda (cuadrilátero descompuesto en 2 triángulos)
+  { v0: P_TOP, v1: P_TL, v2: D_TOP, color: '#9b72ff' },
+  { v0: P_TL, v1: D_LEFT, v2: D_TOP, color: '#8052ff' },
+
+  // Faceta Inferior Derecha (cuadrilátero descompuesto en 2 triángulos)
+  { v0: P_BOTTOM, v1: P_BR, v2: D_BOTTOM, color: '#00b894' },
+  { v0: P_BR, v1: D_RIGHT, v2: D_BOTTOM, color: '#15846e' },
+
+  // Faceta Inferior Izquierda (cuadrilátero descompuesto en 2 triángulos)
+  { v0: P_BOTTOM, v1: P_BL, v2: D_BOTTOM, color: '#00b894' },
+  { v0: P_BL, v1: D_LEFT, v2: D_BOTTOM, color: '#15846e' },
+
+  // Facetas Laterales de Transición Cromática
+  { v0: P_TL, v1: D_LEFT, v2: P_BL, color: '#297775' },
+  { v0: P_TR, v1: D_RIGHT, v2: P_BR, color: '#6653c7' },
 ];
 
-/** Conexión axonal entre dos nodos del grafo. */
-interface GraphEdge {
-  readonly a: number;
-  readonly b: number;
-}
+// -----------------------------------------------------------------------------
+// REPARTO DETERMINISTA DE TODAS LAS PARTÍCULAS
+// -----------------------------------------------------------------------------
+
+/** 1. Malla de aristas (16 aristas * 32 puntos = 512 partículas continuas) */
+const PARTICLES_PER_EDGE = 32;
+const EDGES_END = OFFICIAL_EDGES.length * PARTICLES_PER_EDGE; // 512
+
+/** 2. Diamante central de oro (240 partículas en relieve frontal) */
+const DIAMOND_COUNT = 240;
+const DIAMOND_END = EDGES_END + DIAMOND_COUNT; // 512 + 240 = 752
 
 /**
- * 32 conexiones sinápticas seleccionadas con aire:
- * Conectan la estructura de forma clara, legible y sin generar una maraña densa.
+ * Resuelve una partícula sobre las 16 aristas oficiales:
+ * Trazado denso, equiespaciado y nítido que dibuja el hexágono y el prisma sin cortes.
  */
-const GRAPH_EDGES: readonly GraphEdge[] = [
-  // Rayos principales desde el Núcleo Central hacia los 4 nodos cardinales
-  { a: 0, b: 1 },
-  { a: 0, b: 2 },
-  { a: 0, b: 3 },
-  { a: 0, b: 4 },
+function sampleEdgeParticle(index: number): NetworkSample {
+  const edgeIndex = Math.floor(index / PARTICLES_PER_EDGE);
+  const stepInEdge = index % PARTICLES_PER_EDGE;
 
-  // Rombo interior que interconecta los 4 nodos cardinales
-  { a: 1, b: 3 },
-  { a: 3, b: 2 },
-  { a: 2, b: 4 },
-  { a: 4, b: 1 },
+  const edge = OFFICIAL_EDGES[edgeIndex % OFFICIAL_EDGES.length]!;
+  const t = stepInEdge / (PARTICLES_PER_EDGE - 1);
 
-  // Ramas del Nodo Izquierdo (Percepción) hacia la periferia izquierda
-  { a: 1, b: 5 },
-  { a: 1, b: 6 },
-  { a: 1, b: 7 },
+  const nx = edge.a.x + (edge.b.x - edge.a.x) * t;
+  const ny = edge.a.y + (edge.b.y - edge.a.y) * t;
+  const nz = edge.a.z + (edge.b.z - edge.a.z) * t;
 
-  // Ramas del Nodo Superior (Prompts) hacia la periferia superior
-  { a: 3, b: 8 },
-  { a: 3, b: 9 },
-  { a: 3, b: 5 },
-  { a: 3, b: 10 },
-
-  // Ramas del Nodo Derecho (Acciones) hacia la periferia derecha
-  { a: 2, b: 10 },
-  { a: 2, b: 11 },
-  { a: 2, b: 12 },
-
-  // Ramas del Nodo Inferior (HNSW) hacia la periferia inferior
-  { a: 4, b: 13 },
-  { a: 4, b: 14 },
-  { a: 4, b: 7 },
-  { a: 4, b: 12 },
-
-  // Arcos perimetrales de contorno exterior (silueta curva)
-  { a: 5, b: 8 },
-  { a: 8, b: 9 },
-  { a: 9, b: 10 },
-  { a: 10, b: 11 },
-  { a: 11, b: 12 },
-  { a: 12, b: 13 },
-  { a: 13, b: 14 },
-  { a: 14, b: 7 },
-  { a: 7, b: 6 },
-  { a: 6, b: 5 },
-];
-
-/** Partículas asignadas al núcleo central (triple anillo estelar). */
-const CORE_PARTICLES = 36;
-/** Partículas asignadas a cada nodo periférico (anillo circular visible). */
-const NODE_PARTICLES = 16;
-/** Partículas a lo largo de cada una de las 32 conexiones axonales. */
-const PARTICLES_PER_EDGE = 24;
-/** Partículas de los dos anillos giroscópicos orbitales. */
-const ORBITAL_PARTICLES = 160;
-
-/** Zonas de corte por índice: */
-export const NETWORK_HUB_ZONE = CORE_PARTICLES + (GRAPH_NODES.length - 1) * NODE_PARTICLES; // 36 + 14 * 16 = 260
-export const NETWORK_EDGE_ZONE = NETWORK_HUB_ZONE + GRAPH_EDGES.length * PARTICLES_PER_EDGE; // 260 + 32 * 24 = 1028
-const NETWORK_ORBITAL_ZONE = NETWORK_EDGE_ZONE + ORBITAL_PARTICLES; // 1028 + 160 = 1188
-
-/**
- * Resuelve una partícula asignada a un nodo (cuerpo neuronal circular definido):
- * Para el núcleo central: triple corona concéntrica.
- * Para los satélites: anillo circular de microtriángulos claramente visible.
- */
-function resolveNodeParticle(index: number): NetworkSample {
-  if (index < CORE_PARTICLES) {
-    // Núcleo central SHA-256 (Nodo 0): centro denso + 2 anillos radiantes
-    const node = GRAPH_NODES[0]!;
-    if (index < 6) {
-      // Centro compacto
-      const angle = (index / 6) * Math.PI * 2;
-      return {
-        nx: Math.cos(angle) * 3.5,
-        ny: Math.sin(angle) * 3.5,
-        nz: (index % 2 === 0 ? 1 : -1) * 2.5,
-        networkColor: COLORS.amberBright,
-        isNetworkHub: true,
-        isNetworkEdge: false,
-        pulsePhase: 0,
-      };
-    }
-    if (index < 18) {
-      // Primer anillo
-      const k = index - 6;
-      const angle = (k / 12) * Math.PI * 2;
-      return {
-        nx: Math.cos(angle) * 9.5,
-        ny: Math.sin(angle) * 9.5 * 0.9,
-        nz: Math.sin(angle * 2) * 4,
-        networkColor: COLORS.amberRim,
-        isNetworkHub: true,
-        isNetworkEdge: false,
-        pulsePhase: 0.8,
-      };
-    }
-    // Segundo anillo exterior
-    const k = index - 18;
-    const angle = (k / 18) * Math.PI * 2;
-    return {
-      nx: Math.cos(angle) * node.ringRadius,
-      ny: Math.sin(angle) * node.ringRadius * 0.88,
-      nz: Math.cos(angle * 3) * 5,
-      networkColor: COLORS.amberBright,
-      isNetworkHub: true,
-      isNetworkEdge: false,
-      pulsePhase: 1.6,
-    };
-  }
-
-  // Nodos satélite 1 a 14
-  const satelliteIndex = index - CORE_PARTICLES;
-  const nodeIndex = 1 + Math.floor(satelliteIndex / NODE_PARTICLES);
-  const k = satelliteIndex % NODE_PARTICLES;
-  const node = GRAPH_NODES[nodeIndex] ?? GRAPH_NODES[1]!;
-
-  if (k < 3) {
-    // Punto central del nodo
-    return {
-      nx: node.x + (k - 1) * 1.5,
-      ny: node.y,
-      nz: node.z + (k === 1 ? 2 : -2),
-      networkColor: node.color,
-      isNetworkHub: true,
-      isNetworkEdge: false,
-      pulsePhase: node.phase,
-    };
-  }
-
-  // Anillo circular nítido que delimita el nodo
-  const stepInRing = k - 3;
-  const ringSteps = NODE_PARTICLES - 3; // 13 puntos en el anillo
-  const angle = (stepInRing / ringSteps) * Math.PI * 2 + node.phase;
-
-  const nx = node.x + Math.cos(angle) * node.ringRadius;
-  const ny = node.y + Math.sin(angle) * node.ringRadius * 0.92;
-  const nz = node.z + Math.sin(angle * 2) * 3.5;
+  const color = t < 0.5 ? edge.colorA : edge.colorB;
 
   return {
     nx,
     ny,
     nz,
-    networkColor: node.color,
+    networkColor: color,
+    isNetworkHub: edge.isDiamond === true,
+    isNetworkEdge: true,
+    pulsePhase: t * Math.PI * 2,
+  };
+}
+
+/**
+ * Resuelve una partícula dentro del Diamante Central (Saffron Spark):
+ * Puntos dorados densos y armónicos en la pirámide central del logotipo.
+ */
+function sampleDiamondParticle(index: number): NetworkSample {
+  const rel = index - EDGES_END;
+  const facetIndex = rel % 4; // 4 triángulos frontales del diamante
+  const facet = OFFICIAL_FACETS[facetIndex]!;
+
+  const r1 = hash(index * 2.83 + 1.1);
+  const r2 = hash(index * 4.97 + 3.7);
+  const sqrtR1 = Math.sqrt(r1);
+
+  const u = 1 - sqrtR1;
+  const v = r2 * sqrtR1;
+  const w = 1 - u - v;
+
+  const nx = u * facet.v0.x + v * facet.v1.x + w * facet.v2.x;
+  const ny = u * facet.v0.y + v * facet.v1.y + w * facet.v2.y;
+  const nz = u * facet.v0.z + v * facet.v1.z + w * facet.v2.z;
+
+  const color = r1 < 0.45 ? '#ffe680' : r1 < 0.85 ? COLORS.amberBright : COLORS.amberRim;
+
+  return {
+    nx,
+    ny,
+    nz,
+    networkColor: color,
     isNetworkHub: true,
     isNetworkEdge: false,
-    pulsePhase: node.phase,
+    pulsePhase: (u + v) * Math.PI * 2,
   };
 }
 
 /**
- * Resuelve una partícula a lo largo de un axón lineal:
- * Distribuye 24 partículas uniformemente entre el nodo A y el nodo B,
- * dejando claro el camino sináptico sin amontonamiento ni ruido.
+ * Resuelve una partícula sobre las facetas coloreadas del prisma:
+ * Distribución baricéntrica homogénea sobre las caras triangulares violetas y esmeraldas.
  */
-function resolveEdgeParticle(index: number): NetworkSample {
-  const edgeRelIndex = index - NETWORK_HUB_ZONE;
-  const edgeIndex = Math.floor(edgeRelIndex / PARTICLES_PER_EDGE);
-  const stepInEdge = edgeRelIndex % PARTICLES_PER_EDGE;
+function sampleFacetParticle(index: number): NetworkSample {
+  const rel = index - DIAMOND_END;
+  // Facetas 4 a 13 (10 facetas exteriores)
+  const nonDiamondCount = OFFICIAL_FACETS.length - 4; // 10 facetas
+  const facetIndex = 4 + (rel % nonDiamondCount);
+  const facet = OFFICIAL_FACETS[facetIndex]!;
 
-  const edge = GRAPH_EDGES[edgeIndex % GRAPH_EDGES.length]!;
-  const nodeA = GRAPH_NODES[edge.a]!;
-  const nodeB = GRAPH_NODES[edge.b]!;
+  const r1 = hash(index * 3.47 + 2.3);
+  const r2 = hash(index * 5.81 + 4.1);
+  const sqrtR1 = Math.sqrt(r1);
 
-  // Fracción a lo largo del enlace (del 0.08 al 0.92 para no pisar el centro de los nodos)
-  const t = 0.08 + (stepInEdge / (PARTICLES_PER_EDGE - 1)) * 0.84;
+  const u = 1 - sqrtR1;
+  const v = r2 * sqrtR1;
+  const w = 1 - u - v;
 
-  // Arco sutil en 3D para que los enlaces no sean cuerdas rígidas
-  const arcLift = Math.sin(t * Math.PI) * 6;
-
-  const nx = nodeA.x + (nodeB.x - nodeA.x) * t;
-  const ny = nodeA.y + (nodeB.y - nodeA.y) * t;
-  const nz = nodeA.z + (nodeB.z - nodeA.z) * t + arcLift;
-
-  const color = t < 0.5 ? nodeA.color : nodeB.color;
+  const nx = u * facet.v0.x + v * facet.v1.x + w * facet.v2.x;
+  const ny = u * facet.v0.y + v * facet.v1.y + w * facet.v2.y;
+  const nz = u * facet.v0.z + v * facet.v1.z + w * facet.v2.z;
 
   return {
     nx,
     ny,
     nz,
-    networkColor: color,
-    isNetworkHub: false,
-    isNetworkEdge: true,
-    pulsePhase: t * Math.PI * 2 + nodeA.phase,
-  };
-}
-
-/**
- * Resuelve una partícula de los anillos giroscópicos cuánticos que rodean al núcleo:
- * Dos órbitas circulares inclinadas en ángulos opuestos (±38°) que dan profundidad y movimiento.
- */
-function resolveOrbitalParticle(index: number): NetworkSample {
-  const orbitalRel = index - NETWORK_EDGE_ZONE;
-  const ringId = orbitalRel < 80 ? 0 : 1;
-  const k = orbitalRel % 80;
-  const angle = (k / 80) * Math.PI * 2;
-
-  const radius = ringId === 0 ? 36 : 46;
-  const tilt = ringId === 0 ? 0.62 : -0.68;
-
-  const px = Math.cos(angle) * radius;
-  const pz = Math.sin(angle) * radius;
-  const py = pz * Math.sin(tilt);
-  const finalZ = pz * Math.cos(tilt);
-
-  return {
-    nx: px,
-    ny: py,
-    nz: finalZ,
-    networkColor: ringId === 0 ? COLORS.amberBright : COLORS.violet,
-    isNetworkHub: false,
-    isNetworkEdge: true,
-    pulsePhase: angle,
-  };
-}
-
-/**
- * Resuelve una partícula de la atmósfera de profundidad (polvo de fondo estelar):
- * Dispersa las partículas restantes en un volumen esférico amplio (radio 160 a 340 unidades)
- * con baja opacidad en el compositor para no saturar ni competir con la escultura central.
- */
-function resolveAmbientDust(index: number): NetworkSample {
-  const seed1 = hash(index * 4.31 + 1.7);
-  const seed2 = hash(index * 7.89 + 3.2);
-  const seed3 = hash(index * 9.17 + 5.9);
-
-  const radius = 160 + seed1 * 180;
-  const theta = seed2 * Math.PI * 2;
-  const phi = (seed3 - 0.5) * Math.PI * 0.75;
-
-  const nx = Math.cos(theta) * Math.cos(phi) * radius;
-  const ny = Math.sin(phi) * radius * 0.65;
-  const nz = Math.sin(theta) * Math.cos(phi) * radius * 0.6;
-
-  const color = seed3 < 0.4 ? COLORS.cyan : seed3 < 0.75 ? COLORS.violet : COLORS.teal;
-
-  return {
-    nx,
-    ny,
-    nz,
-    networkColor: color,
-    isNetworkHub: false,
+    networkColor: facet.color,
+    isNetworkHub: true,
     isNetworkEdge: false,
-    pulsePhase: seed1 * Math.PI * 2,
+    pulsePhase: (u + v) * Math.PI,
   };
 }
 
 /**
- * Resuelve la posición analítica exacta de la partícula en la etapa 2:
- * Nodo circular, axón lineal, anillo orbital o polvo estelar ambiental en O(1).
+ * Resuelve la muestra analítica exacta de la partícula para la Etapa 2:
+ * Dibuja el Logotipo Oficial de Onboarding Assistant completo y sin huecos en O(1).
  */
 export function resolveNetworkSample(index: number): NetworkSample {
-  if (index < NETWORK_HUB_ZONE) {
-    return resolveNodeParticle(index);
+  if (index < EDGES_END) {
+    return sampleEdgeParticle(index);
   }
-  if (index < NETWORK_EDGE_ZONE) {
-    return resolveEdgeParticle(index);
+  if (index < DIAMOND_END) {
+    return sampleDiamondParticle(index);
   }
-  if (index < NETWORK_ORBITAL_ZONE) {
-    return resolveOrbitalParticle(index);
-  }
-  return resolveAmbientDust(index);
+  return sampleFacetParticle(index);
 }
+
+// -----------------------------------------------------------------------------
+// RENDERIZADO VECTORIAL DEL PRISMA ESTRUCTURAL OFICIAL
+// -----------------------------------------------------------------------------
+
+export interface LogoPrismRenderParams {
+  readonly ctx: CanvasRenderingContext2D;
+  readonly cx: number;
+  readonly cy: number;
+  readonly fov: number;
+  readonly baseScale: number;
+  readonly stageScale: number;
+  readonly stageOffsetX: number;
+  readonly stageOffsetY: number;
+  readonly rotX: number;
+  readonly rotY: number;
+  readonly wNetwork: number;
+}
+
+interface Point2D {
+  readonly sx: number;
+  readonly sy: number;
+}
+
+function projectVertex(
+  pt: Point3D,
+  params: LogoPrismRenderParams,
+  cosY: number,
+  sinY: number,
+  cosX: number,
+  sinX: number
+): Point2D {
+  const x1 = pt.x * cosY + pt.z * sinY;
+  const z1 = pt.z * cosY - pt.x * sinY;
+  const y2 = pt.y * cosX - z1 * sinX;
+  const z2 = z1 * cosX + pt.y * sinX;
+
+  const totalScale = params.baseScale * params.stageScale;
+  const x = x1 * totalScale;
+  const y = y2 * totalScale;
+  const z = z2 * params.baseScale;
+
+  const depthScale = params.fov / Math.max(160, params.fov - z);
+  return {
+    sx: params.cx + x * depthScale + params.stageOffsetX,
+    sy: params.cy + y * depthScale + params.stageOffsetY,
+  };
+}
+
+/**
+ * Dibuja la estructura vectorial, facetas de cristal luminosas y nodos del Logotipo Oficial.
+ */
+export function drawLogoPrismStructure(params: LogoPrismRenderParams): void {
+  const { ctx, wNetwork } = params;
+  if (wNetwork < 0.05) {
+    return;
+  }
+
+  const cosY = Math.cos(params.rotY);
+  const sinY = Math.sin(params.rotY);
+  const cosX = Math.cos(params.rotX);
+  const sinX = Math.sin(params.rotX);
+
+  const pTop = projectVertex(P_TOP, params, cosY, sinY, cosX, sinX);
+  const pTr = projectVertex(P_TR, params, cosY, sinY, cosX, sinX);
+  const pBr = projectVertex(P_BR, params, cosY, sinY, cosX, sinX);
+  const pBottom = projectVertex(P_BOTTOM, params, cosY, sinY, cosX, sinX);
+  const pBl = projectVertex(P_BL, params, cosY, sinY, cosX, sinX);
+  const pTl = projectVertex(P_TL, params, cosY, sinY, cosX, sinX);
+
+  const dTop = projectVertex(D_TOP, params, cosY, sinY, cosX, sinX);
+  const dRight = projectVertex(D_RIGHT, params, cosY, sinY, cosX, sinX);
+  const dBottom = projectVertex(D_BOTTOM, params, cosY, sinY, cosX, sinX);
+  const dLeft = projectVertex(D_LEFT, params, cosY, sinY, cosX, sinX);
+  const dCore = projectVertex(D_CORE, params, cosY, sinY, cosX, sinX);
+
+  const drawQuad = (p1: Point2D, p2: Point2D, p3: Point2D, p4: Point2D, color: string, alpha: number) => {
+    ctx.fillStyle = color;
+    ctx.globalAlpha = Math.max(0, Math.min(1, alpha * wNetwork));
+    ctx.beginPath();
+    ctx.moveTo(p1.sx, p1.sy);
+    ctx.lineTo(p2.sx, p2.sy);
+    ctx.lineTo(p3.sx, p3.sy);
+    ctx.lineTo(p4.sx, p4.sy);
+    ctx.closePath();
+    ctx.fill();
+  };
+
+  const drawTri = (p1: Point2D, p2: Point2D, p3: Point2D, color: string, alpha: number) => {
+    ctx.fillStyle = color;
+    ctx.globalAlpha = Math.max(0, Math.min(1, alpha * wNetwork));
+    ctx.beginPath();
+    ctx.moveTo(p1.sx, p1.sy);
+    ctx.lineTo(p2.sx, p2.sy);
+    ctx.lineTo(p3.sx, p3.sy);
+    ctx.closePath();
+    ctx.fill();
+  };
+
+  // 1. Facetas Superiores Violetas (Electric Iris)
+  drawQuad(pTop, pTr, dRight, dTop, '#8052ff', 0.22);
+  drawQuad(pTop, pTl, dLeft, dTop, '#8052ff', 0.18);
+
+  // 2. Facetas Inferiores Esmeraldas (Deep Verdant)
+  drawQuad(pBottom, pBr, dRight, dBottom, '#15846e', 0.22);
+  drawQuad(pBottom, pBl, dLeft, dBottom, '#15846e', 0.18);
+
+  // 3. Facetas Laterales de Transición
+  drawTri(pTl, dLeft, pBl, '#297775', 0.20);
+  drawTri(pTr, dRight, pBr, '#6653c7', 0.20);
+
+  // 4. Diamante Central Saffron Spark (4 caras en pirámide)
+  drawTri(dTop, dRight, dCore, '#ffe680', 0.44);
+  drawTri(dRight, dBottom, dCore, '#ffb829', 0.40);
+  drawTri(dBottom, dLeft, dCore, '#d97706', 0.38);
+  drawTri(dLeft, dTop, dCore, '#ffe680', 0.44);
+
+  // 5. Aristas Vectoriales Nítidas del Hexágono Exterior
+  ctx.lineWidth = 2.0;
+  ctx.strokeStyle = '#8052ff';
+  ctx.globalAlpha = 0.88 * wNetwork;
+  ctx.beginPath();
+  ctx.moveTo(pTop.sx, pTop.sy);
+  ctx.lineTo(pTr.sx, pTr.sy);
+  ctx.lineTo(pBr.sx, pBr.sy);
+  ctx.lineTo(pBottom.sx, pBottom.sy);
+  ctx.lineTo(pBl.sx, pBl.sy);
+  ctx.lineTo(pTl.sx, pTl.sy);
+  ctx.closePath();
+  ctx.stroke();
+
+  // 6. Aristas Interiores hacia el Diamante
+  ctx.lineWidth = 1.4;
+  ctx.globalAlpha = 0.72 * wNetwork;
+  ctx.strokeStyle = '#8052ff';
+  ctx.beginPath();
+  ctx.moveTo(pTop.sx, pTop.sy);
+  ctx.lineTo(dTop.sx, dTop.sy);
+  ctx.moveTo(pTl.sx, pTl.sy);
+  ctx.lineTo(dLeft.sx, dLeft.sy);
+  ctx.moveTo(pTr.sx, pTr.sy);
+  ctx.lineTo(dRight.sx, dRight.sy);
+  ctx.stroke();
+
+  ctx.strokeStyle = '#15846e';
+  ctx.beginPath();
+  ctx.moveTo(pBottom.sx, pBottom.sy);
+  ctx.lineTo(dBottom.sx, dBottom.sy);
+  ctx.moveTo(pBl.sx, pBl.sy);
+  ctx.lineTo(dLeft.sx, dLeft.sy);
+  ctx.moveTo(pBr.sx, pBr.sy);
+  ctx.lineTo(dRight.sx, dRight.sy);
+  ctx.stroke();
+
+  // 7. Perímetro y Diagonales del Diamante Central
+  ctx.lineWidth = 2.2;
+  ctx.strokeStyle = '#ffb829';
+  ctx.globalAlpha = 0.96 * wNetwork;
+  ctx.beginPath();
+  ctx.moveTo(dTop.sx, dTop.sy);
+  ctx.lineTo(dRight.sx, dRight.sy);
+  ctx.lineTo(dBottom.sx, dBottom.sy);
+  ctx.lineTo(dLeft.sx, dLeft.sy);
+  ctx.closePath();
+  ctx.moveTo(dTop.sx, dTop.sy);
+  ctx.lineTo(dCore.sx, dCore.sy);
+  ctx.moveTo(dRight.sx, dRight.sy);
+  ctx.lineTo(dCore.sx, dCore.sy);
+  ctx.moveTo(dBottom.sx, dBottom.sy);
+  ctx.lineTo(dCore.sx, dCore.sy);
+  ctx.moveTo(dLeft.sx, dLeft.sy);
+  ctx.lineTo(dCore.sx, dCore.sy);
+  ctx.stroke();
+
+  // 8. Nodos de Vértice Brillantes (Bioluminiscencia en las esquinas)
+  const drawNodeDot = (pt: Point2D, radius: number, ringColor: string, innerColor: string) => {
+    ctx.globalAlpha = 0.95 * wNetwork;
+    ctx.fillStyle = ringColor;
+    ctx.beginPath();
+    ctx.arc(pt.sx, pt.sy, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = innerColor;
+    ctx.beginPath();
+    ctx.arc(pt.sx, pt.sy, radius * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  };
+
+  drawNodeDot(pTop, 3.4, '#8052ff', '#ffffff');
+  drawNodeDot(pTr, 3.4, '#8052ff', '#ffffff');
+  drawNodeDot(pBr, 3.4, '#15846e', '#ffffff');
+  drawNodeDot(pBottom, 3.4, '#15846e', '#ffffff');
+  drawNodeDot(pBl, 3.4, '#15846e', '#ffffff');
+  drawNodeDot(pTl, 3.4, '#8052ff', '#ffffff');
+
+  drawNodeDot(dTop, 4.0, '#ffb829', '#ffffff');
+  drawNodeDot(dRight, 4.0, '#ffb829', '#ffffff');
+  drawNodeDot(dBottom, 4.0, '#ffb829', '#ffffff');
+  drawNodeDot(dLeft, 4.0, '#ffb829', '#ffffff');
+  drawNodeDot(dCore, 5.2, '#ffe680', '#ffffff');
+
+  ctx.globalAlpha = 1.0;
+}
+

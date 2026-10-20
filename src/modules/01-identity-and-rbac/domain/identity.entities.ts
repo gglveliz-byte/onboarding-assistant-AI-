@@ -13,6 +13,7 @@
  *   - Constante `ROLE_PERMISSIONS_MAP`: Catalogo inmutable que asigna permisos exactos por rol.
  *   - Funciones `hasPermission()` y `assertHasPermission()`: Evaluacion pura de privilegios.
  *   - Entidades: `OrganizationEntity`, `UserEntity`, `MembershipEntity`, `AuthSessionEntity`.
+ *   - Proyeccion legal: `PendingMandatoryLegalDocument` (instrumento obligatorio aun no aceptado).
  *   - Funciones de dominio: `isAccountTemporarilyLocked()`, `assertCanAttemptLogin()`.
  *
  * @dependencias_internas
@@ -187,6 +188,17 @@ export interface OrganizationEntity {
   readonly phoneNumber?: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
+}
+
+/**
+ * Proyeccion de un documento legal obligatorio que el usuario aun no ha aceptado.
+ * La consume el reto de consentimiento previo a la emision de sesion.
+ */
+export interface PendingMandatoryLegalDocument {
+  readonly id: string;
+  readonly docType: string;
+  readonly title: string;
+  readonly versionTag: string;
 }
 
 /**

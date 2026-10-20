@@ -40,6 +40,13 @@ import { encodeControlFrame } from '../infrastructure/voice-frame.protocol';
 /** Detalle con el que se resuelve un acuse que nunca llego. */
 export const CLIENT_ACK_TIMEOUT_DETAIL = 'CLIENT_ACK_TIMEOUT';
 
+/**
+ * Traza de servidor para auditar la demo: interrupciones, despacho/acuse de acciones y tiempos de
+ * espera. Activada por defecto; se silencia con `VOICE_DEBUG=0`. Cada linea lleva prefijo `[voice-gw]`
+ * y un offset en ms desde que se construyo el enrutador para correlacionar con la consola del navegador.
+ */
+const VOICE_DEBUG_ON = (process.env['VOICE_DEBUG'] ?? '1') !== '0';
+
 /** Dependencias del enrutador de tramas de una sesion de voz. */
 export interface SessionRouterDependencies {
   /** Puerto del mapa funcional, usado por el Context Slimming en vivo. */
@@ -66,6 +73,16 @@ export class VoiceSessionRouter {
   private bargeInCount = 0;
   private lastContextRefreshMs = 0;
   private maxBargeInCount: number;
+  private readonly startedAtMs = Date.now();
+  private readonly ackReceivedAtMs = new Map<string, number>();
+
+  /** Traza de servidor con offset en ms desde la apertura de la sesion. */
+  private log(event: string, meta?: Record<string, unknown>): void {
+    if (!VOICE_DEBUG_ON) return;
+    const t = Date.now() - this.startedAtMs;
+    // eslint-disable-next-line no-console
+    console.info(`[voice-gw +${t}ms] ${event}${meta ? ' ' + JSON.stringify(meta) : ''}`);
+  }
 
   /**
    * @param dependencies - Puerto del mapa, proyecto y envio de tramas.
@@ -174,6 +191,7 @@ export class VoiceSessionRouter {
    */
   public handleBargeIn(providerStream: IActiveProviderStream | null): number {
     this.bargeInCount += 1;
+    this.log('BARGE-IN del navegador: se corta la reproduccion del asistente', { total: this.bargeInCount, maximo: this.maxBargeInCount });
 
     if (providerStream !== null) {
       providerStream.requestBargeIn();
@@ -182,6 +200,7 @@ export class VoiceSessionRouter {
     if (this.bargeInCount >= this.maxBargeInCount) {
       // Un usuario que interrumpe sin parar no esta siendo ayudado: la sesion debe cerrarse para que
       // vuelva a empezar con un flujo claro en lugar de consumir saldo en un bucle.
+      this.log('LIMITE de interrupciones alcanzado: se cerrara la sesion', { total: this.bargeInCount });
       this.dependencies.onBargeInLimitReached(this.bargeInCount);
     }
 
@@ -197,12 +216,17 @@ export class VoiceSessionRouter {
   public handleToolAck(body: Readonly<Record<string, unknown>>): boolean {
     const providerToolCallId = typeof body['providerToolCallId'] === 'string' ? body['providerToolCallId'] : '';
     const resolver = this.pendingAcks.get(providerToolCallId);
+    const receivedAt = this.ackReceivedAtMs.get(providerToolCallId);
     if (resolver === undefined) {
       // Un acuse de una accion ya resuelta o desconocida se ignora: llegaria por un reintento del
       // cliente y volver a resolver la promesa no tendria efecto alguno.
+      this.log('ACK desconocido/duplicado (ya no hay accion en espera)', { id: providerToolCallId });
       return false;
     }
     this.pendingAcks.delete(providerToolCallId);
+    this.ackReceivedAtMs.delete(providerToolCallId);
+    const lat = receivedAt !== undefined ? Date.now() - receivedAt : -1;
+    this.log('ACK del navegador recibido', { id: providerToolCallId, exito: body['succeeded'] === true, esperaMs: lat, detalle: body['detail'] ?? null });
     resolver({
       succeeded: body['succeeded'] === true,
       detail: typeof body['detail'] === 'string' ? body['detail'] : null,
@@ -218,9 +242,13 @@ export class VoiceSessionRouter {
    * @returns Acuse recibido, o un fallo por tiempo agotado.
    */
   public async registerPendingAck(providerToolCallId: string, timeoutMs: number): Promise<ToolAckOutcome> {
+    this.log('ACCION despachada al navegador, esperando acuse', { id: providerToolCallId, timeoutMs });
+    this.ackReceivedAtMs.set(providerToolCallId, Date.now());
     return new Promise<ToolAckOutcome>((resolve) => {
       const timeoutHandle = setTimeout(() => {
         this.pendingAcks.delete(providerToolCallId);
+        this.ackReceivedAtMs.delete(providerToolCallId);
+        this.log('TIMEOUT: el navegador nunca confirmo la accion (aqui se "corta" el asistente)', { id: providerToolCallId, timeoutMs });
         resolve({
           succeeded: false,
           detail: `${CLIENT_ACK_TIMEOUT_DETAIL}: el navegador no confirmo la accion en ${timeoutMs} ms.`,

@@ -10,18 +10,21 @@
  *
  * @resumen_contenido
  *   - Orquestación reactiva de directivas: `prepareDirective` -> `moveTo` -> `commitDirective` -> `acknowledgeDirective`.
- *   - Selector de motor de voz (`FAST_VOICE_MODEL` vs `PRECISE_VOICE_MODEL`).
- *   - Stepper de 3 pasos (Crear -> Auto-fill -> Guardar) y cuenta regresiva mm:ss.
+ *   - Selector de voz REAL por motor (`DEMO_VOICE_CATALOG`: voces QWEN y Gemini), en lugar del antiguo
+ *     toggle faux "Ultra-Rápida / Ultra-Precisa".
+ *   - La barra muestra solo la voz: se ocultan el stepper, el badge de estado y la cuenta regresiva para
+ *     que el marco se lea como una app de negocio real y no como una demostración guionada.
  *   - Botón CTA de activación con controles en vivo (Detener, Interrumpir) y microcopia de tranquilidad.
  *
  * @dependencias_internas
  *   - `./VortexCrmSimulatorBoard` (`VortexCrmSimulatorBoard`, `CrmBoardHandle`).
  *   - `./DemoBioluminescentCursorOverlay` (`DemoBioluminescentCursorOverlay`, `CursorOverlayHandle`).
  *   - `./DemoStepProgressHeader` (`FAST_VOICE_MODEL`, `PRECISE_VOICE_MODEL`).
- *   - `./usePublicVoiceDemoSession` (`usePublicVoiceDemoSession`, `PublicDemoPhase`).
+ *   - `./usePublicVoiceDemoSession` (`usePublicVoiceDemoSession`).
  *
  * @dependencias_externas
  *   - `react` (`useEffect`, `useRef`, `useState`, type `ReactElement`).
+ *   - `backend-contracts.types` (`DEMO_VOICE_CATALOG`, `VoiceModelId`).
  */
 
 'use client';
@@ -33,49 +36,23 @@ import {
   type CursorOverlayHandle,
 } from './DemoBioluminescentCursorOverlay';
 import { FAST_VOICE_MODEL, PRECISE_VOICE_MODEL } from './DemoStepProgressHeader';
-import { usePublicVoiceDemoSession, type PublicDemoPhase } from './usePublicVoiceDemoSession';
-import type { VoiceModelId } from '../../../lib/api-client/backend-contracts.types';
+import { usePublicVoiceDemoSession } from './usePublicVoiceDemoSession';
+import { DEMO_VOICE_CATALOG, type VoiceModelId } from '../../../lib/api-client/backend-contracts.types';
 
 const CURSOR_TRAVEL_MS = 450;
 
-function formatCountdown(seconds: number): string {
-  const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-  const s = (seconds % 60).toString().padStart(2, '0');
-  return `${m}:${s}`;
+/** Clave única del selector de voces: `MOTOR:voz` (p. ej. `GEMINI:Kore`). */
+function voiceKey(engine: VoiceModelId, voiceName: string): string {
+  return `${engine}:${voiceName}`;
 }
 
-function getStatusBadge(phase: PublicDemoPhase): { label: string; classes: string; dot: string } {
-  switch (phase) {
-    case 'CONNECTED_LISTENING':
-      return { label: 'ESCUCHANDO', classes: 'bg-teal-50 border-teal-200 text-teal-800', dot: 'bg-teal-500' };
-    case 'AI_SPEAKING':
-      return { label: 'HABLANDO', classes: 'bg-violet-50 border-violet-200 text-violet-800', dot: 'bg-[#6d3dfa]' };
-    case 'EXECUTING_DOM_ACTION':
-      return { label: 'EJECUTANDO', classes: 'bg-amber-50 border-amber-200 text-amber-800', dot: 'bg-amber-500' };
-    case 'REQUESTING_MIC_PERMISSION':
-    case 'FETCHING_DEMO_EPHEMERAL_TOKEN':
-      return { label: 'PREPARANDO', classes: 'bg-blue-50 border-blue-200 text-blue-800', dot: 'bg-blue-500' };
-    case 'DEMO_COMPLETED':
-      return { label: 'FINALIZADA', classes: 'bg-slate-100 border-slate-300 text-slate-700', dot: 'bg-slate-500' };
-    case 'RATE_LIMITED':
-      return { label: 'LÍMITE ALCANZADO', classes: 'bg-rose-50 border-rose-200 text-rose-800', dot: 'bg-rose-500' };
-    case 'IDLE':
-    default:
-      return { label: 'EN ESPERA', classes: 'bg-emerald-50 border-emerald-200/80 text-emerald-800', dot: 'bg-emerald-600' };
-  }
-}
-
-function pasoMinimoDeFase(phase: PublicDemoPhase): 1 | 2 | 3 {
-  switch (phase) {
-    case 'CONNECTED_LISTENING':
-    case 'AI_SPEAKING':
-      return 2;
-    case 'EXECUTING_DOM_ACTION':
-      return 3;
-    default:
-      return 1;
-  }
-}
+/**
+ * Motores que se muestran en el selector de la demo pública.
+ * Ambos quedaron VERIFICADOS en vivo contra la cuenta del usuario: Gemini Live (workspace Virginia)
+ * y Qwen3.8-Omni-Realtime (workspace Singapur `ws-4uv1ji0nmluiwa0e`, con su llave regional). Cada voz
+ * del catálogo es un ID oficial del proveedor y se probó produciendo audio real.
+ */
+const DEMO_ENGINES_ONLINE: readonly VoiceModelId[] = [FAST_VOICE_MODEL, PRECISE_VOICE_MODEL];
 
 export function LiveInteractiveVoiceDemo(): ReactElement {
   const session = usePublicVoiceDemoSession();
@@ -83,36 +60,55 @@ export function LiveInteractiveVoiceDemo(): ReactElement {
     phase,
     activeDirective,
     errorMessage,
-    remainingSeconds,
     barsEnergy,
     lastAckLatencyMs,
     lastBargeInLatencyMs,
     acknowledgeDirective,
   } = session;
 
-  const [selectedModel, setSelectedModel] = useState<VoiceModelId>(PRECISE_VOICE_MODEL);
-  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
+  const [selectedVoice, setSelectedVoice] = useState<{ readonly engine: VoiceModelId; readonly voiceName: string }>(
+    { engine: PRECISE_VOICE_MODEL, voiceName: 'Kore' },
+  );
+  const [previewing, setPreviewing] = useState<boolean>(false);
   const boardRef = useRef<CrmBoardHandle | null>(null);
   const cursorRef = useRef<CursorOverlayHandle | null>(null);
   const processedDirectiveRef = useRef<string | null>(null);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Reproduce un clip previo real de la voz seleccionada (generado por proveedor y servido estático
+  // desde /public/demo-voices/<MOTOR>-<voz>.wav), para oírla antes de lanzar la demo.
+  const reproducirPreview = (): void => {
+    if (isRunning) return;
+    previewAudioRef.current?.pause();
+    const audio = new Audio(`/demo-voices/${selectedVoice.engine}-${selectedVoice.voiceName}.wav`);
+    previewAudioRef.current = audio;
+    setPreviewing(true);
+    audio.onended = (): void => setPreviewing(false);
+    audio.onerror = (): void => setPreviewing(false);
+    void audio.play().catch((): void => setPreviewing(false));
+  };
+
+  // Espejos estables para el temporizador de ejecución: `acknowledgeDirective` se recrea en cada
+  // render y, al estar en las dependencias del efecto, cancelaba el `setTimeout` de 450 ms antes
+  // de que la acción física se confirmara al backend (la demo quedaba esperando el acuse).
+  const acknowledgeDirectiveRef = useRef(acknowledgeDirective);
+  const lastAckLatencyRef = useRef(lastAckLatencyMs);
+
+  useEffect(() => {
+    acknowledgeDirectiveRef.current = acknowledgeDirective;
+    lastAckLatencyRef.current = lastAckLatencyMs;
+  }, [acknowledgeDirective, lastAckLatencyMs]);
 
   const isLive = phase === 'CONNECTED_LISTENING' || phase === 'AI_SPEAKING' || phase === 'EXECUTING_DOM_ACTION';
   const isBusy = phase === 'REQUESTING_MIC_PERMISSION' || phase === 'FETCHING_DEMO_EPHEMERAL_TOKEN';
   const isRunning = isLive || isBusy;
-  const statusBadge = getStatusBadge(phase);
 
   const iniciarDemo = (): void => {
     processedDirectiveRef.current = null;
-    setCurrentStep(1);
     boardRef.current?.resetBoard();
     cursorRef.current?.hide();
-    void session.startDemo({ preferredVoiceModel: selectedModel });
+    void session.startDemo({ preferredVoiceModel: selectedVoice.engine, preferredVoiceName: selectedVoice.voiceName });
   };
-
-  useEffect(() => {
-    const minimo = pasoMinimoDeFase(phase);
-    setCurrentStep((actual) => (minimo > actual ? minimo : actual));
-  }, [phase]);
 
   // Coordinación física completa: IA directiva -> Inspección -> Vuelo del cursor -> Ejecución real -> ACK
   useEffect(() => {
@@ -133,17 +129,20 @@ export function LiveInteractiveVoiceDemo(): ReactElement {
       cursor.moveTo(coords.xNorm, coords.yNorm, { label: activeDirective.targetElementKey });
     }
 
-    // 3. Ejecutar acción física tras vuelo del cursor
+    // 3. Ejecutar acción física tras vuelo del cursor. Se leen las funciones/valores desde refs
+    //    para que ningún re-render (por ejemplo, el `setInspectedKey` de `prepareDirective`)
+    //    cancele este temporizador ni reinicie el efecto antes del acuse al backend.
     const timer = window.setTimeout(() => {
       const outcome = board.commitDirective(activeDirective);
-      acknowledgeDirective(activeDirective.providerToolCallId, outcome.success, outcome.detail);
-      if (cursor && lastAckLatencyMs !== null) {
-        cursor.showAckBadge(Math.round(lastAckLatencyMs));
+      acknowledgeDirectiveRef.current(activeDirective.providerToolCallId, outcome.success, outcome.detail);
+      const ackLatency = lastAckLatencyRef.current;
+      if (cursor && ackLatency !== null) {
+        cursor.showAckBadge(Math.round(ackLatency));
       }
     }, CURSOR_TRAVEL_MS);
 
     return () => window.clearTimeout(timer);
-  }, [activeDirective, acknowledgeDirective, lastAckLatencyMs]);
+  }, [activeDirective]);
 
   // Ocultar cursor al terminar o parar la demo
   useEffect(() => {
@@ -155,7 +154,7 @@ export function LiveInteractiveVoiceDemo(): ReactElement {
   return (
     <section
       id="demo-en-vivo"
-      className="scroll-mt-14 max-w-6xl mx-auto py-2.5 sm:py-3.5 px-3 sm:px-6 lg:px-8"
+      className="scroll-mt-14 max-w-7xl mx-auto py-3 sm:py-6 px-4 sm:px-6 lg:px-8 w-full"
       aria-labelledby="live-demo-heading"
     >
       {/* Cabecera compacta sin badge */}
@@ -181,87 +180,47 @@ export function LiveInteractiveVoiceDemo(): ReactElement {
         className="bg-white rounded-xl sm:rounded-2xl border border-[#bfe2dd] shadow-glass overflow-hidden relative"
         data-purpose="simulator-window"
       >
-        {/* Barra superior de herramientas */}
+        {/* Barra superior: selector de voz real del proveedor (se ocultan stepper, badge y countdown
+            para que el marco se lea como una app de negocio y no como una demostración guionada). */}
         <div className="bg-[#f6fcfa] border-b border-[#ddede9] px-3 sm:px-4 py-1.5 sm:py-2 flex flex-wrap items-center justify-between gap-2">
-          {/* Selector de modo de voz */}
-          <div aria-label="Modo de voz" className="flex items-center gap-1 bg-[#e4f2f0] p-0.5 rounded-lg" role="tablist">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={selectedModel === FAST_VOICE_MODEL}
-              disabled={isRunning}
-              onClick={() => setSelectedModel(FAST_VOICE_MODEL)}
-              className={`px-2.5 py-1 text-[11px] font-semibold rounded-md transition-all cursor-pointer ${
-                selectedModel === FAST_VOICE_MODEL
-                  ? 'bg-[#0096c7] text-white shadow-xs font-bold'
-                  : 'bg-white text-[#0a252c] hover:bg-slate-50'
-              }`}
-            >
-              VOZ ULTRA-RÁPIDA
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={selectedModel === PRECISE_VOICE_MODEL}
-              disabled={isRunning}
-              onClick={() => setSelectedModel(PRECISE_VOICE_MODEL)}
-              className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all flex items-center gap-1 cursor-pointer ${
-                selectedModel === PRECISE_VOICE_MODEL
-                  ? 'bg-[#0096c7] text-white shadow-xs'
-                  : 'bg-white text-[#0a252c] hover:bg-slate-50'
-              }`}
-            >
-              {selectedModel === PRECISE_VOICE_MODEL && (
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                  <path d="m5 12 5 5L20 7" />
-                </svg>
-              )}
-              VOZ ULTRA-PRECISA
-            </button>
-          </div>
-
-          {/* Stepper de flujo */}
-          <div className="hidden md:flex items-center gap-1.5 text-[11px] font-bold tracking-wider text-slate-500">
-            <span
-              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold transition-all ${
-                currentStep >= 1 ? 'bg-[#6d3dfa] text-white shadow-xs' : 'bg-[#eef7f5] text-slate-600 border border-slate-200'
-              }`}
-            >
-              <span>PASO 1</span>
-              {currentStep === 1 && <span className="text-[9px] opacity-80">· Crear</span>}
-            </span>
-            <span className="w-3 border-t border-dashed border-slate-300" />
-            <span
-              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold transition-all ${
-                currentStep >= 2 ? 'bg-[#6d3dfa] text-white shadow-xs' : 'bg-[#eef7f5] text-slate-600 border border-slate-200'
-              }`}
-            >
-              <span>PASO 2</span>
-              {currentStep === 2 && <span className="text-[9px] opacity-80">· Auto-fill</span>}
-            </span>
-            <span className="w-3 border-t border-dashed border-slate-300" />
-            <span
-              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold transition-all ${
-                currentStep >= 3 ? 'bg-[#6d3dfa] text-white shadow-xs' : 'bg-[#eef7f5] text-slate-600 border border-slate-200'
-              }`}
-            >
-              <span>PASO 3</span>
-              {currentStep === 3 && <span className="text-[9px] opacity-80">· Guardar</span>}
-            </span>
-          </div>
-
-          {/* Badge de estado en tiempo real y temporizador */}
           <div className="flex items-center gap-2">
-            <div className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-md border text-[10px] sm:text-[11px] font-bold uppercase tracking-wider ${statusBadge.classes}`}>
-              <span className="relative flex h-1.5 w-1.5">
-                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${statusBadge.dot}`} />
-                <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${statusBadge.dot}`} />
-              </span>
-              <span>{statusBadge.label}</span>
-            </div>
-            <div className="font-mono text-[11px] font-semibold px-2 py-0.5 rounded bg-[#e4f2f0] text-slate-700 tracking-wider">
-              {formatCountdown(remainingSeconds)}
-            </div>
+            <label htmlFor="demo-voice-select" className="text-[11px] font-semibold text-[#1a3c44]/70">
+              Voz del asistente
+            </label>
+            <select
+              id="demo-voice-select"
+              disabled={isRunning}
+              value={voiceKey(selectedVoice.engine, selectedVoice.voiceName)}
+              onChange={(event) => {
+                const partes = event.target.value.split(':');
+                const engine = partes[0];
+                const voiceName = partes[1] ?? '';
+                if (engine === FAST_VOICE_MODEL || engine === PRECISE_VOICE_MODEL) {
+                  setSelectedVoice({ engine, voiceName });
+                }
+              }}
+              className="rounded-md border border-[#bfe2dd] bg-white px-2 py-1 text-[11px] font-semibold text-[#0a252c] focus:outline-none focus:ring-2 focus:ring-[#0096c7]/40 disabled:opacity-60 cursor-pointer"
+            >
+              {DEMO_ENGINES_ONLINE.map((engine) => (
+                <optgroup key={engine} label={engine === FAST_VOICE_MODEL ? 'Voces naturales' : 'Voces HD'}>
+                  {DEMO_VOICE_CATALOG[engine].map((voice) => (
+                    <option key={voiceKey(engine, voice.voiceName)} value={voiceKey(engine, voice.voiceName)}>
+                      {voice.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={reproducirPreview}
+              disabled={isRunning}
+              aria-label="Escuchar una muestra de esta voz"
+              className="inline-flex items-center gap-1 rounded-md border border-[#bfe2dd] bg-white px-2 py-1 text-[11px] font-semibold text-[#0a252c] hover:bg-[#eef7f5] transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              <span aria-hidden>{previewing ? '■' : '▶'}</span>
+              <span>{previewing ? 'Detener' : 'Probar voz'}</span>
+            </button>
           </div>
         </div>
 

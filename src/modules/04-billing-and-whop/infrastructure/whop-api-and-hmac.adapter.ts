@@ -1,41 +1,52 @@
 /**
  * @archivo src/modules/04-billing-and-whop/infrastructure/whop-api-and-hmac.adapter.ts
- * @modulo 04-billing-and-whop (Pasarela de Cobros: Cliente HTTP Firmado y Verificador de Webhooks)
+ * @modulo 04-billing-and-whop (Pasarela de Cobros: Cliente Oficial, Firma de Enlaces y Webhooks)
  * @proposito
  *   Concentra las dos fronteras con la pasarela de cobros. Hacia afuera crea las sesiones de pago y
- *   consulta estados remotos; hacia adentro delega la firma de los enlaces en `CheckoutLinkSigner` y
- *   la verificacion criptografica de los webhooks en `WebhookSignatureVerifier`. El adaptador solo
- *   conserva lo que exige hablar HTTP: endpoints, credenciales, timeouts y traduccion de errores.
- *   Ningun modulo debe calcular una firma de cobro por su cuenta: todo pasa por esta clase.
+ *   consulta estados remotos a traves del cliente OFICIAL `@whop/sdk`; hacia adentro delega la firma de
+ *   los enlaces en `CheckoutLinkSigner` y la verificacion criptografica de los webhooks en
+ *   `WebhookSignatureVerifier`. Ningun modulo debe calcular una firma de cobro por su cuenta.
+ *
+ *   Esta clase reemplaza la version que construia URLs a mano contra `POST /v2/checkouts`. Ese endpoint
+ *   NO EXISTE en la pasarela (la ruta real de la API v1 es `POST /api/v1/checkout_configurations`, y su
+ *   equivalente v2, `POST /api/v2/checkout_sessions`, esta deprecada con vencimiento el 13-nov-2026),
+ *   usaba la clave publica del app en lugar de la clave de la empresa, omitia `account_id` —parametro
+ *   obligatorio— y enviaba `amount_usd`, un campo que la pasarela no reconoce. Ninguna suscripcion pudo
+ *   activarse jamas por esa combinacion de errores.
+ *
+ *   Las recargas de saldo (`TOP_UP`) no tienen plan de precio fijo: se resuelven con el VARIANT inline
+ *   que acepta `checkout_configurations`, que la pasarela busca-o-crea por atributos, de modo que dos
+ *   recargas del mismo importe reutilizan el mismo variant en lugar de multiplicar el catalogo.
  *
  * @resumen_contenido
- *   - Interface `WhopApiAdapterOptions`: Credenciales, endpoints, tolerancia y timeouts.
+ *   - Interface `WhopApiAdapterOptions`: Credenciales, cuenta de empresa, tolerancia y cliente inyectable.
  *   - Interfaces `WhopCheckoutSession` y `RemoteMembershipStatus`.
  *   - Clase `WhopApiAndHmacAdapter`:
  *       * `signCheckoutMetadata()`, `verifyCheckoutSignature()` y `buildSignedCheckoutUrl()`.
- *       * `createCheckoutSession()`: Creacion remota del enlace de pago.
- *       * `getCustomerPortalUrl()`: Acceso al portal de gestion del cliente.
- *       * `fetchMembershipStatus()`: Consulta autoritativa del estado de una membresia.
- *       * `verifyWebhookSignature()` y `assertValidWebhookSignature()`: Verificacion de firmas.
- *   - Fabrica `createWhopApiAdapterFromEnv()`: Construccion desde el contrato de entorno.
+ *       * `createCheckoutSession()`: creacion remota del enlace de pago.
+ *       * `fetchMembershipStatus()`: consulta autoritativa del estado de una membresia.
+ *       * `getCustomerPortalUrl()`: portal de autogestion leido del campo `manage_url`.
+ *       * `verifyWebhookSignature()` y `assertValidWebhookSignature()`: verificacion de firmas.
+ *   - Fabrica `createWhopApiAdapterFromEnv()`.
  *
  * @dependencias_internas
  *   - `CheckoutLinkSigner` (`./checkout-link.signer.ts`) para la firma de enlaces internos.
  *   - `WebhookSignatureVerifier` (`./webhook-signature.verifier.ts`) para las firmas entrantes.
- *   - `getEnvConfig()` (`src/config/env.schema.ts`) para credenciales, endpoints y tolerancia.
- *   - `ProviderUnavailableError` (`src/shared/kernel/result-and-errors.ts`) para fallos de red.
+ *   - `getWhopClient()` (`./whop-sdk-client.ts`) para el transporte autenticado.
+ *   - `getEnvConfig()` (`src/config/env.schema.ts`) para credenciales y tolerancia.
  *
  * @dependencias_externas
- *   - `fetch` nativo del runtime (Sin dependencias HTTP adicionales).
+ *   - `@whop/sdk` (`WhopClient`): cliente oficial versionado de la pasarela.
  *
  * @tablas_bd_o_redis
- *   - Redis: `whop:webhook:evt:<id>` (La verificacion precede a la marca de idempotencia).
  *   - PostgreSQL: `whop_subscriptions` (El estado remoto se refleja en esta tabla).
  */
 
+import type { WhopClient } from '@whop/sdk';
 import { getEnvConfig } from '../../../config/env.schema';
 import { ProviderUnavailableError } from '../../../shared/kernel/result-and-errors';
 import type { CheckoutSignedMetadata } from '../domain/billing-whop.types';
+import { getWhopClient } from './whop-sdk-client';
 import { CheckoutLinkSigner } from './checkout-link.signer';
 import {
   WebhookSignatureVerifier,
@@ -48,25 +59,28 @@ export type { WhopSignatureVerification, WhopWebhookHeaders } from './webhook-si
 
 /** Parametros de construccion del adaptador de la pasarela. */
 export interface WhopApiAdapterOptions {
-  /** Clave de API del backend para llamar a la pasarela. */
-  readonly apiKey: string;
+  /** Clave de API de la EMPRESA: la unica con permisos sobre checkout_configurations y memberships. */
+  readonly companyApiKey: string;
+  /** Identificador de la cuenta de empresa en la pasarela, con prefijo `biz_`. */
+  readonly companyId: string;
   /** Secreto que firma los webhooks entrantes. */
   readonly webhookSecret: string;
   /** Secreto interno que firma los metadatos de los enlaces de pago. */
   readonly checkoutHmacSecret: string;
-  /** URL base de la API de la pasarela. */
-  readonly apiBaseUrl: string;
-  /** URL base de la pagina de pago. */
+  /** URL base de la pagina de pago, usada para el enlace firmado local. */
   readonly checkoutBaseUrl: string;
   /** Tolerancia anti-repeticion de la marca temporal de firma, en segundos. */
   readonly webhookToleranceSeconds: number;
-  /** Tiempo maximo de espera de cada llamada HTTP, en milisegundos. */
-  readonly requestTimeoutMs?: number;
+  /**
+   * Cliente inyectado para pruebas. Cuando se omite, se obtiene el compartido del proceso,
+   * ya autenticado con la clave de empresa y apuntando al entorno declarado.
+   */
+  readonly client?: WhopClient;
 }
 
 /** Enlace de pago emitido por la pasarela. */
 export interface WhopCheckoutSession {
-  /** Identificador de la sesion de pago creada. */
+  /** Identificador de la configuracion de pago creada (`ch_...`). */
   readonly sessionId: string;
   /** URL a la que se redirige al cliente para completar el pago. */
   readonly checkoutUrl: string;
@@ -80,51 +94,55 @@ export interface RemoteMembershipStatus {
   readonly membershipId: string;
   /** Identificador del plan contratado. */
   readonly externalPlanId: string;
-  /** Indica si la membresia esta vigente. */
+  /** Indica si la membresia esta vigente segun su `status`. */
   readonly isValid: boolean;
   /** Estado textual declarado por el servicio. */
   readonly status: string;
   /** Fin del periodo de renovacion, en formato ISO 8601. */
   readonly periodEndIso: string | null;
+  /** Portal de autogestion del comprador; `null` cuando la pasarela no lo expone. */
+  readonly manageUrl: string | null;
 }
 
-/** Cuerpo enviado a la pasarela al crear una sesion de pago. */
-interface CheckoutSessionRequestBody {
-  readonly plan_id: string;
-  readonly redirect_url: string;
-  readonly metadata: Readonly<Record<string, string>>;
-  readonly mode: string;
-  readonly amount_usd?: string;
-}
-
-/** Tiempo maximo de espera por omision de cada llamada HTTP. */
-const DEFAULT_REQUEST_TIMEOUT_MS = 12000;
-
-/** Minutos de vigencia por omision de una sesion de pago. */
+/** Vigencia por omision de una configuracion de pago, en minutos. */
 const DEFAULT_SESSION_TTL_MINUTES = 30;
 
 /** Milisegundos que componen un minuto. */
 const MILLISECONDS_PER_MINUTE = 60000;
 
+/** Estados de membresia que conceden acceso vigente. */
+const CURRENT_STATUSES: readonly string[] = ['active', 'trialing'];
+
+/** Dias del ciclo mensual usado como fallback cuando la pasarela no declara el fin de periodo. */
+const MONTHLY_BILLING_PERIOD_DAYS = 30;
+
 /**
  * Adaptador de la pasarela de cobros.
- * Delega la criptografia en los dos colaboradores especializados y conserva el transporte HTTP.
+ * Delega la criptografia en los dos colaboradores especializados y el transporte en el SDK oficial.
  */
 export class WhopApiAndHmacAdapter {
-  private readonly options: Required<WhopApiAdapterOptions>;
+  private readonly options: WhopApiAdapterOptions;
   private readonly checkoutSigner: CheckoutLinkSigner;
   private readonly webhookVerifier: WebhookSignatureVerifier;
 
   /**
-   * @param options - Credenciales, endpoints, tolerancia y timeouts.
-   * @throws Error cuando falta alguna credencial obligatoria.
+   * @param options - Credenciales, cuenta de empresa, tolerancia y cliente opcional.
+   * @throws Error cuando falta la clave de empresa, el secreto o el identificador de la cuenta.
    */
   public constructor(options: WhopApiAdapterOptions) {
-    if (options.apiKey.trim().length === 0 || options.webhookSecret.trim().length === 0 || options.checkoutHmacSecret.trim().length === 0) {
-      throw new Error('CREDENCIALES_DE_COBRO_INCOMPLETAS: se exigen la clave de API, el secreto de webhooks y el secreto de checkout.');
+    if (options.companyApiKey.trim().length === 0) {
+      throw new Error(
+        'CREDENCIALES_DE_COBRO_INCOMPLETAS: se exige WHOP_COMPANY_API_KEY; la clave publica del app no tiene permisos de cobro.'
+      );
+    }
+    if (options.webhookSecret.trim().length === 0 || options.checkoutHmacSecret.trim().length === 0) {
+      throw new Error('CREDENCIALES_DE_COBRO_INCOMPLETAS: se exigen el secreto de webhooks y el secreto de checkout.');
+    }
+    if (!/^biz_[A-Za-z0-9_]+$/u.test(options.companyId)) {
+      throw new Error(`CUENTA_DE_EMPRESA_INVALIDA: WHOP_COMPANY_ID debe tener el formato biz_... (recibido "${options.companyId}").`);
     }
 
-    this.options = { ...options, requestTimeoutMs: options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS };
+    this.options = options;
     this.checkoutSigner = new CheckoutLinkSigner({
       checkoutHmacSecret: options.checkoutHmacSecret,
       checkoutBaseUrl: options.checkoutBaseUrl,
@@ -133,6 +151,11 @@ export class WhopApiAndHmacAdapter {
       webhookSecret: options.webhookSecret,
       toleranceSeconds: options.webhookToleranceSeconds,
     });
+  }
+
+  /** Cliente de la pasarela usado por este adaptador. */
+  private get client(): WhopClient {
+    return this.options.client ?? getWhopClient();
   }
 
   /**
@@ -157,7 +180,7 @@ export class WhopApiAndHmacAdapter {
   }
 
   /**
-   * Compone la URL de pago con los metadatos firmados como parametros de consulta.
+   * Compone la URL local de pago con los metadatos firmados como parametros de consulta.
    *
    * @param metadata - Metadatos ya firmados.
    * @param externalPlanId - Identificador del plan en la pasarela.
@@ -173,7 +196,7 @@ export class WhopApiAndHmacAdapter {
    * @param rawBodyBuffer - Cuerpo crudo exacto recibido en la peticion.
    * @param headers - Cabeceras de firma normalizadas del webhook.
    * @param nowMs - Instante de referencia para la ventana anti-repeticion.
-   * @returns Resultado detallado de la verificacion.
+   * @returns Resultado detallado de la verificacion, con el payload ya parseado.
    */
   public verifyWebhookSignature(
     rawBodyBuffer: Buffer,
@@ -201,35 +224,61 @@ export class WhopApiAndHmacAdapter {
   }
 
   /**
-   * Crea una sesion de pago remota en la pasarela.
+   * Crea una configuracion de pago remota en la pasarela.
    *
-   * @param externalPlanId - Identificador del plan contratado.
+   * La metadata firmada viaja en el campo `metadata`, que la pasarela COPIA a la membresia y al pago
+   * resultantes: es el unico canal legitimo para que un webhook posterior declare a que organizacion y
+   * con que plan interno debe acreditarse el cobro.
+   *
+   * @param externalPlanId - Identificador del plan contratado (`plan_...`); vacio en las recargas.
    * @param metadata - Metadatos firmados que acompanan la sesion.
    * @param redirectUrl - URL a la que la pasarela devuelve al cliente tras el pago.
-   * @returns Sesion de pago creada con su enlace y su expiracion.
-   * @throws ProviderUnavailableError cuando la pasarela no responde o rechaza la peticion.
+   * @returns Configuracion de pago creada con su enlace y su expiracion.
+   * @throws ProviderUnavailableError cuando la pasarela no responde o no devuelve el enlace.
    */
   public async createCheckoutSession(
     externalPlanId: string,
     metadata: CheckoutSignedMetadata,
     redirectUrl: string
   ): Promise<WhopCheckoutSession> {
-    const requestBody: CheckoutSessionRequestBody = {
-      plan_id: externalPlanId,
+    const sharedRequest = {
+      account_id: this.options.companyId,
       redirect_url: redirectUrl,
-      mode: metadata.checkoutMode === 'TOP_UP' ? 'payment' : 'subscription',
+      mode: 'payment' as const,
       metadata: {
         organization_id: metadata.organizationId,
         actor_user_id: metadata.actorUserId,
         internal_plan_code: metadata.internalPlanCode,
+        checkout_mode: metadata.checkoutMode,
         checkout_signature: metadata.signatureHex,
       },
-      ...(metadata.topUpAmountUsd === null ? {} : { amount_usd: metadata.topUpAmountUsd }),
     };
 
-    const response = await this.performApiCall('POST', '/v2/checkouts', requestBody);
-    const sessionId = this.readStringField(response, 'id');
-    const checkoutUrl = this.readStringField(response, 'purchase_url') ?? this.readStringField(response, 'checkout_url');
+    // Una recarga no tiene plan de catalogo: se expresa como variant inline de pago unico. La pasarela
+    // reutiliza el variant coincidente salvo que se force lo contrario, asi que el catalogo no crece.
+    const request =
+      metadata.checkoutMode === 'TOP_UP'
+        ? {
+            ...sharedRequest,
+            plan: {
+              account_id: this.options.companyId,
+              plan_type: 'one_time' as const,
+              currency: 'usd',
+              initial_price: Number(metadata.topUpAmountUsd ?? '0'),
+              unlimited_stock: true,
+              visibility: 'hidden' as const,
+              title: `Recarga de saldo ${metadata.topUpAmountUsd ?? '0'} USD`,
+              force_create_new_plan: false,
+            },
+          }
+        : { ...sharedRequest, plan_id: externalPlanId };
+
+    const response = await this.runGatewayCall('crear la configuracion de pago', () =>
+      this.client.checkoutConfigurations.create(request)
+    );
+
+    const sessionId = typeof response['id'] === 'string' ? response['id'] : null;
+    const checkoutUrl = typeof response['purchase_url'] === 'string' ? response['purchase_url'] : null;
     if (sessionId === null || checkoutUrl === null) {
       throw new ProviderUnavailableError('PRIMARY', 'la pasarela no devolvio el identificador ni el enlace de la sesion de pago');
     }
@@ -237,26 +286,8 @@ export class WhopApiAndHmacAdapter {
     return {
       sessionId,
       checkoutUrl,
-      expiresAtIso:
-        this.readStringField(response, 'expires_at') ??
-        new Date(Date.now() + DEFAULT_SESSION_TTL_MINUTES * MILLISECONDS_PER_MINUTE).toISOString(),
+      expiresAtIso: new Date(Date.now() + DEFAULT_SESSION_TTL_MINUTES * MILLISECONDS_PER_MINUTE).toISOString(),
     };
-  }
-
-  /**
-   * Obtiene la URL del portal de gestion del cliente para una membresia dada.
-   *
-   * @param externalMembershipId - Identificador de la membresia en la pasarela.
-   * @returns URL del portal de gestion.
-   * @throws ProviderUnavailableError cuando la pasarela no devuelve el enlace.
-   */
-  public async getCustomerPortalUrl(externalMembershipId: string): Promise<string> {
-    const response = await this.performApiCall('GET', `/v2/memberships/${encodeURIComponent(externalMembershipId)}/portal`, null);
-    const portalUrl = this.readStringField(response, 'portal_url') ?? this.readStringField(response, 'url');
-    if (portalUrl === null) {
-      throw new ProviderUnavailableError('PRIMARY', 'la pasarela no devolvio la direccion del portal de gestion');
-    }
-    return portalUrl;
   }
 
   /**
@@ -264,93 +295,85 @@ export class WhopApiAndHmacAdapter {
    * Se usa como fuente de verdad cuando un webhook no llega o cuando hay que reconciliar saldos.
    *
    * @param externalMembershipId - Identificador de la membresia en la pasarela.
-   * @returns Estado remoto con su plan, su vigencia y su validez.
+   * @returns Estado remoto con su plan, su vigencia y su portal de autogestion.
    * @throws ProviderUnavailableError cuando la pasarela no responde.
    */
   public async fetchMembershipStatus(externalMembershipId: string): Promise<RemoteMembershipStatus> {
-    const response = await this.performApiCall('GET', `/v2/memberships/${encodeURIComponent(externalMembershipId)}`, null);
+    const response = await this.runGatewayCall('consultar la membresia', () =>
+      this.client.memberships.retrieve({ id: externalMembershipId })
+    );
+
+    const status = typeof response['status'] === 'string' ? response['status'] : 'desconocido';
     return {
-      membershipId: this.readStringField(response, 'id') ?? externalMembershipId,
-      externalPlanId: this.readStringField(response, 'plan_id') ?? '',
-      isValid: response['valid'] === true,
-      status: this.readStringField(response, 'status') ?? 'desconocido',
-      periodEndIso: this.readStringField(response, 'renewal_period_end'),
+      membershipId: typeof response['id'] === 'string' ? response['id'] : externalMembershipId,
+      externalPlanId: typeof response['plan_id'] === 'string' ? response['plan_id'] : '',
+      // La pasarela no expone un booleano `valid`: la vigencia se deduce del ciclo de vida declarado.
+      isValid: CURRENT_STATUSES.includes(status.toLowerCase()),
+      status,
+      periodEndIso: typeof response['current_period_end'] === 'string' ? response['current_period_end'] : null,
+      manageUrl: typeof response['manage_url'] === 'string' ? response['manage_url'] : null,
     };
   }
 
   /**
-   * Ejecuta una llamada HTTP firmada contra la API de la pasarela.
+   * Obtiene la URL del portal de autogestion del comprador para una membresia dada.
    *
-   * @param method - Metodo HTTP de la llamada.
-   * @param path - Ruta relativa del recurso.
-   * @param body - Cuerpo de la peticion, o `null` para llamadas sin cuerpo.
-   * @returns Respuesta deserializada del servicio.
-   * @throws ProviderUnavailableError cuando el servicio no responde, responde con error o devuelve
-   *   un cuerpo que no es JSON valido.
+   * La pasarela no publica un endpoint propio de portal: el enlace es el campo `manage_url` de la
+   * membresia, unico por comprador y protegido por inicio de sesion.
+   *
+   * @param externalMembershipId - Identificador de la membresia en la pasarela.
+   * @returns URL del portal de gestion.
+   * @throws ProviderUnavailableError cuando la membresia no expone portal.
    */
-  private async performApiCall(
-    method: 'GET' | 'POST',
-    path: string,
-    body: CheckoutSessionRequestBody | null
-  ): Promise<Record<string, unknown>> {
-    const requestUrl = `${this.options.apiBaseUrl.replace(/\/$/u, '')}${path}`;
-    let response: Response;
-
-    try {
-      response = await fetch(requestUrl, {
-        method,
-        headers: {
-          authorization: `Bearer ${this.options.apiKey}`,
-          'content-type': 'application/json',
-          accept: 'application/json',
-        },
-        ...(body === null ? {} : { body: JSON.stringify(body) }),
-        signal: AbortSignal.timeout(this.options.requestTimeoutMs),
-      });
-    } catch (error) {
+  public async getCustomerPortalUrl(externalMembershipId: string): Promise<string> {
+    const remoteStatus = await this.fetchMembershipStatus(externalMembershipId);
+    if (remoteStatus.manageUrl === null || remoteStatus.manageUrl.length === 0) {
       throw new ProviderUnavailableError(
         'PRIMARY',
-        `la pasarela de cobros no respondio: ${error instanceof Error ? error.message : 'error de red'}`
+        `la pasarela no devolvio la direccion del portal de gestion para la membresia ${externalMembershipId}`
       );
     }
-
-    if (!response.ok) {
-      throw new ProviderUnavailableError('PRIMARY', `la pasarela de cobros respondio con el estado ${response.status}`);
-    }
-
-    try {
-      const parsed = (await response.json()) as unknown;
-      return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
-    } catch {
-      throw new ProviderUnavailableError('PRIMARY', 'la pasarela de cobros devolvio un cuerpo que no es JSON valido');
-    }
+    return remoteStatus.manageUrl;
   }
 
   /**
-   * Extrae un campo de texto no vacio de una respuesta del servicio.
+   * Ejecuta una llamada del SDK traduciendo cualquier fallo a `ProviderUnavailableError`.
    *
-   * @param source - Respuesta deserializada.
-   * @param fieldName - Nombre del campo buscado.
-   * @returns Texto encontrado, o `null` cuando el campo no existe o no es una cadena util.
+   * @param operacion - Descripcion legible de la operacion, para el mensaje de error.
+   * @param invocation - Llamada al cliente que resuelve en la respuesta de la pasarela.
+   * @returns Cuerpo de la respuesta ya deserializado.
+   * @throws ProviderUnavailableError cuando la pasarela no responde o responde con error.
    */
-  private readStringField(source: Record<string, unknown>, fieldName: string): string | null {
-    const value = source[fieldName];
-    return typeof value === 'string' && value.length > 0 ? value : null;
+  private async runGatewayCall(
+    operacion: string,
+    invocation: () => Promise<{ toJSON?: unknown } | Record<string, unknown>> | { then: PromiseLike<unknown> }
+  ): Promise<Record<string, unknown>> {
+    try {
+      const resolved = (await (invocation() as Promise<unknown>)) as unknown;
+      return typeof resolved === 'object' && resolved !== null && !Array.isArray(resolved)
+        ? (resolved as Record<string, unknown>)
+        : {};
+    } catch (error) {
+      throw new ProviderUnavailableError(
+        'PRIMARY',
+        `no se pudo ${operacion}: ${error instanceof Error ? error.message : 'error de red de la pasarela'}`
+      );
+    }
   }
 }
 
 /**
  * Construye el adaptador de la pasarela a partir del contrato de entorno ya validado.
  *
- * @returns Adaptador configurado con las credenciales, los endpoints y la tolerancia del entorno.
+ * @returns Adaptador configurado con la credencial de empresa, su identificador y la tolerancia.
  */
 export function createWhopApiAdapterFromEnv(): WhopApiAndHmacAdapter {
   const environment = getEnvConfig();
   return new WhopApiAndHmacAdapter({
-    apiKey: environment.WHOP_API_KEY,
+    companyApiKey: environment.WHOP_COMPANY_API_KEY,
+    companyId: environment.WHOP_COMPANY_ID,
     webhookSecret: environment.WHOP_WEBHOOK_SECRET,
     checkoutHmacSecret: environment.INTERNAL_CHECKOUT_HMAC_SECRET,
-    apiBaseUrl: environment.WHOP_API_BASE_URL,
     checkoutBaseUrl: environment.WHOP_CHECKOUT_BASE_URL,
     webhookToleranceSeconds: environment.WHOP_WEBHOOK_TOLERANCE_SECONDS,
   });

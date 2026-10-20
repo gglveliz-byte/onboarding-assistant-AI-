@@ -108,36 +108,35 @@ export function RagDomMolecularGraphSection(): ReactElement {
   return (
     <section
       aria-labelledby="oa-explore-title"
-      className="bg-[radial-gradient(circle_at_20%_30%,rgba(234,247,244,0.35)_0%,rgba(242,250,248,0.08)_50%,transparent_100%)] px-4 py-5 sm:px-8 sm:py-10 lg:px-12"
+      className="bg-[radial-gradient(circle_at_20%_30%,rgba(234,247,244,0.35)_0%,rgba(242,250,248,0.08)_50%,transparent_100%)] px-4 py-3 sm:px-6 sm:py-5 lg:px-8 w-full"
     >
-      <div className="mx-auto max-w-[1240px]">
+      <div className="mx-auto max-w-7xl w-full">
         {/* Encabezado editorial de la seccion */}
-        <div className="mb-3 max-w-2xl sm:mb-9">
+        <div className="mb-2.5 max-w-2xl sm:mb-4">
           <UppercaseTrackedKicker className="!text-[10px] !font-bold !tracking-[0.18em] !text-[#15846E]">
             ENTRENAMIENTO VISUAL & MEMORIA RAG
           </UppercaseTrackedKicker>
           <h2
-            className="mt-2 text-[22px] font-bold leading-[1.22] tracking-tight text-[#062D2A] sm:text-[27px] md:text-[30px] lg:text-[32px]"
+            className="mt-1.5 text-[22px] font-bold leading-[1.22] tracking-tight text-[#062D2A] sm:text-[27px] md:text-[30px] lg:text-[32px]"
             id="oa-explore-title"
           >
             Memoria de navegación viva,{' '}
             <span className="font-display font-normal italic">sellada con SHA-256.</span>
           </h2>
-          <p className="mt-2 sm:mt-3 max-w-2xl text-[13px] sm:text-[14px] leading-relaxed text-[#245954]">
+          <p className="mt-1.5 sm:mt-2 max-w-2xl text-[13px] sm:text-[14px] leading-relaxed text-[#245954]">
             El asistente aprende tu interfaz navegándola de verdad: cada vista y acción queda indexada en un mapa
             funcional con doble lectura humana y JSON canónico.
           </p>
         </div>
 
-        {/* Rejilla de escritorio: tarjetas (5 columnas) frente al grafo (7 columnas) */}
-        <div className="hidden items-center gap-8 lg:grid lg:grid-cols-12">
-          <div className="flex flex-col gap-3 lg:col-span-5">{RAG_PILLAR_CARDS.map(renderDesktopPillar)}</div>
+        {/* Rejilla de escritorio: tarjetas (5 columnas) frente al prisma 3D (7 columnas) */}
+        <div className="hidden items-start gap-8 lg:grid lg:grid-cols-12">
+          <div className="flex flex-col gap-2.5 lg:col-span-5">{RAG_PILLAR_CARDS.map(renderDesktopPillar)}</div>
           <div className="flex flex-col items-center justify-center lg:col-span-7 lg:pl-4">
             <figure className="m-0 w-full">
               <DesktopMolecularGraph />
-              <figcaption className="mx-auto mt-2 max-w-sm text-center text-[11px] leading-relaxed text-[#547B76]">
-                Grafo molecular del mapa RAG: documentos, vistas y acciones de tu producto conectados entre sí y
-                sellados con SHA-256, con la acción correcta siempre a un paso de voz.
+              <figcaption className="mx-auto mt-1 max-w-sm text-center text-[11px] leading-relaxed text-[#547B76]">
+                Prisma neuronal y mapa RAG: vistas y acciones de tu producto conectadas entre sí y selladas con SHA-256.
               </figcaption>
             </figure>
           </div>

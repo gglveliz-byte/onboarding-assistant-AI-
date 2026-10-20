@@ -40,6 +40,7 @@ import {
   SuspendTenantModal,
   BreakGlassApprovalsPanel,
 } from '../../../components/superadmin/SuspendTenantAndBreakGlassModals';
+import { DeleteTenantModal } from '../../../components/superadmin/DeleteTenantModal';
 
 /**
  * Página de gobierno y auditoría de tenants de plataforma.
@@ -54,15 +55,24 @@ export default function SuperAdminOrganizationsPage(): ReactElement {
     suspendOrganization,
     reactivateOrganization,
     forceLogoutOrganization,
+    deleteOrganization,
     approveBreakGlass,
   } = useSuperAdminTenantGovernance();
 
   const [selectedOrgForSuspend, setSelectedOrgForSuspend] = useState<TenantGovernanceRecord | null>(null);
   const [isSuspendModalOpen, setIsSuspendModalOpen] = useState<boolean>(false);
 
+  const [selectedOrgForDelete, setSelectedOrgForDelete] = useState<TenantGovernanceRecord | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState<boolean>(false);
+
   const handleOpenSuspend = (org: TenantGovernanceRecord) => {
     setSelectedOrgForSuspend(org);
     setIsSuspendModalOpen(true);
+  };
+
+  const handleOpenDelete = (org: TenantGovernanceRecord) => {
+    setSelectedOrgForDelete(org);
+    setIsDeleteModalOpen(true);
   };
 
   const handleOpenReactivate = async (org: TenantGovernanceRecord) => {
@@ -141,6 +151,7 @@ export default function SuperAdminOrganizationsPage(): ReactElement {
           onOpenSuspendModal={handleOpenSuspend}
           onOpenReactivateModal={handleOpenReactivate}
           onForceLogout={handleForceLogout}
+          onOpenDeleteModal={handleOpenDelete}
           onRefresh={() => void fetchOrganizations()}
         />
 
@@ -153,6 +164,17 @@ export default function SuperAdminOrganizationsPage(): ReactElement {
             setSelectedOrgForSuspend(null);
           }}
           onConfirmSuspend={suspendOrganization}
+        />
+
+        {/* Modal Flotante de Eliminación Definitiva */}
+        <DeleteTenantModal
+          org={selectedOrgForDelete}
+          isOpen={isDeleteModalOpen}
+          onClose={() => {
+            setIsDeleteModalOpen(false);
+            setSelectedOrgForDelete(null);
+          }}
+          onConfirmDelete={deleteOrganization}
         />
       </div>
     </SuperAdminControlShell>

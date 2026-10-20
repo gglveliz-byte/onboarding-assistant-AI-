@@ -12,6 +12,8 @@
  *     y `FRAMEWORK_INIT_SNIPPETS`: ejemplos reales de inicialización que mutan según el
  *     framework activo publicado por `useDocsFramework()`.
  *   - `SYSTEM_PROMPT_CURL_SNIPPET`: llamada real a `PUT /api/v1/projects/:projectId/prompt`.
+ *   - `VOICE_CONSENT_CURL_SNIPPET`: certificacion real del consentimiento de un usuario final
+ *     sobre `POST /api/v1/public/end-user-consents` con clave secreta de backend.
  *   - `SELECTOR_CRITERIA_ROWS` / `SELECTOR_BEST_PRACTICES`: cuadro de la cascada de
  *     selectores y buenas prácticas de instrumentación del DOM.
  *   - `DeveloperCodeBlock`: bloque de código multi-línea sobre la caja de terminal Atelier.
@@ -117,6 +119,18 @@ const SYSTEM_PROMPT_CURL_SNIPPET = `curl --request PUT \\
     "systemPrompt": "Guía al usuario para emitir su primera factura y confirma antes de enviarla.",
     "strictStepEnforcement": true,
     "askConfirmationBeforeSubmit": true
+  }'`;
+
+/** Ejemplo real de certificacion del consentimiento de un usuario final con clave secreta. */
+const VOICE_CONSENT_CURL_SNIPPET = `curl --request POST \\
+  --url https://api.plataforma.com/api/v1/public/end-user-consents \\
+  --header 'Authorization: Bearer sk_live_tu_clave_secreta' \\
+  --header 'Content-Type: application/json' \\
+  --data '{
+    "externalEndUserId": "usr_8f2c1a84",
+    "consentGranted": true,
+    "grantedAt": "2026-10-19T14:52:00Z",
+    "evidence": { "source": "checkout-web", "consentTextVersion": "v1.0.0" }
   }'`;
 
 /** Filas del cuadro de la cascada de localización de elementos del DOM. */
@@ -260,9 +274,12 @@ function DeveloperDocsGuideContent(): ReactElement {
             Autentica la CLI con el flujo de código de dispositivo: la terminal muestra un código{' '}
             <code className="atelier-mono">XXXX-XXXX</code> y lo confirmas desde el navegador en{' '}
             <a className="atelier-link" href="/auth/cli-device">/auth/cli-device</a>. Al completar la vinculación, la CLI
-            queda autorizada para sincronizar la configuración de tu proyecto desde la terminal.
+            queda autorizada para sincronizar mapas funcionales y lanzar sesiones de entrenamiento interactivo.
           </p>
-          <TerminalCommandBox command="npx @onboarding-assistant login" label="Terminal" />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <TerminalCommandBox command="npx @onboarding-assistant/cli login" label="1. Autenticación de dispositivo" />
+            <TerminalCommandBox command="npx @onboarding-assistant/cli train" label="2. Sesión de entrenamiento interactivo" />
+          </div>
         </section>
 
         <section id="system-prompt" style={SECTION_STYLE}>
@@ -292,7 +309,14 @@ function DeveloperDocsGuideContent(): ReactElement {
             publicar tu integración revisa la{' '}
             <a className="atelier-link" href="/legal/ai-voice-aup">Política de Uso Aceptable de Voz IA</a> y el{' '}
             <a className="atelier-link" href="/legal/end-user-voice-consent">Consentimiento de voz del usuario final</a>.
+            Al crear tu organización aceptas el aviso marco; tu sistema debe certificar después el consentimiento
+            individual con{' '}
+            <code className="atelier-mono">POST /api/v1/public/end-user-consents</code> usando tu clave secreta de backend.
+            El registro es idempotente por usuario final y versión documental; enviar{' '}
+            <code className="atelier-mono">consentGranted: false</code> deja constancia de la revocación.
           </p>
+          <DeveloperCodeBlock label="Terminal — Certificación de consentimiento de voz" code={VOICE_CONSENT_CURL_SNIPPET}
+            footnote="La evidencia guarda la versión del aviso, su sello SHA-256, la IP hasheada y los metadatos que envíes. Nunca compartas tu clave secreta en el navegador." />
         </section>
       </div>
     );

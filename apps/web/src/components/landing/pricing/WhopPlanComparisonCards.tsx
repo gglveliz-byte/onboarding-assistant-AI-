@@ -191,12 +191,27 @@ export function WhopPlanComparisonCards({
                   <span className="text-xl font-extrabold text-[#0f2f38]">
                     {isPayg
                       ? formatUsdRate(quote.effectiveRatePerMinuteUsd)
-                      : formatUsd(quote.monthlyFixedPriceUsd)}
+                      : formatUsd(quote.chargeAmountUsd)}
                   </span>
                   <span className="text-[9px] uppercase font-bold text-gray-400 tracking-wider inline-block ml-1">
                     {isPayg ? '/ min' : '/ mes'}
                   </span>
                 </div>
+                {/*
+                  La tarifa anunciada es la que cobra el checkout, no el neto que liquida en la
+                  empresa. Se explicita para que nadie se lleve la sorpresa de un recibo mas alto
+                  que el numero del boton.
+                */}
+                {!isPayg && quote.chargeAmountUsd !== quote.monthlyFixedPriceUsd ? (
+                  <div className="text-[9px] text-gray-400 -mt-1 mb-1.5 leading-tight">
+                    Incluye procesamiento de pago · base {formatUsd(quote.monthlyFixedPriceUsd)}
+                  </div>
+                ) : null}
+                {!quote.isProvisioned ? (
+                  <div className="text-[9px] text-[#b45309] -mt-1 mb-1.5 leading-tight font-semibold">
+                    Plan en preparacion: aun no se puede contratar.
+                  </div>
+                ) : null}
 
                 <div className="space-y-1 text-[10px] border-t border-gray-100 pt-1.5">
                   <div className="flex justify-between items-center text-[#41626a]">
@@ -206,18 +221,35 @@ export function WhopPlanComparisonCards({
                     </span>
                   </div>
                   <div className="flex justify-between items-center text-[#41626a]">
-                    <span className="text-[9px] uppercase font-semibold text-gray-500">Extra</span>
-                    <span className="font-bold text-[#0f2f38]">{describeEffectiveRate(quote)}</span>
+                    <span className="text-[9px] uppercase font-semibold text-gray-500">
+                      {isPayg ? 'Tarifa' : 'Costo / min'}
+                    </span>
+                    <span className="font-bold text-[#0f2f38]">
+                      {isPayg
+                        ? describeEffectiveRate(quote)
+                        : `${formatUsdRate(quote.includedMinutes > 0 ? quote.monthlyFixedPriceUsd / quote.includedMinutes : 0)}/min`}
+                    </span>
                   </div>
                   <div className="flex justify-between items-center text-[#41626a] pt-1 border-t border-slate-100">
-                    <span className="text-[9px] uppercase font-bold text-gray-600">Total est.</span>
+                    <span className="text-[9px] uppercase font-bold text-gray-600">
+                      {isPayg ? 'Total est.' : 'Mensualidad'}
+                    </span>
                     <span className="font-extrabold text-[#0f2f38] text-xs">
-                      {formatUsd(quote.estimatedMonthlyTotalUsd)}
+                      {isPayg
+                        ? formatUsd(quote.estimatedMonthlyTotalUsd)
+                        : formatUsd(quote.monthlyFixedPriceUsd)}
                     </span>
                   </div>
                 </div>
 
-                {volumeNote && (
+                {!isPayg && (
+                  <div className="mt-2 p-1.5 bg-[#f6fcfb] border border-[#d2ece7] rounded text-[9px] text-[#0d5c58] leading-tight flex items-center gap-1">
+                    <span>🛡️</span>
+                    <span>Tope cerrado. Notificación al agotar límite.</span>
+                  </div>
+                )}
+
+                {isPayg && volumeNote && (
                   <div className="mt-2 p-1.5 bg-[#f6fcfb] border border-[#d2ece7] rounded text-[9px] text-[#41626a] leading-tight">
                     {volumeNote}
                   </div>

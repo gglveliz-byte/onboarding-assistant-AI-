@@ -20,6 +20,8 @@
  *   - Funciones `resolvePublicDemoOpening()`, `createPublicDemoHandshakePort()` y
  *     `createPublicDemoRagPort()`: el mapa funcional operativo vive en
  *     `public-demo-functional-map.ts` y el despacho anulado en `public-demo-tool-dispatch.ts`.
+ *   - `normalizeDemoVoiceModel()`: traduce el selector de la landing al motor que elegira el
+ *     orquestador (QWEN o GEMINI), para respetar la preferencia del visitante.
  *   - Clase `PublicDemoMeteringService`: facturacion anulada para sesiones anonimas.
  *
  * @dependencias_internas
@@ -88,9 +90,9 @@ export const PUBLIC_DEMO_TIMEUP_MESSAGE =
 /** Duracion por omision de la demostracion cuando el descriptor no la declara. */
 const DEMO_DEFAULT_MAX_SECONDS = 90;
 
-/** Limites de saneamiento de la duracion declarada por el descriptor. */
+/** Limites de saneamiento de la duracion declarada por el descriptor (el tope alto deja gobernar hasta 10 min al SuperAdmin). */
 const DEMO_MIN_MAX_SECONDS = 15;
-const DEMO_MAX_MAX_SECONDS = 120;
+const DEMO_MAX_MAX_SECONDS = 600;
 
 /** Prefijo de sesion valido: los identificadores de demostracion siempre nacen con el. */
 const DEMO_SESSION_ID_PREFIX = 'demo_';
@@ -105,6 +107,8 @@ export interface PublicDemoOpening {
   readonly voiceSessionId: string;
   /** Duracion maxima saneada, en segundos. */
   readonly maxDurationSeconds: number;
+  /** Motor de voz elegido por el visitante en el selector de la landing (QWEN o GEMINI). */
+  readonly voiceModel: 'QWEN' | 'GEMINI';
 }
 
 /** Integracion completa de la demo publica con el pool de voz: puertos demo y puerta de validacion. */
@@ -183,6 +187,7 @@ export async function resolvePublicDemoOpening(
     organizationId: PUBLIC_DEMO_ORGANIZATION_ID,
     voiceSessionId: sessionId,
     maxDurationSeconds: sanitizeMaxDurationSeconds(session.maxDurationSeconds),
+    voiceModel: normalizeDemoVoiceModel(session.voiceModel),
   };
 }
 
@@ -192,6 +197,11 @@ function sanitizeMaxDurationSeconds(declaredSeconds: number): number {
     return DEMO_DEFAULT_MAX_SECONDS;
   }
   return Math.min(Math.max(Math.trunc(declaredSeconds), DEMO_MIN_MAX_SECONDS), DEMO_MAX_MAX_SECONDS);
+}
+
+/** Normaliza el motor elegido: solo `QWEN` activa el alterno; cualquier otro valor usa GEMINI. */
+function normalizeDemoVoiceModel(declaredModel: string): 'QWEN' | 'GEMINI' {
+  return declaredModel.trim().toUpperCase() === 'QWEN' ? 'QWEN' : 'GEMINI';
 }
 
 /** Fallo normalizado de un token de demostracion invalido, caducado o ya consumido. */

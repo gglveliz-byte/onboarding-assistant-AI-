@@ -164,10 +164,10 @@ async function main(): Promise<void> {
   const repository = new PostgresBillingRepository(pool);
   const dependencies: CheckoutUseCaseDependencies = {
     gateway: new WhopApiAndHmacAdapter({
-      apiKey: environment.WHOP_API_KEY,
+      companyApiKey: environment.WHOP_API_KEY,
+      companyId: 'biz_test_company_001',
       webhookSecret: 'whop_webhook_secret_placeholder_dev_32chars',
       checkoutHmacSecret: environment.INTERNAL_CHECKOUT_HMAC_SECRET,
-      apiBaseUrl: environment.WHOP_API_BASE_URL,
       checkoutBaseUrl: environment.WHOP_CHECKOUT_BASE_URL,
       webhookToleranceSeconds: environment.WHOP_WEBHOOK_TOLERANCE_SECONDS,
     }),

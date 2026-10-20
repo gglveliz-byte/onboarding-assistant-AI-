@@ -252,13 +252,13 @@ export interface WorldSample {
 export const CANVAS_BACKGROUND = '#f2fbf9';
 /** Ancho de viewport por debajo del cual se reduce la densidad de la constelación (móvil). */
 export const COMPACT_VIEWPORT_BREAKPOINT = 768;
-/** Densidad de microtriángulos y glifos ambientales por terminal (calibrada para 60 fps sostenidos). */
-export const DESKTOP_NODE_COUNT = 3000;
-export const COMPACT_NODE_COUNT = 1500;
-export const DESKTOP_GLYPH_COUNT = 96;
-export const COMPACT_GLYPH_COUNT = 56;
+/** Densidad de microtriángulos y glifos ambientales por terminal (calibrada para 60/120 fps sostenidos sin tirones). */
+export const DESKTOP_NODE_COUNT = 1350;
+export const COMPACT_NODE_COUNT = 720;
+export const DESKTOP_GLYPH_COUNT = 40;
+export const COMPACT_GLYPH_COUNT = 24;
 /** Presupuesto total de píxeles del lienzo (acota el área pintada en pantallas retina y 4K). */
-export const MAX_CANVAS_PIXELS = 2_600_000;
+export const MAX_CANVAS_PIXELS = 2_000_000;
 /** Cotas de densidad de píxeles: techo retina (1.5) y suelo de nitidez (0.75). */
 export const MAX_DEVICE_PIXEL_RATIO = 1.5;
 export const MIN_DEVICE_PIXEL_RATIO = 0.75;
@@ -266,10 +266,10 @@ export const MIN_DEVICE_PIXEL_RATIO = 0.75;
 export const PERSPECTIVE_FOV = 780;
 /** Tiempo congelado (segundos) del fotograma único cuando el usuario reduce el movimiento. */
 export const STATIC_MOTION_TIME = 2.6;
-/** Rango de transición Cerebro → Red de nodos: respuesta desde el primer píxel de scroll (0.00..0.52). */
-export const BRAIN_TO_NETWORK_RANGE: readonly [number, number] = [0.00, 0.52];
-/** Rango de transición Red de nodos → Planeta Tierra: solapado para flujo continuo (0.44..0.96). */
-export const NETWORK_TO_WORLD_RANGE: readonly [number, number] = [0.44, 0.96];
+/** Rango de transición Cerebro → Prisma del Logotipo: morphing limpio que culmina al 100% en scroll 0.22 (0.06..0.22). */
+export const BRAIN_TO_NETWORK_RANGE: readonly [number, number] = [0.06, 0.22];
+/** Rango de transición Prisma del Logotipo → Planeta Tierra: permanece 100% formado en la sección RAG (0.52..0.82). */
+export const NETWORK_TO_WORLD_RANGE: readonly [number, number] = [0.52, 0.82];
 
 /** Transformación de pantalla de una etapa: deriva relativa y escala uniforme de la escultura. */
 export interface StageScreenTransform {
@@ -285,7 +285,7 @@ export interface StageScreenTransform {
 export const BRAIN_SCREEN_TRANSFORM: StageScreenTransform = { offsetX: 0.315, offsetY: -0.02, scale: 0.7 };
 /** Deriva y escala del Cerebro en viewports angostos (el hero apila el contenido en una columna). */
 export const BRAIN_COMPACT_OFFSET_FACTOR = 0.0;
-export const BRAIN_COMPACT_SCALE = 0.46;
+export const BRAIN_COMPACT_SCALE = 0.40;
 export const BRAIN_COMPACT_OFFSET_Y_FACTOR = -0.16;
-/** Ancho mínimo de viewport para activar la deriva lateral del Cerebro (debajo: recentrado). */
-export const BRAIN_SIDE_SHIFT_MIN_WIDTH = 1024;
+/** Ancho mínimo de viewport para activar la deriva lateral del Cerebro (debajo: recentrado armónico). */
+export const BRAIN_SIDE_SHIFT_MIN_WIDTH = 860;

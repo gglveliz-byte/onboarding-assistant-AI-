@@ -72,6 +72,23 @@ function check(condition: boolean, description: string): void {
 }
 
 /**
+ * Resuelve los minutos incluidos que el plan declara en el CATALOGO VIVO.
+ *
+ * La matriz de precios es editable en caliente por el SuperAdmin, asi que fijar numeros del seed en
+ * las aserciones convierte cualquier ajuste de negocio en un fallo de prueba. Se lee el catalogo real
+ * y se verifica la invariante: el asiento debe conceder exactamente lo que el plan declara.
+ *
+ * @param repository - Repositorio de facturacion con acceso al catalogo.
+ * @param planCode - Codigo del plan consultado.
+ * @returns Minutos incluidos en formato Fixed6, o `0.000000` si el plan no existe.
+ */
+async function minutesForPlan(repository: PostgresBillingRepository, planCode: string): Promise<string> {
+  const catalog = await repository.getPlanCatalog();
+  const plan = catalog[planCode as keyof typeof catalog];
+  return plan === undefined ? '0.000000' : plan.includedMinutes;
+}
+
+/**
  * Construye el cuerpo crudo y las cabeceras firmadas de un webhook sintetico valido.
  *
  * @param eventId - Identificador unico del evento.
@@ -85,12 +102,22 @@ function buildSignedWebhook(
   data: Readonly<Record<string, unknown>>
 ): { readonly rawBody: Buffer; readonly headers: WhopWebhookHeaders } {
   const timestampSeconds = Math.floor(Date.now() / 1000);
-  const rawBody = Buffer.from(JSON.stringify({ event_id: eventId, event_type: eventName, data: { organization_id: FIXTURE_ORG_ID, ...data } }), 'utf8');
+  const rawBody = Buffer.from(
+    JSON.stringify({
+      id: eventId,
+      type: eventName,
+      api_version: 'v1',
+      data: {
+        metadata: { organization_id: FIXTURE_ORG_ID, internal_plan_code: (data as Record<string, unknown>)['internal_plan_code'] ?? 'PAYG' },
+        ...data,
+      },
+    }),
+    'utf8'
+  );
   const headers: WhopWebhookHeaders = {
     eventId,
     timestampHeader: String(timestampSeconds),
-    signatureHeader: CryptoUtils.hmacSha256Hex(TEST_WEBHOOK_SECRET, `${timestampSeconds}.${rawBody.toString('utf8')}`),
-    eventNameHeader: eventName,
+    signatureHeader: `v1,${CryptoUtils.hmacSha256Base64(TEST_WEBHOOK_SECRET, `${eventId}.${timestampSeconds}.${rawBody.toString('utf8')}`)}`,
   };
   return { rawBody, headers };
 }
@@ -179,7 +206,7 @@ async function verifyActivation(
 ): Promise<void> {
   const eventId = `evt_activation_${randomUUID().slice(0, 8)}`;
   createdIdempotencyKeys.push(eventId);
-  const { rawBody, headers } = buildSignedWebhook(eventId, 'membership.went_valid', {
+  const { rawBody, headers } = buildSignedWebhook(eventId, 'membership.activated', {
     membership_id: FIXTURE_MEMBERSHIP_ID,
     internal_plan_code: 'PLAN_30',
     plan_id: 'whop_plan_pro_30usd',
@@ -190,14 +217,15 @@ async function verifyActivation(
   const outcome = await useCase.execute(rawBody, headers);
   check(!outcome.wasDuplicate, 'La primera activacion no debe considerarse duplicada');
   check(outcome.ledgerEntryId !== null, 'La activacion debe registrar un asiento contable');
-  check(outcome.appliedAction.includes('180.000000'), `La activacion de PLAN_30 debe otorgar 180 minutos (accion: ${outcome.appliedAction})`);
+  const plan30Minutes = await minutesForPlan(repository, 'PLAN_30');
+  check(outcome.appliedAction.includes(plan30Minutes), `La activacion de PLAN_30 debe otorgar sus ${plan30Minutes} minutos declarados (accion: ${outcome.appliedAction})`);
 
   const subscription = await repository.findSubscription(FIXTURE_ORG_ID);
   check(subscription !== null, 'La suscripcion debe existir tras la activacion');
   check(subscription?.status === 'ACTIVE', 'La suscripcion debe quedar activa');
   check(subscription?.planCode === 'PLAN_30', 'El plan contratado debe quedar registrado');
-  check(subscription?.periodIncludedMinutesRemaining === '180.000000', 'Los minutos incluidos deben quedar disponibles en su totalidad');
-  check(subscription?.periodIncludedMinutesQuota === '180.000000', 'La cuota del periodo debe coincidir con el plan');
+  check(subscription?.periodIncludedMinutesRemaining === plan30Minutes, 'Los minutos incluidos deben quedar disponibles en su totalidad');
+  check(subscription?.periodIncludedMinutesQuota === plan30Minutes, 'La cuota del periodo debe coincidir con el plan');
   check(subscription?.externalMembershipId === FIXTURE_MEMBERSHIP_ID, 'La membresia externa debe quedar vinculada');
   check(subscription?.lastExternalEventId === eventId, 'El ultimo evento aplicado debe quedar registrado');
   check(await repository.canOrganizationOperate(FIXTURE_ORG_ID), 'Una organizacion activa con minutos debe poder operar');
@@ -215,9 +243,10 @@ async function verifyIdempotency(
   repository: PostgresBillingRepository,
   redisClient: RedisClusterClient
 ): Promise<void> {
+  const plan10Minutes = await minutesForPlan(repository, 'PLAN_10');
   const eventId = `evt_activation_${randomUUID().slice(0, 8)}`;
   createdIdempotencyKeys.push(eventId);
-  const { rawBody, headers } = buildSignedWebhook(eventId, 'membership.went_valid', {
+  const { rawBody, headers } = buildSignedWebhook(eventId, 'membership.activated', {
     membership_id: FIXTURE_MEMBERSHIP_ID,
     internal_plan_code: 'PLAN_10',
     period_start: new Date().toISOString(),
@@ -227,7 +256,7 @@ async function verifyIdempotency(
   const firstOutcome = await useCase.execute(rawBody, headers);
   check(!firstOutcome.wasDuplicate, 'El primer envio debe procesarse');
   const balanceAfterFirst = (await repository.findSubscription(FIXTURE_ORG_ID))?.periodIncludedMinutesRemaining;
-  check(balanceAfterFirst === '55.000000', `El cambio de plan debe otorgar los 55 minutos de PLAN_10 (saldo: ${String(balanceAfterFirst)})`);
+  check(balanceAfterFirst === plan10Minutes, `El cambio de plan debe otorgar los ${plan10Minutes} minutos declarados por PLAN_10 (saldo: ${String(balanceAfterFirst)})`);
 
   const repeatedOutcome = await useCase.execute(rawBody, headers);
   check(repeatedOutcome.wasDuplicate, 'El reenvio del mismo evento debe descartarse como duplicado');
@@ -251,6 +280,7 @@ async function verifyIdempotency(
 
 /** Verifica la renovacion del cupo y la recarga de saldo prepagado. */
 async function verifyRenewalAndTopUp(useCase: ProcessWhopWebhookUseCase, repository: PostgresBillingRepository): Promise<void> {
+  const plan10Minutes = await minutesForPlan(repository, 'PLAN_10');
   const renewalEventId = `evt_renewal_${randomUUID().slice(0, 8)}`;
   createdIdempotencyKeys.push(renewalEventId);
   const renewalWebhook = buildSignedWebhook(renewalEventId, 'payment.succeeded', {
@@ -265,10 +295,10 @@ async function verifyRenewalAndTopUp(useCase: ProcessWhopWebhookUseCase, reposit
   // Se agota parte del cupo escribiendo un consumo previo para comprobar el reinicio de excesos.
   const renewalOutcome = await useCase.execute(renewalWebhook.rawBody, renewalWebhook.headers);
   check(!renewalOutcome.wasDuplicate, 'La renovacion debe procesarse');
-  check(renewalOutcome.appliedAction.includes('55.000000'), `La renovacion debe restablecer los 55 minutos del plan (accion: ${renewalOutcome.appliedAction})`);
+  check(renewalOutcome.appliedAction.includes(plan10Minutes), `La renovacion debe restablecer los ${plan10Minutes} minutos del plan (accion: ${renewalOutcome.appliedAction})`);
 
   const afterRenewal = await repository.findSubscription(FIXTURE_ORG_ID);
-  check(afterRenewal?.periodIncludedMinutesRemaining === '55.000000', 'La renovacion debe restablecer el cupo completo');
+  check(afterRenewal?.periodIncludedMinutesRemaining === plan10Minutes, 'La renovacion debe restablecer el cupo completo');
   check(afterRenewal?.periodOverageMinutesUsed === '0.000000', 'La renovacion debe reiniciar el contador de excesos');
   check(afterRenewal?.creditBalanceUsd === '0.000000', 'Una renovacion no debe modificar el saldo prepagado');
 
@@ -286,7 +316,7 @@ async function verifyRenewalAndTopUp(useCase: ProcessWhopWebhookUseCase, reposit
 
   const afterTopUp = await repository.findSubscription(FIXTURE_ORG_ID);
   check(afterTopUp?.creditBalanceUsd === '25.500000', `El saldo prepagado debe quedar en 25.500000 USD (saldo: ${String(afterTopUp?.creditBalanceUsd)})`);
-  check(afterTopUp?.periodIncludedMinutesRemaining === '55.000000', 'Una recarga no debe alterar los minutos incluidos');
+  check(afterTopUp?.periodIncludedMinutesRemaining === plan10Minutes, 'Una recarga no debe alterar los minutos incluidos');
 
   const secondTopUpEventId = `evt_topup_${randomUUID().slice(0, 8)}`;
   createdIdempotencyKeys.push(secondTopUpEventId);
@@ -306,9 +336,10 @@ async function verifyRenewalAndTopUp(useCase: ProcessWhopWebhookUseCase, reposit
 
 /** Verifica que la invalidacion congele los minutos incluidos conservando el saldo prepagado. */
 async function verifyInvalidation(useCase: ProcessWhopWebhookUseCase, repository: PostgresBillingRepository): Promise<void> {
+  const plan10Minutes = await minutesForPlan(repository, 'PLAN_10');
   const eventId = `evt_invalid_${randomUUID().slice(0, 8)}`;
   createdIdempotencyKeys.push(eventId);
-  const { rawBody, headers } = buildSignedWebhook(eventId, 'membership.went_invalid', {
+  const { rawBody, headers } = buildSignedWebhook(eventId, 'membership.deactivated', {
     membership_id: FIXTURE_MEMBERSHIP_ID,
     reason: 'PAGO_RECHAZADO_POR_EL_EMISOR',
   });
@@ -321,7 +352,7 @@ async function verifyInvalidation(useCase: ProcessWhopWebhookUseCase, repository
   const subscription = await repository.findSubscription(FIXTURE_ORG_ID);
   check(subscription?.status === 'PAST_DUE_OR_INVALID', 'La suscripcion debe quedar en estado moroso');
   check(subscription?.periodIncludedMinutesRemaining === '0.000000', 'Los minutos incluidos deben quedar congelados');
-  check(subscription?.periodIncludedMinutesQuota === '55.000000', 'La cuota contratada debe conservarse para la auditoria');
+  check(subscription?.periodIncludedMinutesQuota === plan10Minutes, 'La cuota contratada debe conservarse para la auditoria');
   check(subscription?.creditBalanceUsd === '30.000000', 'El saldo prepagado debe conservarse intacto ante la morosidad');
   check(
     await repository.canOrganizationOperate(FIXTURE_ORG_ID),
@@ -345,10 +376,10 @@ async function main(): Promise<void> {
   const redisClient = createRedisClusterClientFromEnv();
   const repository = new PostgresBillingRepository(pool);
   const gateway = new WhopApiAndHmacAdapter({
-    apiKey: environment.WHOP_API_KEY,
+    companyApiKey: environment.WHOP_COMPANY_API_KEY,
+    companyId: environment.WHOP_COMPANY_ID,
     webhookSecret: TEST_WEBHOOK_SECRET,
     checkoutHmacSecret: environment.INTERNAL_CHECKOUT_HMAC_SECRET,
-    apiBaseUrl: environment.WHOP_API_BASE_URL,
     checkoutBaseUrl: environment.WHOP_CHECKOUT_BASE_URL,
     webhookToleranceSeconds: environment.WHOP_WEBHOOK_TOLERANCE_SECONDS,
   });
@@ -372,7 +403,20 @@ async function main(): Promise<void> {
     check(Object.keys(catalogo).length >= 5, `El catalogo debe declarar al menos 5 planes (declarados: ${Object.keys(catalogo).length})`);
     check(catalogo.PLAN_50?.volumeDiscountEligible === true, 'El plan de 50 USD debe ser elegible para descuento por volumen');
     check(catalogo.PLAN_50?.volumeDiscountTiers.length === 4, 'El plan de 50 USD debe declarar sus 4 tramos de volumen');
-    check(catalogo.PLAN_5?.includedMinutes === '25.000000', `El plan de 5 USD debe declarar 25 minutos incluidos (obtenido: ${String(catalogo.PLAN_5?.includedMinutes)})`);
+    // La matriz es editable en caliente: se verifica la invariante estructural, no un numero del seed.
+  check(
+    Number(catalogo.PLAN_5?.includedMinutes ?? 0) > 0,
+    `PLAN_5 debe declarar minutos incluidos positivos (obtenido: ${String(catalogo.PLAN_5?.includedMinutes)})`
+  );
+  const sinAprovisionar = Object.values(catalogo).filter((plan) => !plan.isProvisioned).map((plan) => plan.planCode);
+  check(
+    sinAprovisionar.length === 0,
+    `Todo plan del catalogo debe tener identificador real en la pasarela; faltan: ${sinAprovisionar.join(', ') || 'ninguno'}`
+  );
+  check(
+    Number(catalogo.PLAN_5?.grossPriceUsd ?? 0) > Number(catalogo.PLAN_5?.monthlyFixedPriceUsd ?? 0),
+    `El bruto de PLAN_5 debe exceder su neto al trasladar la comision (bruto: ${String(catalogo.PLAN_5?.grossPriceUsd)})`
+  );
 
     await prepareFixtureOrganization(ownerPool);
     console.log('Fixtures sembradas: 1 organizacion con acuerdo de datos firmado.');

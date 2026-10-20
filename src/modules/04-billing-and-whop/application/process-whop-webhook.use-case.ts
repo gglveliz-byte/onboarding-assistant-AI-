@@ -37,6 +37,7 @@ import { DecimalMath } from '../../../shared/kernel/decimal.util';
 import type { PoolClient } from 'pg';
 import { ConflictError, NotFoundError, ValidationError } from '../../../shared/kernel/result-and-errors';
 import { computeIncludedMinutesForPlan } from '../domain/billing-whop.entities';
+import { computeNetFromGrossUsd } from '../domain/whop-fee.util';
 import type {
   MembershipWentInvalidPayload,
   MembershipWentValidPayload,
@@ -92,25 +93,39 @@ export class ProcessWhopWebhookUseCase {
    * @throws ConflictError cuando otra instancia ya esta procesando el mismo evento.
    */
   public async execute(rawBodyBuffer: Buffer, headers: WhopWebhookHeaders): Promise<WebhookProcessingOutcome> {
-    this.dependencies.gateway.assertValidWebhookSignature(rawBodyBuffer, headers);
+    const verification = this.dependencies.gateway.assertValidWebhookSignature(rawBodyBuffer, headers);
 
-    const eventName = WhopWebhookPayloadParser.normalizeEventName(headers.eventNameHeader);
-    const idempotencyKey = this.dependencies.redisClient.keyNamespaces.webhookEventSeen(headers.eventId);
+    // El helper oficial ya deserializo el cuerpo sobre los bytes exactos; se reutiliza ese objeto y
+    // solo se vuelve al buffer en el camino raro de un helper que devuelva el payload vacio.
+    const envelope = verification.payload ?? WhopWebhookPayloadParser.extractEventData(rawBodyBuffer);
+
+    // El tipo de evento NO viaja en cabecera: es el campo `type` del sobre. La identificacion del
+    // evento es el campo `id` (`msg_...`), que coincide con la cabecera `webhook-id`.
+    const rawEventName = typeof envelope['type'] === 'string' ? envelope['type'] : '';
+    const eventName = WhopWebhookPayloadParser.normalizeEventName(rawEventName);
+    const eventId = headers.eventId.length > 0
+      ? headers.eventId
+      : (typeof envelope['id'] === 'string' ? envelope['id'] : '');
+    if (eventId.length === 0) {
+      throw new ValidationError('El webhook no declara identificador de evento; no puede aplicarse idempotencia.');
+    }
+
+    const idempotencyKey = this.dependencies.redisClient.keyNamespaces.webhookEventSeen(eventId);
     const reserved = await this.dependencies.redisClient.keys.setIfAbsent(idempotencyKey, 'PROCESSING', WEBHOOK_IDEMPOTENCY_TTL_SECONDS);
 
     if (!reserved) {
       const previousState = await this.dependencies.redisClient.json.getText(idempotencyKey);
       if (previousState === 'PROCESSED') {
-        return { eventId: headers.eventId, eventName, wasDuplicate: true, ledgerEntryId: null, appliedAction: 'EVENTO_YA_PROCESADO' };
+        return { eventId, eventName, wasDuplicate: true, ledgerEntryId: null, appliedAction: 'EVENTO_YA_PROCESADO' };
       }
       throw new ConflictError(
-        `El evento ${headers.eventId} ya esta en proceso por otra instancia; reintente cuando la marca de idempotencia expire.`
+        `El evento ${eventId} ya esta en proceso por otra instancia; reintente cuando la marca de idempotencia expire.`
       );
     }
 
     try {
-      const eventData = WhopWebhookPayloadParser.extractEventData(rawBodyBuffer);
-      const outcome = await this.dispatchEvent(eventName, headers.eventId, eventData);
+      const eventData = WhopWebhookPayloadParser.flattenVerifiedPayload(envelope);
+      const outcome = await this.dispatchEvent(eventName, eventId, eventData);
       await this.dependencies.redisClient.json.setText(idempotencyKey, 'PROCESSED', WEBHOOK_IDEMPOTENCY_TTL_SECONDS);
       return outcome;
     } catch (error) {
@@ -123,9 +138,13 @@ export class ProcessWhopWebhookUseCase {
   /**
    * Despacha el evento a su manejador segun su nombre canonico.
    *
+   * `membership.updated` es el caso delicado: la pasarela lo emite tanto en altas como en bajas (y
+   * reenvia alli tambien la activacion), asi que la decision no la toma el nombre del evento sino el
+   * campo `status` de la membresia.
+   *
    * @param eventName - Nombre canonico del evento.
    * @param eventId - Identificador del evento, usado en el asiento contable.
-   * @param eventData - Objeto de datos ya deserializado y normalizado.
+   * @param eventData - Objeto de datos ya deserializado, desanidado y normalizado.
    * @returns Resultado del procesamiento.
    */
   private async dispatchEvent(
@@ -134,10 +153,14 @@ export class ProcessWhopWebhookUseCase {
     eventData: Readonly<Record<string, unknown>>
   ): Promise<WebhookProcessingOutcome> {
     switch (eventName) {
-      case 'membership.went_valid':
-        return this.applyMembershipActivation(WhopWebhookPayloadParser.parseMembershipValid(eventData), eventId);
-      case 'membership.went_invalid':
-        return this.applyMembershipInvalidation(WhopWebhookPayloadParser.parseMembershipInvalid(eventData), eventId);
+      case 'membership.activated':
+        return this.applyMembershipActivation(WhopWebhookPayloadParser.parseMembershipValid(eventData), eventId, eventName);
+      case 'membership.deactivated':
+        return this.applyMembershipInvalidation(WhopWebhookPayloadParser.parseMembershipInvalid(eventData), eventId, eventName);
+      case 'membership.updated':
+        return WhopWebhookPayloadParser.membershipStatusIsCurrent(eventData)
+          ? this.applyMembershipActivation(WhopWebhookPayloadParser.parseMembershipValid(eventData), eventId, eventName)
+          : this.applyMembershipInvalidation(WhopWebhookPayloadParser.parseMembershipInvalid(eventData), eventId, eventName);
       case 'payment.succeeded':
         return this.applyPaymentSucceeded(WhopWebhookPayloadParser.parsePaymentSucceeded(eventData), eventId);
       default:
@@ -153,7 +176,11 @@ export class ProcessWhopWebhookUseCase {
    * @returns Resultado del procesamiento con el asiento de alta.
    * @throws NotFoundError cuando el plan no existe en el catalogo.
    */
-  public async applyMembershipActivation(payload: MembershipWentValidPayload, eventId: string): Promise<WebhookProcessingOutcome> {
+  public async applyMembershipActivation(
+    payload: MembershipWentValidPayload,
+    eventId: string,
+    sourceEvent: SupportedWebhookEventName = 'membership.activated'
+  ): Promise<WebhookProcessingOutcome> {
     const planCatalog = await this.dependencies.billingRepository.getPlanCatalog();
     const plan = planCatalog[payload.internalPlanCode];
     if (plan === undefined) {
@@ -197,12 +224,12 @@ export class ProcessWhopWebhookUseCase {
         amountUsdDelta: ZERO_FIXED6,
         includedMinutesBalanceAfter: grantedMinutes,
         creditBalanceUsdAfter: lockedSubscription.creditBalanceUsd,
-        metadataJson: { planCode: payload.internalPlanCode, membershipId: payload.membershipId, source: 'membership.went_valid' },
+        metadataJson: { planCode: payload.internalPlanCode, membershipId: payload.membershipId, source: sourceEvent },
       });
 
       return {
         eventId,
-        eventName: 'membership.went_valid' as const,
+        eventName: sourceEvent,
         wasDuplicate: false,
         ledgerEntryId,
         appliedAction: `SUSCRIPCION_ACTIVADA_CON_${grantedMinutes}_MINUTOS`,
@@ -218,7 +245,11 @@ export class ProcessWhopWebhookUseCase {
    * @param eventId - Identificador del evento.
    * @returns Resultado del procesamiento sin asiento contable (no hay movimiento de saldos).
    */
-  public async applyMembershipInvalidation(payload: MembershipWentInvalidPayload, eventId: string): Promise<WebhookProcessingOutcome> {
+  public async applyMembershipInvalidation(
+    payload: MembershipWentInvalidPayload,
+    eventId: string,
+    sourceEvent: SupportedWebhookEventName = 'membership.deactivated'
+  ): Promise<WebhookProcessingOutcome> {
     // La invalidacion puede llegar antes que la activacion: se garantiza la fila antes de bloquearla.
     await this.dependencies.billingRepository.ensureSubscriptionExists(payload.organizationId, {
       planCode: 'PAYG',
@@ -249,7 +280,7 @@ export class ProcessWhopWebhookUseCase {
 
     return {
       eventId,
-      eventName: 'membership.went_invalid',
+      eventName: sourceEvent,
       wasDuplicate: false,
       ledgerEntryId: null,
       appliedAction: `SUSCRIPCION_EN_MORA: ${payload.reason}`,
@@ -277,7 +308,7 @@ export class ProcessWhopWebhookUseCase {
       periodIncludedMinutesRemaining: ZERO_FIXED6,
       periodOverageMinutesUsed: ZERO_FIXED6,
       currentPeriodOverageBilledUsd: ZERO_FIXED6,
-      creditBalanceUsd: payload.paymentKind === 'TOP_UP' ? paidAmountUsd : ZERO_FIXED6,
+      creditBalanceUsd: payload.paymentKind === 'TOP_UP' ? this.resolveNetCredit(paidAmountUsd) : ZERO_FIXED6,
       externalMembershipId: payload.membershipId,
       lastExternalEventId: eventId,
     });
@@ -287,6 +318,21 @@ export class ProcessWhopWebhookUseCase {
         ? this.applyTopUp(client, payload, eventId, paidAmountUsd, lockedSubscription)
         : this.applyRenewal(client, payload, eventId, paidAmountUsd, lockedSubscription)
     );
+  }
+
+  /**
+   * Convierte el importe bruto declarado por la pasarela en el neto acreditable a la organizacion.
+   * Sin comision configurada (pruebas sin pasarela real) el neto coincide con el bruto.
+   *
+   * @param grossUsd - Importe bruto cobrado al cliente.
+   * @returns Importe neto que debe reflejarse en el saldo y en el libro mayor.
+   */
+  private resolveNetCredit(grossUsd: string): string {
+    const fee = this.dependencies.platformFee;
+    if (fee === undefined) {
+      return grossUsd;
+    }
+    return computeNetFromGrossUsd(grossUsd, fee);
   }
 
   /**
@@ -305,7 +351,10 @@ export class ProcessWhopWebhookUseCase {
     paidAmountUsd: string,
     lockedSubscription: WhopSubscriptionState
   ): Promise<WebhookProcessingOutcome> {
-    const newCreditBalance = DecimalMath.sumFixed6([lockedSubscription.creditBalanceUsd, paidAmountUsd]);
+    // El webhook declara el importe BRUTO que pago el cliente. El saldo acreditable es el NETO que
+    // liquida en la empresa: acreditar el bruto regalaria a la organizacion la comision de la pasarela.
+    const creditedAmountUsd = this.resolveNetCredit(paidAmountUsd);
+    const newCreditBalance = DecimalMath.sumFixed6([lockedSubscription.creditBalanceUsd, creditedAmountUsd]);
     await this.dependencies.billingRepository.applyPeriodUpdateOnLockedClient(client, payload.organizationId, {
       planCode: lockedSubscription.planCode,
       status: 'ACTIVE',
@@ -326,10 +375,16 @@ export class ProcessWhopWebhookUseCase {
       minutesDelta: ZERO_FIXED6,
       unitRateUsd: ZERO_FIXED6,
       discountAppliedPercent: ZERO_FIXED6,
-      amountUsdDelta: paidAmountUsd,
+      amountUsdDelta: creditedAmountUsd,
       includedMinutesBalanceAfter: lockedSubscription.periodIncludedMinutesRemaining,
       creditBalanceUsdAfter: newCreditBalance,
-      metadataJson: { paymentKind: payload.paymentKind, paymentId: payload.paymentId, source: 'payment.succeeded' },
+      metadataJson: {
+        paymentKind: payload.paymentKind,
+        paymentId: payload.paymentId,
+        source: 'payment.succeeded',
+        grossChargedUsd: paidAmountUsd,
+        netCreditedUsd: creditedAmountUsd,
+      },
     });
 
     return {
@@ -337,7 +392,7 @@ export class ProcessWhopWebhookUseCase {
       eventName: 'payment.succeeded',
       wasDuplicate: false,
       ledgerEntryId,
-      appliedAction: `SALDO_PREPAGADO_AUMENTADO_EN_${paidAmountUsd}_USD`,
+      appliedAction: `SALDO_PREPAGADO_AUMENTADO_EN_${creditedAmountUsd}_USD`,
     };
   }
 

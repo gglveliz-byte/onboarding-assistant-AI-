@@ -32,6 +32,7 @@
 
 import React, { ReactElement, ReactNode, useState, useEffect } from 'react';
 import Link from 'next/link';
+import { getAccessToken, setAccessToken } from '../../lib/api-client/http-client';
 
 export interface SuperAdminControlShellProps {
   readonly currentPath: string;
@@ -49,6 +50,7 @@ const NAVIGATION_ITEMS = [
   { label: 'Matriz Global de Precios', href: '/superadmin/pricing-matrix', icon: '💳' },
   { label: 'Tarifas y Overrides por Cliente', href: '/superadmin/custom-pricing-overrides', icon: '⚙️' },
   { label: 'Infraestructura, Kill-Switch y Logs', href: '/superadmin/infrastructure', icon: '📡' },
+  { label: 'Demostración Pública', href: '/superadmin/public-demo', icon: '🎙️' },
 ];
 
 /**
@@ -58,6 +60,8 @@ export function SuperAdminControlShell({
   currentPath,
   children,
 }: SuperAdminControlShellProps): ReactElement {
+  // Verificación de autenticación de SuperAdmin al montar
+  const [isVerifyingAuth, setIsVerifyingAuth] = useState<boolean>(true);
   // Reloj de expiración de sesión de 4 horas (14400 segundos)
   const [secondsRemaining, setSecondsRemaining] = useState<number>(14400);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState<boolean>(false);
@@ -69,11 +73,68 @@ export function SuperAdminControlShell({
   ]);
 
   useEffect(() => {
+    const token = getAccessToken();
+    if (!token) {
+      if (typeof window !== 'undefined') {
+        const nextUrl = window.location.pathname + window.location.search;
+        window.location.replace(`/internal/superadmin-login?next=${encodeURIComponent(nextUrl)}`);
+      }
+      return;
+    }
+
+    try {
+      const parts = token.split('.');
+      const rawPayload = parts[1];
+      if (parts.length === 3 && typeof rawPayload === 'string') {
+        const payloadStr = atob(rawPayload.replace(/-/g, '+').replace(/_/g, '/'));
+        const payload = JSON.parse(payloadStr) as { exp?: number };
+        if (typeof payload.exp === 'number') {
+          const remaining = Math.max(0, Math.floor(payload.exp - Date.now() / 1000));
+          if (remaining <= 0) {
+            setAccessToken(null);
+            if (typeof window !== 'undefined') {
+              const nextUrl = window.location.pathname + window.location.search;
+              window.location.replace(`/internal/superadmin-login?next=${encodeURIComponent(nextUrl)}`);
+            }
+            return;
+          }
+          setSecondsRemaining(remaining);
+        }
+      }
+    } catch {
+      // Si falla la decodificación se mantiene el temporizador de sesión
+    }
+
+    setIsVerifyingAuth(false);
+  }, []);
+
+  useEffect(() => {
+    if (isVerifyingAuth) {
+      return;
+    }
     const timer = setInterval(() => {
-      setSecondsRemaining((prev) => (prev > 0 ? prev - 1 : 0));
+      setSecondsRemaining((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          setAccessToken(null);
+          if (typeof window !== 'undefined') {
+            const nextUrl = window.location.pathname + window.location.search;
+            window.location.replace(`/internal/superadmin-login?next=${encodeURIComponent(nextUrl)}`);
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
     }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [isVerifyingAuth]);
+
+  const handleLogout = (): void => {
+    setAccessToken(null);
+    if (typeof window !== 'undefined') {
+      window.location.replace('/internal/superadmin-login');
+    }
+  };
 
   const formatCountdown = (totalSeconds: number): string => {
     const hours = Math.floor(totalSeconds / 3600);
@@ -211,8 +272,80 @@ export function SuperAdminControlShell({
           ))}
         </div>
       </div>
+
+      {/* Botón de Cierre Seguro de Sesión */}
+      <div style={{ borderTop: '1px solid var(--color-stone, #cdcdc9)', paddingTop: '12px', marginTop: '16px' }}>
+        <button
+          type="button"
+          onClick={handleLogout}
+          style={{
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            padding: '7px 12px',
+            fontSize: '12px',
+            backgroundColor: 'transparent',
+            border: '1px solid var(--color-stone, #cdcdc9)',
+            borderRadius: '4px',
+            color: 'var(--color-crimson, #cf2d56)',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <span>⏻</span>
+          <span>Cerrar sesión SuperAdmin</span>
+        </button>
+      </div>
     </div>
   );
+
+  if (isVerifyingAuth) {
+    return (
+      <div
+        className="flex min-h-screen items-center justify-center p-6"
+        style={{
+          backgroundColor: 'var(--color-parchment, #f7f7f4)',
+          color: 'var(--color-ink, #26251e)',
+          fontFamily: 'var(--font-cursorgothic, sans-serif)',
+        }}
+      >
+        <div
+          style={{
+            backgroundColor: 'var(--color-bone, #f2f1ed)',
+            border: '1px solid var(--color-stone, #cdcdc9)',
+            borderTop: '2px solid var(--color-forest, #34785c)',
+            borderRadius: '4px',
+            padding: '28px 32px',
+            textAlign: 'center',
+            maxWidth: '420px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
+          }}
+        >
+          <span
+            style={{
+              fontSize: '11px',
+              fontFamily: 'var(--font-berkeleymono, monospace)',
+              color: 'var(--color-forest, #34785c)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+            }}
+          >
+            Gobierno de Plataforma
+          </span>
+          <div style={{ fontSize: '16px', fontWeight: 500 }}>
+            Verificando credenciales de SuperAdmin…
+          </div>
+          <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-driftwood, #84847e)' }}>
+            Se requiere una sesión activa con rol SuperAdmin para acceder a esta consola. Redirigiendo al acceso seguro…
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

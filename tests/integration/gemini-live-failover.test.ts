@@ -177,7 +177,7 @@ async function runGeminiLiveTestSuite(): Promise<void> {
     JSON.stringify({
       serverContent: {
         modelTurn: {
-          parts: [{ inlineData: { mimeType: 'audio/pcm;rate=24000', data: incomingAudioBase64 } }],
+          parts: [{ inlineData: { mimeType: 'audio/pcm;rate=16000', data: incomingAudioBase64 } }],
         },
       },
     })
@@ -186,6 +186,13 @@ async function runGeminiLiveTestSuite(): Promise<void> {
   assert.equal(speechStartedFired, true, 'onAssistantSpeechStarted debe dispararse');
   assert.equal(receivedAudioFrames.length, 1);
   assert.equal(receivedAudioFrames[0]?.toString('utf-8'), 'audio_generado_gemini');
+
+  // Verificar remuestreo 24 kHz → 16 kHz: Gemini emite a 24 kHz pero el frontend espera 16 kHz.
+  const raw24k = Buffer.alloc(480); // 240 muestras a 24 kHz = 10 ms
+  const resampled = GeminiProtocolMapper.resamplePcm16To16k(raw24k, 24000);
+  assert.ok(resampled.length < raw24k.length, 'El remuestreo 24k→16k debe reducir el tamaño del buffer');
+  assert.equal(resampled.length, 320, '240 muestras a 24 kHz → 160 muestras a 16 kHz → 320 bytes');
+  console.log('  -> Remuestreo 24 kHz → 16 kHz verificado:', raw24k.length, '→', resampled.length, 'bytes.');
   console.log('  -> Canal de streaming activo y transmision de audio bidireccional: OK.');
 
   // ===========================================================================

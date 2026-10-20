@@ -84,8 +84,8 @@ function renderProductionStat(stat: ProductionStat, index: number): ReactElement
  */
 export function BioluminescentStatsBanner(): ReactElement {
   return (
-    <div className="px-4 py-4 sm:px-8 sm:py-10 lg:px-12">
-      <div className="mx-auto max-w-[1240px]">
+    <div className="px-4 pt-1 pb-3 sm:px-6 sm:pt-2 sm:pb-4 lg:px-8 w-full">
+      <div className="mx-auto max-w-7xl w-full">
         <section
           aria-label="Arquitectura de alto rendimiento en producción"
           className="w-full rounded-2xl border border-[#C5E8E1] bg-white p-4 sm:p-8 lg:p-10 shadow-glass"

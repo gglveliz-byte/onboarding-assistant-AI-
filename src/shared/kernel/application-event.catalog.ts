@@ -42,6 +42,13 @@ export interface ApplicationEventMap {
     readonly reactivatedByUserId: string;
     readonly reactivatedAtIso: string;
   };
+  /** Una organizacion fue eliminada definitivamente por el gobierno de la plataforma. */
+  'organization.deleted': {
+    readonly organizationId: string;
+    readonly deletedByUserId: string;
+    readonly deletedAtIso: string;
+    readonly mode: 'HARD_DELETED' | 'SOFT_DELETED_TOMBSTONE';
+  };
   /** Se ordeno cerrar de inmediato todas las sesiones de voz de una organizacion. */
   'voice.terminate_all_org_sessions': {
     readonly organizationId: string;

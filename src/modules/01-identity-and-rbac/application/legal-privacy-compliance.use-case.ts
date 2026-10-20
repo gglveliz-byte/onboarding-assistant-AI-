@@ -11,6 +11,8 @@
  *   - Clase `LegalAndPrivacyComplianceUseCase`:
  *       * `checkUserLegalCompliance()`: Valida vigencia de ToS/Privacidad/DPA.
  *       * `acceptLegalDocument()`: Registra aceptacion con snapshot SHA-256 e IP.
+ *       * `acceptPendingDocumentsWithChallenge()`: Renueva el consentimiento durante el login
+ *         (token efimero pre-sesion, sin exigir una sesion ya emitida).
  *       * `signDpaForOrganization()`: Firma formal del DPA para el tenant B2B.
  *       * `exportUserDataGdpr()`: Portabilidad de datos en formato JSON estandar.
  *       * `anonymizeOrDeleteOrganization()`: Baja logica y revocacion de sesiones.
@@ -28,7 +30,9 @@ import {
   NotFoundError,
   ValidationError,
 } from '@shared/kernel/result-and-errors';
+import type { PendingMandatoryLegalDocument } from '../domain/identity.entities';
 import type { LegalDocumentRecord } from '../infrastructure/identity-advanced-row.mapper';
+import { JwtEddsaSigner } from '../infrastructure/jwt-eddsa.signer';
 import type { PostgresAdvancedIdentityRepository } from '../infrastructure/postgres-advanced-identity.repository';
 import type { PostgresIdentityRepository } from '../infrastructure/postgres-identity.repository';
 
@@ -154,6 +158,84 @@ export class LegalAndPrivacyComplianceUseCase {
       documentSha256: serverSha256,
       acceptedAt: new Date(),
     };
+  }
+
+  /**
+   * Registra la aceptacion de los documentos obligatorios durante el login, antes de que exista
+   * una sesion, validando el token efimero emitido en el reto `LEGAL_CONSENT_REQUIRED`.
+   *
+   * La evidencia es personal: el gate de login exige los documentos del propio usuario, por lo
+   * que se valida su pertenencia activa a la organizacion (no un rol OWNER). Si acepta el DPA y
+   * es OWNER, la organizacion queda firmada con la misma evidencia clickwrap.
+   *
+   * @param data - Token del reto, documentos a aceptar, IP y agente del navegador.
+   * @returns Documentos aceptados y los que aun queden pendientes.
+   * @throws UnauthorizedError cuando el token es invalido, expiro o fue manipulado.
+   * @throws ForbiddenError cuando el usuario ya no pertenece a la organizacion del reto.
+   * @throws ValidationError cuando no se indican documentos o alguno no es obligatorio vigente.
+   */
+  public async acceptPendingDocumentsWithChallenge(data: {
+    consentChallengeToken: string;
+    legalDocumentIds: readonly string[];
+    ipAddress: string;
+    userAgent: string;
+  }): Promise<{
+    acceptedDocumentIds: readonly string[];
+    pendingDocuments: ReadonlyArray<PendingMandatoryLegalDocument>;
+  }> {
+    const claims = await JwtEddsaSigner.verifyEphemeralToken(
+      data.consentChallengeToken,
+      'LEGAL_CONSENT_CHALLENGE'
+    );
+    const userId = claims.userId;
+    const organizationId = claims.organizationId ?? null;
+    const requestedIds = [
+      ...new Set(data.legalDocumentIds.map((id) => id.trim()).filter((id) => id.length > 0)),
+    ];
+    if (requestedIds.length === 0) {
+      throw new ValidationError('Debes indicar al menos un documento legal para aceptar.', ['legalDocumentIds']);
+    }
+
+    let membershipRole: string | null = null;
+    if (organizationId) {
+      const membership = await this.identityRepo.findMembership(organizationId, userId);
+      if (!membership || !membership.isActive) {
+        throw new ForbiddenError('El usuario ya no pertenece a la organización del reto legal.');
+      }
+      membershipRole = membership.role;
+    }
+
+    const mandatoryDocs = await this.advancedRepo.findActiveMandatoryLegalDocuments();
+    const mandatoryById = new Map(mandatoryDocs.map((doc) => [doc.id, doc]));
+    const acceptedDocumentIds: string[] = [];
+    let acceptedDpa = false;
+    for (const legalDocumentId of requestedIds) {
+      const catalogDoc = mandatoryById.get(legalDocumentId);
+      if (!catalogDoc) {
+        throw new ValidationError('El documento no está vigente como obligatorio y no puede aceptarse.', [
+          `legalDocumentId:${legalDocumentId}`,
+        ]);
+      }
+      await this.advancedRepo.recordLegalAcceptance({
+        userId,
+        organizationId,
+        legalDocumentId: catalogDoc.id,
+        documentSha256Snapshot: catalogDoc.contentSha256,
+        ipAddress: data.ipAddress,
+        userAgent: data.userAgent,
+      });
+      acceptedDocumentIds.push(catalogDoc.id);
+      if (catalogDoc.docType === 'DPA_ENTERPRISE') {
+        acceptedDpa = true;
+      }
+    }
+
+    if (acceptedDpa && organizationId && membershipRole === 'OWNER') {
+      await this.advancedRepo.signDpaForOrganization(organizationId, data.ipAddress);
+    }
+
+    const pendingDocuments = await this.identityRepo.findPendingMandatoryLegalDocs(userId, organizationId);
+    return { acceptedDocumentIds, pendingDocuments };
   }
 
   /**

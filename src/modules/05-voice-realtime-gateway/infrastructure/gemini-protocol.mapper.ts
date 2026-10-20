@@ -251,11 +251,15 @@ export class GeminiProtocolMapper {
           const parts = Array.isArray(mt['parts']) ? mt['parts'] : [];
 
           for (const p of parts) {
-            // Audio inlineData
+            // Audio inlineData: Gemini Live emite PCM16 a 24 kHz; el frontend espera 16 kHz.
+            // Sin remuestreo la voz se reproduce 1.5× más lenta y grave.
             if (typeof p['inlineData'] === 'object' && p['inlineData'] !== null) {
               const id = p['inlineData'] as Record<string, unknown>;
               if (typeof id['data'] === 'string') {
-                const audioBuffer = Buffer.from(id['data'], 'base64');
+                const rawBuffer = Buffer.from(id['data'], 'base64');
+                const mimeType = typeof id['mimeType'] === 'string' ? id['mimeType'] : '';
+                const sourceRate = GeminiProtocolMapper.parseSampleRateFromMimeType(mimeType);
+                const audioBuffer = GeminiProtocolMapper.resamplePcm16To16k(rawBuffer, sourceRate);
                 return {
                   kind: 'AUDIO',
                   audioBuffer,
@@ -281,5 +285,43 @@ export class GeminiProtocolMapper {
     } catch {
       return { kind: 'UNKNOWN' };
     }
+  }
+
+  /** Tasa nativa de salida de Gemini Live (24 kHz); el frontend espera 16 kHz. */
+  private static readonly GEMINI_NATIVE_OUTPUT_RATE_HZ = 24000;
+  private static readonly TARGET_OUTPUT_RATE_HZ = 16000;
+
+  /**
+   * Extrae la frecuencia de muestreo de un `mimeType` como `audio/pcm;rate=24000`.
+   * Si no se encuentra, devuelve la tasa nativa de Gemini Live (24 kHz).
+   */
+  public static parseSampleRateFromMimeType(mimeType: string): number {
+    const match = /rate=(\d+)/u.exec(mimeType);
+    if (match === null) return GeminiProtocolMapper.GEMINI_NATIVE_OUTPUT_RATE_HZ;
+    const parsed = match[1] !== undefined ? Number.parseInt(match[1], 10) : Number.NaN;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : GeminiProtocolMapper.GEMINI_NATIVE_OUTPUT_RATE_HZ;
+  }
+
+  /**
+   * Remuestrea PCM16 little-endian de `sourceRate` a 16 kHz mediante interpolación lineal.
+   * Gemini Live emite a 24 kHz; sin esto la voz suena 1.5× más lenta y grave.
+   */
+  public static resamplePcm16To16k(input: Buffer, sourceRate: number): Buffer {
+    if (sourceRate === GeminiProtocolMapper.TARGET_OUTPUT_RATE_HZ || input.length < 2) return input;
+    const inputSamples = Math.floor(input.length / 2);
+    const outputSamples = Math.max(1, Math.round((inputSamples * GeminiProtocolMapper.TARGET_OUTPUT_RATE_HZ) / sourceRate));
+    const output = Buffer.alloc(outputSamples * 2);
+    const ratio = sourceRate / GeminiProtocolMapper.TARGET_OUTPUT_RATE_HZ;
+    for (let i = 0; i < outputSamples; i += 1) {
+      const srcIndex = i * ratio;
+      const low = Math.floor(srcIndex);
+      const high = Math.min(low + 1, inputSamples - 1);
+      const frac = srcIndex - low;
+      const lowVal = input.readInt16LE(low * 2);
+      const highVal = input.readInt16LE(high * 2);
+      const interpolated = Math.round(lowVal + (highVal - lowVal) * frac);
+      output.writeInt16LE(Math.max(-32768, Math.min(32767, interpolated)), i * 2);
+    }
+    return output;
   }
 }

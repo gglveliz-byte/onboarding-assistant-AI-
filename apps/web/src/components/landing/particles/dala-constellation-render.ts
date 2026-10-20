@@ -44,6 +44,7 @@ import {
 } from './dala-constellation-geometry';
 import { ALPHA_STEPS, DEPTH_SLICES, type ConstellationRenderState } from './dala-constellation-render-state';
 import { drawAmbientGlyphs } from './dala-constellation-ambient';
+import { drawLogoPrismStructure } from './dala-constellation-network-map';
 
 /** Grosores de trazo cuantizados por lote (reposo y realce de borde cortical/costa). */
 const THIN_LINE_WIDTH = 1.18;
@@ -100,8 +101,9 @@ export function renderConstellationFrame(scene: ConstellationScene, state: Const
   const brainCosX = Math.cos(brainRotX);
   const brainSinX = Math.sin(brainRotX);
 
-  const networkRotY = Math.sin(time * 0.22) * 0.14 + pointer.smoothX * 0.38 + scrollOrbitY * 0.55;
-  const networkRotX = 0.10 - pointer.smoothY * 0.18 + scrollTiltX * 0.35;
+  // Rotación frontal del logotipo: respiración sutil y paralaje de cursor sin deformar la figura
+  const networkRotY = Math.sin(time * 0.32) * 0.05 + pointer.smoothX * 0.12;
+  const networkRotX = Math.cos(time * 0.25) * 0.03 - pointer.smoothY * 0.08;
   const networkCosY = Math.cos(networkRotY);
   const networkSinY = Math.sin(networkRotY);
   const networkCosX = Math.cos(networkRotX);
@@ -129,12 +131,30 @@ export function renderConstellationFrame(scene: ConstellationScene, state: Const
   const brainStageOffsetY = sideShiftActive
     ? BRAIN_SCREEN_TRANSFORM.offsetY * height
     : BRAIN_COMPACT_OFFSET_Y_FACTOR * height;
-  const networkStageOffsetX = sideShiftActive ? Math.min(0.245 * width, maxOffsetX) : 0;
-  const networkStageOffsetY = sideShiftActive ? 0.035 * height : 0;
-  const networkStageScale = 1.26;
+  // El logotipo se posiciona a la derecha y más abajo (0.26*height) para calzar frente a las tarjetas RAG
+  const networkStageOffsetX = sideShiftActive ? Math.min(0.235 * width, maxOffsetX) : 0;
+  const networkStageOffsetY = sideShiftActive ? 0.26 * height : 0.14 * height;
+  const networkStageScale = 1.15;
   const stageScale = wBrain * brainStageScale + wNetwork * networkStageScale + wWorld * 1.0;
   const stageOffsetX = wBrain * brainStageOffsetX + wNetwork * networkStageOffsetX;
   const stageOffsetY = wBrain * brainStageOffsetY + wNetwork * networkStageOffsetY;
+
+  // Estructura vectorial del prisma oficial: facetas vítreas, aristas y nodos bioluminiscentes
+  if (wNetwork > 0.05) {
+    drawLogoPrismStructure({
+      ctx,
+      cx,
+      cy,
+      fov,
+      baseScale,
+      stageScale: networkStageScale,
+      stageOffsetX: networkStageOffsetX,
+      stageOffsetY: networkStageOffsetY,
+      rotX: networkRotX,
+      rotY: networkRotY,
+      wNetwork,
+    });
+  }
 
   // Torsión espiral orgánica muy suave para morphing laminar sin giros violentos
   const morphMotion = Math.sin(tBrainToNetwork * Math.PI) * (1 - tNetworkToWorld) + Math.sin(tNetworkToWorld * Math.PI);
@@ -313,39 +333,38 @@ export function renderConstellationFrame(scene: ConstellationScene, state: Const
       alpha = Math.min(0.98, alpha + 0.22 * wBrain);
     }
 
-    // En la Red Neuronal viva, realzar somas neuronales y axones sinápticos con impulsos activos
-    let axonSpark = 0;
-    if (wNetwork > 0.1) {
-      if (node.isNetworkHub) {
+    // En la escultura del Logotipo (etapa 2), trazo ultra-nítido de aristas y facetas luminosas
+    if (wNetwork > 0.05) {
+      if (node.isNetworkEdge) {
+        // Aristas del prisma hexagonal: trazo denso, continuo y brillante
+        alpha = Math.min(0.98, 0.92 * wNetwork + alpha * (1 - wNetwork));
+      } else if (node.isNetworkHub) {
+        // Facetas y Diamante Central: color vibrante con pulso áureo suave
         const hubWave = pulseSinTime * (networkPhaseCos[i] ?? 0) + pulseCosTime * (networkPhaseSin[i] ?? 0);
         const hubPulse = 0.5 + 0.5 * hubWave;
-        alpha = Math.min(0.98, (0.70 + 0.28 * hubPulse) * wNetwork + alpha * (1 - wNetwork));
-      } else if (node.isNetworkEdge) {
-        const wave = axonSinTime * (networkPhaseCos[i] ?? 0) - axonCosTime * (networkPhaseSin[i] ?? 0);
-        const positiveWave = wave > 0 ? wave : 0;
-        axonSpark = positiveWave * positiveWave * positiveWave * Math.sqrt(positiveWave);
-        alpha = Math.min(0.95, (0.48 + 0.46 * axonSpark) * wNetwork + alpha * (1 - wNetwork));
-      } else {
-        // Polvo ambiental estelar muy sutil para dar aire y máxima limpieza a la silueta
-        alpha = Math.min(0.22, 0.14 * wNetwork + alpha * 0.25 * (1 - wNetwork));
+        alpha = Math.min(0.94, (0.80 + 0.16 * hubPulse) * wNetwork + alpha * (1 - wNetwork));
       }
     }
 
     item.sx = sx;
     item.sy = sy;
     item.z = z;
-    const sizeMultiplier = node.isNetworkHub
-      ? 0.75
-      : node.isNetworkEdge
-        ? 0.12 + axonSpark * 0.4
-        : -0.32;
+    // Tamaño homogéneo y calibrado para que el dibujo se forme con resolución nítida sin deformarse
+    const sizeMultiplier = node.isNetworkEdge ? -0.10 : -0.25;
     item.r = node.size * depthScale * baseScale * (1 + wNetwork * sizeMultiplier) * stageScale;
-    item.cosZ = nextCosZ;
-    item.sinZ = nextSinZ;
-    item.squash = 0.42 + 0.58 * Math.abs(nextCosX);
+    if (wNetwork > 0.2) {
+      const damp = Math.max(0, 1 - wNetwork * 0.85);
+      item.cosZ = nextCosZ * damp + (1 - damp);
+      item.sinZ = nextSinZ * damp;
+      item.squash = 0.42 + 0.58 * (Math.abs(nextCosX) * damp + (1 - damp));
+    } else {
+      item.cosZ = nextCosZ;
+      item.sinZ = nextSinZ;
+      item.squash = 0.42 + 0.58 * Math.abs(nextCosX);
+    }
     item.colorId = colorId;
     item.alphaLevel = Math.max(0, Math.min(ALPHA_STEPS, Math.round(alpha * ALPHA_STEPS)));
-    item.widthId = (node.isRim && wBrain > 0.3) || (node.isCoastline && wWorld > 0.3) || (node.isNetworkHub && wNetwork > 0.3) ? 1 : 0;
+    item.widthId = (node.isRim && wBrain > 0.3) || (node.isCoastline && wWorld > 0.3) || (node.isNetworkEdge && wNetwork > 0.3) ? 1 : 0;
 
     if (z < zMin) {
       zMin = z;

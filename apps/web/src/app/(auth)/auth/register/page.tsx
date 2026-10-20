@@ -31,13 +31,12 @@ import {
 import { useAuthSession } from '../../../../components/auth-legal/useAuthSessionContext';
 
 type RequestedPlanCode = 'PAYG' | 'PLAN_5' | 'PLAN_10' | 'PLAN_30' | 'PLAN_50';
-type LegalDocumentCode = 'TOS_B2B' | 'PRIVACY_POLICY' | 'DPA_ENTERPRISE' | 'AI_VOICE_AUP';
+type LegalDocumentCode = 'TOS_B2B' | 'PRIVACY_POLICY' | 'DPA_ENTERPRISE' | 'AI_VOICE_AUP' | 'END_USER_VOICE_CONSENT';
 type RegistrationErrorField = 'organizationName' | 'ownerPhone' | 'ownerFullName' | 'ownerEmail' | 'ownerPassword' | 'general';
 
 interface RegistrationError { readonly field: RegistrationErrorField; readonly message: string; }
 interface LegalConsentItem { readonly code: LegalDocumentCode; readonly title: string; readonly href: string; }
 interface RegisterResponseBody { readonly accessToken?: string; readonly user?: unknown; readonly organization?: unknown; }
-interface LegalDocumentsCatalogBody { readonly documents?: unknown; }
 interface CheckoutSessionResponseBody { readonly signedUrl?: string; readonly gatewayCheckoutUrl?: string; }
 
 import type { CountryDialData } from '../../../../components/auth-legal/country-dial-codes';
@@ -61,6 +60,7 @@ const LEGAL_CONSENT_ITEMS: readonly LegalConsentItem[] = [
   { code: 'PRIVACY_POLICY', title: 'Política de Privacidad', href: '/legal/privacy-policy' },
   { code: 'DPA_ENTERPRISE', title: 'Acuerdo DPA Empresarial', href: '/legal/dpa-enterprise' },
   { code: 'AI_VOICE_AUP', title: 'Uso Aceptable de Voz IA', href: '/legal/ai-voice-aup' },
+  { code: 'END_USER_VOICE_CONSENT', title: 'Consentimiento de Voz de Usuarios Finales', href: '/legal/end-user-voice-consent' },
 ];
 
 function slugifyOrganizationName(rawName: string): string {
@@ -69,7 +69,8 @@ function slugifyOrganizationName(rawName: string): string {
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
   return base.length > 0 ? base : 'org-' + Math.random().toString(36).substring(2, 8);
 }
 
@@ -119,30 +120,6 @@ function readCheckoutUrl(p: unknown): string | null {
   return g ?? s;
 }
 
-async function syncLegalAcceptance(accessToken: string, accepted: readonly LegalDocumentCode[]): Promise<boolean> {
-  const cat = await authApiFetch<LegalDocumentsCatalogBody>('/api/v1/legal/documents', { method: 'GET' });
-  if (!cat.ok || !cat.data || !Array.isArray(cat.data.documents)) return false;
-  const docs = new Map<string, string>();
-  for (const d of cat.data.documents) {
-    if (isUnknownRecord(d) && typeof d['docType'] === 'string' && typeof d['id'] === 'string' && d['id']) {
-      docs.set(d['docType'], d['id']);
-    }
-  }
-  let ok = true;
-  for (const item of LEGAL_CONSENT_ITEMS.filter((i) => accepted.includes(i.code))) {
-    const docId = docs.get(item.code);
-    if (!docId) { ok = false; continue; }
-    const res = await authApiFetch<unknown>('/api/v1/legal/accept', {
-      method: 'POST', accessToken, credentialsMode: 'include', body: { legalDocumentId: docId },
-    });
-    if (!res.ok) { ok = false; continue; }
-    if (item.code === 'DPA_ENTERPRISE') {
-      await authApiFetch<unknown>('/api/v1/legal/dpa/sign', { method: 'POST', accessToken, credentialsMode: 'include' });
-    }
-  }
-  return ok;
-}
-
 /** Formulario unificado de alta directa de organización con teléfono internacional. */
 function OrganizationUnifiedSignUpForm(): ReactElement {
   const { completeAuthentication } = useAuthSession();
@@ -154,19 +131,22 @@ function OrganizationUnifiedSignUpForm(): ReactElement {
   const [ownerFullName, setOwnerFullName] = useState<string>('');
   const [ownerEmail, setOwnerEmail] = useState<string>('');
   const [ownerPassword, setOwnerPassword] = useState<string>('');
-  const [allLegalAccepted, setAllLegalAccepted] = useState<boolean>(true);
+  const [allLegalAccepted, setAllLegalAccepted] = useState<boolean>(false);
   const [showLegalDetails, setShowLegalDetails] = useState<boolean>(false);
   const [individualLegal, setIndividualLegal] = useState<Record<LegalDocumentCode, boolean>>({
-    TOS_B2B: true, PRIVACY_POLICY: true, DPA_ENTERPRISE: true, AI_VOICE_AUP: true,
+    TOS_B2B: false, PRIVACY_POLICY: false, DPA_ENTERPRISE: false, AI_VOICE_AUP: false, END_USER_VOICE_CONSENT: false,
   });
   const [registrationError, setRegistrationError] = useState<RegistrationError | null>(null);
   const [isRegistering, setIsRegistering] = useState<boolean>(false);
   const [requestedPlan, setRequestedPlan] = useState<RequestedPlanCode | null>(null);
+  const [estimatedMinutes, setEstimatedMinutes] = useState<number | null>(null);
 
   useEffect((): void => {
     const searchParams = new URLSearchParams(window.location.search);
     const planParam = searchParams.get('plan');
     if (isRequestedPlanCode(planParam)) setRequestedPlan(planParam);
+    const estimatedParam = Number.parseInt(searchParams.get('estimated_minutes') ?? '', 10);
+    if (Number.isFinite(estimatedParam) && estimatedParam > 0) setEstimatedMinutes(estimatedParam);
   }, []);
 
 
@@ -177,6 +157,9 @@ function OrganizationUnifiedSignUpForm(): ReactElement {
   const emailFormatError = ownerEmail.length > 0 && !EMAIL_PATTERN.test(ownerEmail);
   const phoneClean = phoneNumber.replace(/[^0-9]/g, '');
   const phoneValid = phoneClean.length >= 7;
+  // Vista previa del identificador unico: el sistema lo genera al crear la organizacion y,
+  // si el nombre ya esta en uso, le anade un sufijo automaticamente. Aqui solo se anticipa la base.
+  const slugPreview = organizationName.trim().length > 0 ? slugifyOrganizationName(organizationName) : '';
 
   const canSubmit = organizationName.trim().length > 0 &&
     ownerFullName.trim().length > 0 &&
@@ -187,7 +170,7 @@ function OrganizationUnifiedSignUpForm(): ReactElement {
 
   function handleMasterCheckboxChange(checked: boolean): void {
     setAllLegalAccepted(checked);
-    setIndividualLegal({ TOS_B2B: checked, PRIVACY_POLICY: checked, DPA_ENTERPRISE: checked, AI_VOICE_AUP: checked });
+    setIndividualLegal({ TOS_B2B: checked, PRIVACY_POLICY: checked, DPA_ENTERPRISE: checked, AI_VOICE_AUP: checked, END_USER_VOICE_CONSENT: checked });
   }
 
   function handleIndividualChange(code: LegalDocumentCode, checked: boolean): void {
@@ -214,6 +197,9 @@ function OrganizationUnifiedSignUpForm(): ReactElement {
         ownerEmail: ownerEmail.trim().toLowerCase(),
         ownerPassword,
         ownerPhone: fullPhone,
+        acceptedLegalDocumentCodes: LEGAL_CONSENT_ITEMS
+          .filter((item) => allLegalAccepted || individualLegal[item.code])
+          .map((item) => item.code),
       },
     });
 
@@ -237,9 +223,6 @@ function OrganizationUnifiedSignUpForm(): ReactElement {
       user: parsed.user, organization: parsed.organization, role: 'OWNER', mfaSatisfied: false,
     }));
 
-    const acceptedList = LEGAL_CONSENT_ITEMS.map((item) => item.code);
-    void syncLegalAcceptance(parsed.accessToken, acceptedList);
-
     const targetSlug = parsed.organization?.slug ?? generatedSlug;
     const dashboardUrl = targetSlug ? `/dashboard/org/${encodeURIComponent(targetSlug)}` : '/dashboard';
 
@@ -260,12 +243,17 @@ function OrganizationUnifiedSignUpForm(): ReactElement {
   }
 
   return (
-    <WindowMockupFrame title="alta-inmediata">
+    <WindowMockupFrame title={slugPreview.length > 0 ? slugPreview : 'alta-inmediata'}>
       <form onSubmit={(e): void => void handleSubmit(e)} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {requestedPlan ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px', borderRadius: 4, backgroundColor: 'var(--color-linen)' }}>
             <span style={{ fontSize: '11px', color: 'var(--color-driftwood)' }}>Plan seleccionado para tu espacio:</span>
-            <MonoMetadataTag label={requestedPlan} value={PLAN_DISPLAY_NAMES[requestedPlan]} tone="accent" />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {estimatedMinutes !== null ? (
+                <span style={{ fontSize: '10px', color: 'var(--color-driftwood)' }}>≈ {estimatedMinutes} min/mes</span>
+              ) : null}
+              <MonoMetadataTag label={requestedPlan} value={PLAN_DISPLAY_NAMES[requestedPlan]} tone="accent" />
+            </div>
           </div>
         ) : null}
 
@@ -273,6 +261,11 @@ function OrganizationUnifiedSignUpForm(): ReactElement {
           <div className="atelier-field" style={{ gap: 2 }}>
             <label className="atelier-label" style={{ fontSize: '11px' }} htmlFor="reg-org-name">Nombre de organización</label>
             <input id="reg-org-name" className="atelier-input" type="text" value={organizationName} onChange={(e): void => setOrganizationName(e.target.value)} placeholder="Ej. Aurora Tech" disabled={isRegistering} />
+            {slugPreview.length > 0 ? (
+              <p style={{ fontSize: '10px', color: 'var(--color-driftwood)', margin: 0 }}>
+                Identificador: <span className="atelier-mono">{slugPreview}</span> — el sistema lo genera al crear la organización y añade un sufijo si ya está en uso.
+              </p>
+            ) : null}
           </div>
 
           {/* Selector telefónico internacional dinámico con catálogo de todos los países del mundo */}
@@ -327,7 +320,8 @@ function OrganizationUnifiedSignUpForm(): ReactElement {
                 <a className="atelier-link" href="/legal/tos-b2b" target="_blank" rel="noreferrer">Términos B2B</a> ·{' '}
                 <a className="atelier-link" href="/legal/privacy-policy" target="_blank" rel="noreferrer">Privacidad</a> ·{' '}
                 <a className="atelier-link" href="/legal/dpa-enterprise" target="_blank" rel="noreferrer">DPA Empresarial</a> ·{' '}
-                <a className="atelier-link" href="/legal/ai-voice-aup" target="_blank" rel="noreferrer">Uso Aceptable Voz IA</a>
+                <a className="atelier-link" href="/legal/ai-voice-aup" target="_blank" rel="noreferrer">Uso Aceptable Voz IA</a> ·{' '}
+                <a className="atelier-link" href="/legal/end-user-voice-consent" target="_blank" rel="noreferrer">Consentimiento de Voz de Usuarios Finales</a>
               </span>
             </span>
           </label>
@@ -347,6 +341,12 @@ function OrganizationUnifiedSignUpForm(): ReactElement {
             </div>
           ) : null}
         </div>
+
+        <p style={{ margin: 0, fontSize: '10.5px', lineHeight: 1.45, color: 'var(--color-driftwood)' }}>
+          <strong style={{ color: 'var(--color-ink)' }}>Compromiso con tus usuarios finales:</strong> antes de activar el micrófono deberás obtener su consentimiento de voz y certificarlo desde tu sistema. La{' '}
+          <a className="atelier-link" href="/docs" target="_blank" rel="noreferrer">documentación para desarrolladores</a>{' '}
+          describe el procedimiento; el aviso de consentimiento queda incluido en los acuerdos que aceptas aquí.
+        </p>
 
         {registrationError?.field === 'general' ? (
           <p className="atelier-error-text" role="alert" style={{ fontSize: '11px', margin: 0 }}>{registrationError.message}</p>

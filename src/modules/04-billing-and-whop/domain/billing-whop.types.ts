@@ -78,6 +78,10 @@ export interface PricingPlanConfig {
   readonly volumeDiscountEligible: boolean;
   /** Tramos de descuento por volumen, vacios cuando el plan no es elegible. */
   readonly volumeDiscountTiers: readonly VolumeDiscountTier[];
+  /** Importe bruto cobrado en la pasarela (neto + comision). `null` si no esta aprovisionado. */
+  readonly grossPriceUsd: Fixed6String | null;
+  /** `true` cuando `externalPlanId` es un plan real y vivo de la pasarela. */
+  readonly isProvisioned: boolean;
 }
 
 /** Override de precios otorgado manualmente por el SuperAdmin a una organizacion. */
@@ -242,10 +246,16 @@ export interface PaymentSucceededPayload {
 
 /** Mapa canonico `nombre de evento -> payload tipado` de la pasarela de cobros. */
 export interface WhopWebhookEventMap {
-  /** La membresia paso a estado valido: la suscripcion queda activa. */
-  'membership.went_valid': MembershipWentValidPayload;
-  /** La membresia dejo de ser valida: la suscripcion queda morosa. */
-  'membership.went_invalid': MembershipWentInvalidPayload;
+  /** La membresia se activo: la suscripcion queda activa. Nombre real emitido por la pasarela. */
+  'membership.activated': MembershipWentValidPayload;
+  /** La membresia perdio vigencia (cancelacion, expiracion o impago): la suscripcion queda morosa. */
+  'membership.deactivated': MembershipWentInvalidPayload;
+  /**
+   * Cambio de cualquier atributo de la membresia. La pasarela reenvia aqui tambien la activacion,
+   * de modo que suscribiendose solo a este evento ya se cubre el ciclo completo: se decide el alta o
+   * la morosidad leyendo `data.status`.
+   */
+  'membership.updated': MembershipWentValidPayload | MembershipWentInvalidPayload;
   /** Un pago se completo correctamente. */
   'payment.succeeded': PaymentSucceededPayload;
 }
@@ -253,5 +263,16 @@ export interface WhopWebhookEventMap {
 /** Nombres de evento soportados por el receptor de webhooks. */
 export type WhopWebhookEventName = keyof WhopWebhookEventMap;
 
-/** Nombres canonicos de evento que el procesador de webhooks acepta. */
-export type SupportedWebhookEventName = 'membership.went_valid' | 'membership.went_invalid' | 'payment.succeeded';
+/**
+ * Nombres canonicos de evento que el procesador de webhooks acepta.
+ *
+ * Los nombres legacy `membership.went_valid` y `membership.went_invalid` pertenecen a la API v2/v5,
+ * deprecada con vencimiento el 13-nov-2026; la pasarela ya no los emite en las entregas actuales.
+ * Se conservan como alias de entrada en el parser para no perder los reintentos en cola de un
+ * webhook antiguo, pero el contrato nuevo es el de esta union.
+ */
+export type SupportedWebhookEventName =
+  | 'membership.activated'
+  | 'membership.deactivated'
+  | 'membership.updated'
+  | 'payment.succeeded';

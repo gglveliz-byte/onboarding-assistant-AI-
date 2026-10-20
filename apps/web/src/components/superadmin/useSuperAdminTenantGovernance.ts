@@ -28,12 +28,22 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
+import { getAccessToken, setAccessToken } from '../../lib/api-client/http-client';
+
+function getSuperAdminHeaders(): Record<string, string> {
+  const token = getAccessToken();
+  return {
+    'Accept': 'application/json',
+    'Content-Type': 'application/json',
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+  };
+}
 
 export interface TenantGovernanceRecord {
   readonly id: string;
   readonly name: string;
   readonly slug: string;
-  readonly status: 'ACTIVE' | 'SUSPENDED' | 'PENDING_DELETION';
+  readonly status: 'ACTIVE' | 'SUSPENDED' | 'PENDING_DELETION' | 'DELETED';
   readonly enforceMfa: boolean;
   readonly enforceSso: boolean;
   readonly ssoEmailDomain: string | null;
@@ -67,6 +77,7 @@ export interface UseSuperAdminTenantGovernanceReturn {
   readonly suspendOrganization: (orgId: string, reason: string) => Promise<boolean>;
   readonly reactivateOrganization: (orgId: string, notes: string) => Promise<boolean>;
   readonly forceLogoutOrganization: (orgId: string, reason: string) => Promise<boolean>;
+  readonly deleteOrganization: (orgId: string) => Promise<boolean>;
   readonly approveBreakGlass: (requestId: string, orgId: string) => Promise<boolean>;
   readonly requireSuperAdminFido2: (actionLabel: string) => Promise<boolean>;
 }
@@ -87,6 +98,17 @@ export function useSuperAdminTenantGovernance(): UseSuperAdminTenantGovernanceRe
     setIsLoading(true);
     setError(null);
     try {
+      const token = getAccessToken();
+      if (!token) {
+        setIsLoading(false);
+        setError('Acceso no autorizado. Redirigiendo a inicio de sesión…');
+        if (typeof window !== 'undefined') {
+          const nextUrl = window.location.pathname + window.location.search;
+          window.location.replace(`/internal/superadmin-login?next=${encodeURIComponent(nextUrl)}`);
+        }
+        return;
+      }
+
       const url = new URL('/api/v1/superadmin/organizations', window.location.origin);
       if (statusFilter && statusFilter !== 'ALL') {
         url.searchParams.set('status', statusFilter);
@@ -94,8 +116,18 @@ export function useSuperAdminTenantGovernance(): UseSuperAdminTenantGovernanceRe
 
       const res = await fetch(url.toString(), {
         method: 'GET',
-        headers: { 'Accept': 'application/json' },
+        headers: getSuperAdminHeaders(),
       });
+
+      if (res.status === 401 || res.status === 403) {
+        setAccessToken(null);
+        setError('Sesión expirada o credenciales insuficientes. Redirigiendo…');
+        if (typeof window !== 'undefined') {
+          const nextUrl = window.location.pathname + window.location.search;
+          window.location.replace(`/internal/superadmin-login?next=${encodeURIComponent(nextUrl)}`);
+        }
+        return;
+      }
 
       if (!res.ok) {
         throw new Error(`Error ${res.status} al consultar organizaciones`);
@@ -160,7 +192,7 @@ export function useSuperAdminTenantGovernance(): UseSuperAdminTenantGovernanceRe
 
       const res = await fetch(`/api/v1/superadmin/organizations/${orgId}/suspend`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getSuperAdminHeaders(),
         body: JSON.stringify({ reason, immediateSocketClose: true }),
       });
 
@@ -188,7 +220,7 @@ export function useSuperAdminTenantGovernance(): UseSuperAdminTenantGovernanceRe
 
       const res = await fetch(`/api/v1/superadmin/organizations/${orgId}/reactivate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getSuperAdminHeaders(),
         body: JSON.stringify({ reactivationNotes: notes }),
       });
 
@@ -215,7 +247,7 @@ export function useSuperAdminTenantGovernance(): UseSuperAdminTenantGovernanceRe
 
       const res = await fetch(`/api/v1/superadmin/organizations/${orgId}/force-logout`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getSuperAdminHeaders(),
         body: JSON.stringify({ reason }),
       });
 
@@ -241,7 +273,7 @@ export function useSuperAdminTenantGovernance(): UseSuperAdminTenantGovernanceRe
 
       const res = await fetch(`/api/v1/superadmin/break-glass/${requestId}/approve`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getSuperAdminHeaders(),
         body: JSON.stringify({ organizationId: orgId }),
       });
 
@@ -258,6 +290,42 @@ export function useSuperAdminTenantGovernance(): UseSuperAdminTenantGovernanceRe
     }
   }, [requireSuperAdminFido2]);
 
+  /**
+   * Elimina permanentemente una organización revocando credenciales y cortando sockets.
+   */
+  const deleteOrganization = useCallback(async (orgId: string): Promise<boolean> => {
+    try {
+      const authorized = await requireSuperAdminFido2(`Eliminar Organización ${orgId}`);
+      if (!authorized) return false;
+
+      const res = await fetch(`/api/v1/superadmin/organizations/${orgId}`, {
+        method: 'DELETE',
+        headers: getSuperAdminHeaders(),
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        setAccessToken(null);
+        setError('Sesión expirada o credenciales insuficientes. Redirigiendo…');
+        if (typeof window !== 'undefined') {
+          const nextUrl = window.location.pathname + window.location.search;
+          window.location.replace(`/internal/superadmin-login?next=${encodeURIComponent(nextUrl)}`);
+        }
+        return false;
+      }
+
+      if (!res.ok) {
+        throw new Error(`Error ${res.status} al eliminar la organización`);
+      }
+
+      await fetchOrganizations();
+      return true;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al eliminar organización';
+      setError(msg);
+      return false;
+    }
+  }, [requireSuperAdminFido2, fetchOrganizations]);
+
   useEffect(() => {
     void fetchOrganizations();
   }, [fetchOrganizations]);
@@ -271,6 +339,7 @@ export function useSuperAdminTenantGovernance(): UseSuperAdminTenantGovernanceRe
     suspendOrganization,
     reactivateOrganization,
     forceLogoutOrganization,
+    deleteOrganization,
     approveBreakGlass,
     requireSuperAdminFido2,
   };

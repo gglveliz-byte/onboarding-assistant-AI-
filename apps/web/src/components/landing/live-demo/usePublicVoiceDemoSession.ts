@@ -39,7 +39,7 @@ export interface PublicVoiceDemoSessionHandle {
   readonly energyLevel: number; // Energía global 0..1 para la esfera del hero.
   readonly lastAckLatencyMs: number | null; // `tool.execute` recibido → ack enviado (ms).
   readonly lastBargeInLatencyMs: number | null; // Voz detectada → control `0x02` enviado (ms).
-  startDemo(options?: { readonly preferredVoiceModel?: VoiceModelId }): Promise<void>; // Micrófono + sesión + canal.
+  startDemo(options?: { readonly preferredVoiceModel?: VoiceModelId; readonly preferredVoiceName?: string }): Promise<void>; // Micrófono + sesión + canal.
   stopDemo(): void; // Cierre idempotente con liberación de recursos.
   interruptAssistant(): void; // Barge-in manual sobre el asistente.
   acknowledgeDirective(directiveId: string, succeeded: boolean, detail: string | null): void; // Ack + latencia.
@@ -57,8 +57,29 @@ const UNAUTHORIZED_MESSAGE = 'Sesión de demostración no autorizada.';
 const PROVIDER_UNAVAILABLE_MESSAGE = 'El motor de voz no está disponible en este momento. Inténtalo en unos minutos.';
 const CONNECTION_LOST_MESSAGE = 'La conexión con la demostración en vivo se interrumpió. Inténtalo de nuevo.';
 const BAR_COUNT = 24; const ENERGY_INTERVAL_MS = 100; // Barras del vúmetro y cadencia de publicación (~10 Hz).
-const ENERGY_GAIN = 4; const RMS_THRESHOLD = 0.02; // Presentación del RMS real y umbral de voz del barge-in.
-const BARGE_IN_DEBOUNCE_MS = 300; // Anti-rebote entre barge-ins consecutivos.
+const ENERGY_GAIN = 4; const RMS_THRESHOLD = 0.06; // Presentación del RMS real y umbral de voz del barge-in.
+const BARGE_IN_DEBOUNCE_MS = 900; // Anti-rebote entre barge-ins consecutivos (evita cortes en ráfaga).
+const BARGE_IN_MIN_BLOCKS = 3; // Ventanas de captura (2048 muestras) con voz sostenida antes de interrumpir.
+
+/**
+ * Traza diagnóstica de la demo pública. Activada por defecto para poder auditar en la consola del
+ * navegador cómo fluye la sesión (fases, audio de bajada, barge-in, acciones y acuses con latencia).
+ * Se silencia con `localStorage.setItem('oa_demo_debug','0')`. Cada línea lleva un offset en ms desde
+ * que arrancó la sesión para detectar dónde se corta o cuánto tarda cada paso.
+ */
+let DEMO_T0 = 0;
+function demoDebugEnabled(): boolean {
+  try { return typeof window !== 'undefined' && window.localStorage.getItem('oa_demo_debug') !== '0'; }
+  catch { return true; }
+}
+function dbg(event: string, data?: Record<string, unknown>): void {
+  if (!demoDebugEnabled()) return;
+  const t = DEMO_T0 === 0 ? 0 : Math.round(performance.now() - DEMO_T0);
+  const suffix = data ? ' ' + JSON.stringify(data) : '';
+  // eslint-disable-next-line no-console
+  console.info(`%c[oa-demo +${t}ms] ${event}${suffix}`, 'color:#00838f;font-weight:bold');
+}
+
 /** Recursos vivos de una demostración: audio, socket, métricas y temporizadores. */
 interface DemoRuntime {
   active: boolean; readonly mediaStream: MediaStream; socket: WebSocket | null; phase: PublicDemoPhase; transcript: string;
@@ -66,6 +87,7 @@ interface DemoRuntime {
   processor: ScriptProcessorNode | null; sinkGain: GainNode | null; remainingSeconds: number; expiresAtMs: number; countdownTimer: number | null; energyTimer: number | null;
   energyBars: readonly number[]; energySmoothed: number; energySum: number; energyBlocks: number; uplinkSamples: Float32Array; decimPending: Float32Array;
   playbackSources: AudioBufferSourceNode[]; nextPlaybackTime: number; lastBargeInAtMs: number; directiveReceivedAtMs: number | null; lastServerAck: Readonly<Record<string, unknown>> | null;
+  bargeInCandidateBlocks: number; // Ventanas consecutivas por encima del umbral (aún sin confirmar).
 }
 /** Resultado público por código de cierre del socket (`VOICE_CLOSE_CODES` + cierre normal 1000). */
 const CLOSE_OUTCOMES: Readonly<Record<number, { readonly message: string | null; readonly phase: PublicDemoPhase }>> = {
@@ -171,6 +193,7 @@ function createRuntime(mediaStream: MediaStream, dto: PublicDemoSessionDto, audi
     remainingSeconds: dto.maxDurationSeconds, expiresAtMs: Date.now() + dto.maxDurationSeconds * 1000, countdownTimer: null, energyTimer: null, energyBars: createEmptyBars(),
     energySmoothed: 0, energySum: 0, energyBlocks: 0, uplinkSamples: new Float32Array(0), decimPending: new Float32Array(0),
     playbackSources: [], nextPlaybackTime: 0, lastBargeInAtMs: 0, directiveReceivedAtMs: null, lastServerAck: null,
+    bargeInCandidateBlocks: 0,
   };
 }
 /** Hook de la demostración de voz pública: máquina de fases, audio 16 kHz, barge-in y vúmetro. */
@@ -185,13 +208,20 @@ export function usePublicVoiceDemoSession(): PublicVoiceDemoSessionHandle {
   const runtimeRef = useRef<DemoRuntime | null>(null);
   const startTokenRef = useRef(0);
   /** Espeja la fase en el runtime (rutas de audio) y la publica en React. */
-  const transition = (runtime: DemoRuntime, next: PublicDemoPhase): void => { runtime.phase = next; setPhase(next); };
+  const transition = (runtime: DemoRuntime, next: PublicDemoPhase): void => {
+    if (runtime.phase !== next) dbg('fase', { de: runtime.phase, a: next });
+    runtime.phase = next; setPhase(next);
+  };
   /** Barge-in local <50 ms: mide, vacía la cola, avisa con `0x02` y vuelve a escucha. */
   const performBargeIn = (runtime: DemoRuntime): void => {
-    const startedAtMs = performance.now(); flushPlayback(runtime);
+    const startedAtMs = performance.now();
+    const cancelados = runtime.playbackSources.length;
+    flushPlayback(runtime);
     sendControlFrame(runtime.socket, { type: 'voice.barge_in', timestamp: Date.now() });
-    setLatencies((current) => ({ ...current, bargeIn: performance.now() - startedAtMs }));
-    runtime.lastBargeInAtMs = performance.now(); transition(runtime, 'CONNECTED_LISTENING');
+    const lat = performance.now() - startedAtMs;
+    setLatencies((current) => ({ ...current, bargeIn: lat }));
+    dbg('BARGE-IN interrumpiendo al asistente', { fuentesCanceladas: cancelados, latenciaMs: Math.round(lat) });
+    runtime.lastBargeInAtMs = performance.now(); runtime.bargeInCandidateBlocks = 0; transition(runtime, 'CONNECTED_LISTENING');
   };
   /** Encadena un bloque PCM16 del asistente sin huecos y enciende la fase de elocución. */
   const scheduleDownlinkAudio = (runtime: DemoRuntime, bytes: Uint8Array): void => {
@@ -202,7 +232,11 @@ export function usePublicVoiceDemoSession(): PublicVoiceDemoSessionHandle {
     for (let index = 0; index < sampleCount; index += 1) channel[index] = view.getInt16(index * 2, true) / 32768;
     const source = context.createBufferSource(); source.buffer = buffer; source.connect(context.destination);
     const scheduleAt = Math.max(runtime.nextPlaybackTime, context.currentTime + 0.02); source.start(scheduleAt);
+    // Si hubo que retrasar la agenda respecto a nextPlaybackTime, el buffer se quedó seco: hueco audible.
+    const subRun = runtime.nextPlaybackTime > 0 && scheduleAt > runtime.nextPlaybackTime + 0.02;
+    if (subRun) dbg('AUDIO HUECO (buffer sub-run) — la red llegó más lento que la reproducción', { gapMs: Math.round((scheduleAt - runtime.nextPlaybackTime) * 1000) });
     runtime.nextPlaybackTime = scheduleAt + buffer.duration; runtime.playbackSources.push(source);
+    dbg('audio bajada', { bytes: bytes.length, durMs: Math.round(buffer.duration * 1000), enCola: runtime.playbackSources.length });
     source.onended = () => {
       runtime.playbackSources = runtime.playbackSources.filter((candidate) => candidate !== source);
       if (runtime.active && runtime.playbackSources.length === 0 && runtime.phase === 'AI_SPEAKING') transition(runtime, 'CONNECTED_LISTENING');
@@ -223,7 +257,21 @@ export function usePublicVoiceDemoSession(): PublicVoiceDemoSessionHandle {
     const rms = Math.min(1, Math.sqrt(sumSquares / Math.max(1, frameCount)));
     runtime.energySmoothed = runtime.energySmoothed * 0.8 + rms * 0.2; runtime.energySum += rms; runtime.energyBlocks += 1;
     const interruptible = runtime.phase === 'AI_SPEAKING' || runtime.phase === 'EXECUTING_DOM_ACTION';
-    if (interruptible && rms >= RMS_THRESHOLD && performance.now() - runtime.lastBargeInAtMs >= BARGE_IN_DEBOUNCE_MS) performBargeIn(runtime);
+    // Voz sostenida: se exige un minimo de ventanas consecutivas por encima del umbral antes de
+    // interrumpir. Un solo pico (tos, clic del raton o el propio eco del altavoz) ya no corta la
+    // narracion del asistente, que era la causa de los cortes que se sentian en la demo.
+    if (!interruptible || rms < RMS_THRESHOLD) {
+      runtime.bargeInCandidateBlocks = 0;
+    } else {
+      runtime.bargeInCandidateBlocks += 1;
+      if (
+        runtime.bargeInCandidateBlocks >= BARGE_IN_MIN_BLOCKS
+        && performance.now() - runtime.lastBargeInAtMs >= BARGE_IN_DEBOUNCE_MS
+      ) {
+        runtime.bargeInCandidateBlocks = 0;
+        performBargeIn(runtime);
+      }
+    }
     const socket = runtime.socket; if (socket === null || socket.readyState !== WebSocket.OPEN) return;
     const resampled = resampleToSixteenKhz(runtime, samples);
     const merged = new Float32Array(runtime.uplinkSamples.length + resampled.length);
@@ -263,32 +311,39 @@ export function usePublicVoiceDemoSession(): PublicVoiceDemoSessionHandle {
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return;
     const message = parsed as Readonly<Record<string, unknown>>;
     switch (message['type']) {
-      case 'session.ready': beginAudioSession(runtime); transition(runtime, 'CONNECTED_LISTENING'); return;
+      case 'session.ready': {
+        dbg('SESSION.LISTO (proveedor activo)', { activeProvider: message['activeProvider'], failover: message['failoverTriggered'], paso: message['currentStepNumber'] });
+        beginAudioSession(runtime); transition(runtime, 'CONNECTED_LISTENING'); return;
+      }
       case 'assistant.speaking': {
         const transcript = message['transcript'];
-        if (typeof transcript === 'string') runtime.transcript += transcript;
+        if (typeof transcript === 'string') { runtime.transcript += transcript; dbg('asistente hablando', { delta: transcript.slice(0, 60), final: message['isFinal'] === true }); }
         if (message['isFinal'] !== true || runtime.playbackSources.length > 0) transition(runtime, 'AI_SPEAKING'); return;
       }
       case 'tool.execute': {
         if (typeof message['providerToolCallId'] !== 'string' || typeof message['toolName'] !== 'string') return;
         if (typeof message['primarySelector'] !== 'string' || typeof message['targetElementKey'] !== 'string') return;
+        dbg('TOOL.EXECUTE recibido', { id: message['providerToolCallId'], accion: message['toolName'], objetivo: message['targetElementKey'], texto: message['textPayload'] ?? null });
         runtime.directiveReceivedAtMs = performance.now(); setActiveDirective(message as unknown as VoiceToolDirective);
         transition(runtime, 'EXECUTING_DOM_ACTION'); return;
       }
-      case 'tool.execution.ack': runtime.lastServerAck = message; return;
+      case 'tool.execution.ack': runtime.lastServerAck = message; dbg('ACK del servidor (eco)', { id: message['providerToolCallId'] }); return;
       case 'session.closing': {
         const publicMessage = message['publicMessage']; // El cierre del socket fija la fase terminal final.
+        dbg('SESSION.CLOSING', { codigo: message['closeCode'], mensaje: publicMessage ?? null });
         if (typeof publicMessage === 'string' && publicMessage.length > 0) setErrorMessage(publicMessage);
         transition(runtime, 'DEMO_COMPLETED'); return;
       }
-      default: return;
+      default: dbg('control no reconocido', { tipo: message['type'] }); return;
     }
   };
   /** Abre el socket binario de voz y enruta apertura, tramas, cierre y cuenta regresiva de 90 s. */
   const connectSocket = (runtime: DemoRuntime, serverUrl: string): void => {
     const socket = new WebSocket(resolveSocketUrl(serverUrl)); socket.binaryType = 'arraybuffer'; runtime.socket = socket;
+    dbg('conectando al gateway de voz', { url: resolveSocketUrl(serverUrl).split('?')[0] });
     socket.onopen = () => {
       if (!runtime.active) return;
+      dbg('WEBSOCKET abierto; ventana', { segundos: runtime.remainingSeconds });
       runtime.expiresAtMs = Date.now() + runtime.remainingSeconds * 1000;
       runtime.countdownTimer = window.setInterval(() => {
         if (!runtime.active) return;
@@ -305,6 +360,7 @@ export function usePublicVoiceDemoSession(): PublicVoiceDemoSessionHandle {
     };
     socket.onclose = (event: CloseEvent) => {
       if (!runtime.active) return;
+      dbg('WEBSOCKET cerrado', { codigo: event.code, motivo: event.reason || '(sin motivo)', fueCierreNormal: event.code === 1000 });
       runtime.active = false;
       if (runtimeRef.current === runtime) runtimeRef.current = null;
       const outcome = CLOSE_OUTCOMES[event.code] ?? { message: CONNECTION_LOST_MESSAGE, phase: 'IDLE' as const };
@@ -320,16 +376,19 @@ export function usePublicVoiceDemoSession(): PublicVoiceDemoSessionHandle {
     setActiveDirective(null); setRemainingSeconds(0);
   };
   /** Inicia la demostración: permiso de micrófono, sesión efímera y canal binario de voz. */
-  const startDemo = async (options?: { readonly preferredVoiceModel?: VoiceModelId }): Promise<void> => {
+  const startDemo = async (options?: { readonly preferredVoiceModel?: VoiceModelId; readonly preferredVoiceName?: string }): Promise<void> => {
     if (runtimeRef.current !== null) return;
+    DEMO_T0 = performance.now();
+    dbg('INICIO de demostración', { motor: options?.preferredVoiceModel ?? '(defecto)', voz: options?.preferredVoiceName ?? '(defecto)' });
     let preUnlockedAudioContext: AudioContext | null = null;
     try { preUnlockedAudioContext = createAndUnlockAudioContext(); } catch { /* sin soporte de audio */ }
     const requestToken = startTokenRef.current + 1; startTokenRef.current = requestToken;
     setErrorMessage(null); setActiveDirective(null); setRemainingSeconds(0); setMeter({ bars: createEmptyBars(), level: 0 });
     setPhase('REQUESTING_MIC_PERMISSION');
     let mediaStream: MediaStream;
-    try { mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: { ideal: 1 } } }); }
+    try { mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: { ideal: 1 } } }); dbg('micrófono concedido', { pistas: mediaStream.getAudioTracks().length }); }
     catch {
+      dbg('micrófono DENEGADO');
       if (preUnlockedAudioContext !== null) void preUnlockedAudioContext.close().catch(() => undefined);
       setErrorMessage(MIC_DENIED_MESSAGE); setPhase('IDLE'); return;
     }
@@ -342,10 +401,12 @@ export function usePublicVoiceDemoSession(): PublicVoiceDemoSessionHandle {
     const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const requestBody: PublicDemoSessionRequestDto = { turnstileToken: TURNSTILE_TEST_TOKEN,
       ...(options?.preferredVoiceModel === undefined ? {} : { preferredVoiceModel: options.preferredVoiceModel }),
+      ...(options?.preferredVoiceName === undefined ? {} : { preferredVoiceName: options.preferredVoiceName }),
       ...(userTimezone.length === 0 ? {} : { userTimezone }) };
     let dto: PublicDemoSessionDto;
     try { dto = await backendFetch<PublicDemoSessionDto>(DEMO_SESSION_PATH, { method: 'POST', anonymous: true, body: requestBody }); }
     catch (caughtError) {
+      dbg('ERROR al crear la sesión demo', { code: caughtError instanceof BackendHttpError ? caughtError.code : 'RED', mensaje: caughtError instanceof Error ? caughtError.message : String(caughtError) });
       stopTracks(mediaStream);
       if (preUnlockedAudioContext !== null) void preUnlockedAudioContext.close().catch(() => undefined);
       if (startTokenRef.current !== requestToken) return;
@@ -357,6 +418,7 @@ export function usePublicVoiceDemoSession(): PublicVoiceDemoSessionHandle {
       if (preUnlockedAudioContext !== null) void preUnlockedAudioContext.close().catch(() => undefined);
       return;
     }
+    dbg('SESIÓN emitida por el backend', { motor: dto.voiceModel, voz: dto.voiceName, duracionS: dto.maxDurationSeconds, sesion: dto.sessionId });
     const runtime = createRuntime(mediaStream, dto, preUnlockedAudioContext);
     runtimeRef.current = runtime;
     setVoiceModel(dto.voiceModel); setRemainingSeconds(dto.maxDurationSeconds);
@@ -372,6 +434,9 @@ export function usePublicVoiceDemoSession(): PublicVoiceDemoSessionHandle {
       if (runtime.directiveReceivedAtMs !== null) {
         const ackLatencyMs = performance.now() - runtime.directiveReceivedAtMs; runtime.directiveReceivedAtMs = null;
         setLatencies((current) => ({ ...current, ack: ackLatencyMs }));
+        dbg('ACK enviado al backend', { id: directiveId, exito: succeeded, latenciaMs: Math.round(ackLatencyMs), detalle: detail });
+      } else {
+        dbg('ACK enviado al backend', { id: directiveId, exito: succeeded, detalle: detail });
       }
       transition(runtime, 'CONNECTED_LISTENING');
     }

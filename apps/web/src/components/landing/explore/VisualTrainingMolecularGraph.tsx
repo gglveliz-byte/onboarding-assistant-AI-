@@ -32,7 +32,7 @@ export function DesktopMolecularGraph(): ReactElement {
   return (
     <div
       aria-hidden="true"
-      className="pointer-events-none relative mx-auto h-[460px] w-full max-w-[660px] sm:h-[500px]"
+      className="pointer-events-none relative mx-auto h-[320px] w-full max-w-[620px] sm:h-[350px]"
     />
   );
 }

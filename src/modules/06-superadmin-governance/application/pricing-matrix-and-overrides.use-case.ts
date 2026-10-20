@@ -53,6 +53,30 @@ export interface PricingMatrixAndOverridesDependencies {
 export class UpdateGlobalPricingMatrixUseCase {
   public constructor(private readonly deps: PricingMatrixAndOverridesDependencies) {}
 
+  /**
+   * Lee la identidad de un plan vigente (su identificador de pasarela y su nombre comercial).
+   *
+   * Se expone para que el gobierno de precios pueda CONSERVAR el vinculo con la pasarela cuando la
+   * operacion solo toca minutos o tarifas. Sin esta lectura, quien goberna el plan tendria que
+   * reescribir el identificador, y reescribirlo mal rompe el checkout del plan entero.
+   *
+   * @param planCode - Plan consultado.
+   * @param superAdminUserId - Operario de gobierno que abre la transaccion.
+   * @returns Identidad vigente del plan, o `null` cuando el plan no existe.
+   */
+  public async readProvisionedPlanIdentity(
+    planCode: string,
+    superAdminUserId: string
+  ): Promise<{ readonly whopPlanId: string; readonly displayName: string } | null> {
+    return this.deps.rlsPool.runInSuperAdminTransaction(superAdminUserId, async (client) => {
+      const existing = await this.deps.adminRepo.getPricingPlan(client, planCode);
+      if (existing === null || existing === undefined) {
+        return null;
+      }
+      return { whopPlanId: existing.whopPlanId, displayName: existing.displayName };
+    });
+  }
+
   public async execute(
     superAdminUserId: string,
     planCode: string,
@@ -99,6 +123,52 @@ export class UpdateGlobalPricingMatrixUseCase {
       );
 
       return Result.ok(plan);
+    } catch (error) {
+      return Result.fail(toAppError(error));
+    }
+  }
+}
+
+/** Caso de uso: Eliminar un plan de precios global de la matriz Whop. */
+export class DeleteGlobalPricingPlanUseCase {
+  public constructor(private readonly deps: PricingMatrixAndOverridesDependencies) {}
+
+  public async execute(
+    superAdminUserId: string,
+    planCode: string
+  ): Promise<Result<boolean, AppError>> {
+    try {
+      const result = await this.deps.rlsPool.runInSuperAdminTransaction(
+        superAdminUserId,
+        async (client) => {
+          const previous = await this.deps.adminRepo.getPricingPlan(client, planCode);
+          if (!previous) {
+            return false;
+          }
+
+          const deleted = await this.deps.adminRepo.deletePricingPlan(client, planCode);
+
+          const auditRes = await this.deps.auditRepo.appendImmutableAuditLog({
+            organizationId: null,
+            actorUserId: superAdminUserId,
+            eventCategory: 'PRICING',
+            eventAction: 'PRICING_PLAN_DELETED',
+            severity: 'WARN',
+            targetResourceType: 'PRICING_PLAN',
+            targetResourceId: planCode,
+            beforeStateJson: previous,
+            afterStateJson: { deleted: true },
+          }, client);
+
+          if (!auditRes.ok) {
+            throw new Error(`AUDIT_LOG_FAILED: ${auditRes.reason}`);
+          }
+
+          return deleted;
+        }
+      );
+
+      return Result.ok(result);
     } catch (error) {
       return Result.fail(toAppError(error));
     }

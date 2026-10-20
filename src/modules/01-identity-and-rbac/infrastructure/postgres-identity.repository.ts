@@ -39,6 +39,7 @@ import type {
   AuthSessionEntity,
   MembershipEntity,
   OrganizationEntity,
+  PendingMandatoryLegalDocument,
   RbacRole,
   UserEntity,
 } from '../domain/identity.entities';
@@ -452,35 +453,43 @@ export class PostgresIdentityRepository {
   }
 
   /**
+   * Lista los documentos obligatorios vigentes que el usuario aun no ha aceptado para su tenant.
+   * La evidencia previa sin organizacion (`organization_id IS NULL`) tambien satisface el gate.
+   */
+  public async findPendingMandatoryLegalDocs(
+    userId: string,
+    organizationId?: string | null,
+    client?: PoolClient
+  ): Promise<ReadonlyArray<PendingMandatoryLegalDocument>> {
+    const query = `
+      SELECT d.id, d.doc_type, d.title, d.version_tag
+      FROM legal_documents d
+      WHERE d.is_mandatory = TRUE AND d.is_active = TRUE
+        AND NOT EXISTS (
+          SELECT 1 FROM user_legal_acceptances a
+          WHERE a.user_id = $1 AND a.legal_document_id = d.id
+            AND (a.organization_id = $2 OR a.organization_id IS NULL)
+        )
+      ORDER BY d.doc_type
+    `;
+    const result = await this.executeWithContext(
+      client,
+      (c) => c.query("SELECT set_config('app.current_user_id', $1, true)", [userId]).then(() => {}),
+      (c) => c.query<{ id: string; doc_type: string; title: string; version_tag: string }>(query, [userId, organizationId ?? null])
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      docType: row.doc_type,
+      title: row.title,
+      versionTag: row.version_tag,
+    }));
+  }
+
+  /**
    * Comprueba si el usuario y organizacion tienen todos los documentos legales obligatorios aceptados.
    */
   public async hasAcceptedMandatoryLegalDocs(userId: string, organizationId?: string | null, client?: PoolClient): Promise<boolean> {
-    const queryMandatory = 'SELECT id, content_sha256 FROM legal_documents WHERE is_mandatory = TRUE AND is_active = TRUE';
-    const mandatoryResult = await this.executeWithContext(
-      client,
-      (c) => c.query("SELECT set_config('app.current_user_id', $1, true)", [userId]).then(() => {}),
-      (c) => c.query<{ id: string; content_sha256: string }>(queryMandatory)
-    );
-
-    if (mandatoryResult.rows.length === 0) {
-      return true;
-    }
-
-    const docIds = mandatoryResult.rows.map((r) => r.id);
-    const queryAccepted = `
-      SELECT DISTINCT legal_document_id
-      FROM user_legal_acceptances
-      WHERE user_id = $1
-        AND legal_document_id = ANY($2::uuid[])
-        AND (organization_id = $3 OR organization_id IS NULL)
-    `;
-    const params = [userId, docIds, organizationId ?? null];
-    const acceptedResult = await this.executeWithContext(
-      client,
-      (c) => c.query("SELECT set_config('app.current_user_id', $1, true)", [userId]).then(() => {}),
-      (c) => c.query<{ legal_document_id: string }>(queryAccepted, params)
-    );
-
-    return acceptedResult.rows.length >= mandatoryResult.rows.length;
+    const pendingDocs = await this.findPendingMandatoryLegalDocs(userId, organizationId, client);
+    return pendingDocs.length === 0;
   }
 }

@@ -32,14 +32,21 @@ import type {
 } from '../../../shared/infrastructure/http/http-server.types';
 import { ForbiddenError, ValidationError } from '../../../shared/kernel/result-and-errors';
 import type { PostgresGovernanceAdminRepository } from './postgres-governance-admin.repository';
+import type { PostgresGovernanceAuditRepository } from './postgres-governance-audit.repository';
 import type {
   SuspendOrganizationUseCase,
   ReactivateOrganizationUseCase,
   ForceGlobalLogoutOrganizationUseCase,
   ListGovernanceOrganizationsUseCase,
 } from '../application/tenant-lifecycle-governance.use-case';
+import type { DeleteOrganizationUseCase } from '../application/delete-organization.use-case';
+import type {
+  GetPublicDemoConfigUseCase,
+  UpdatePublicDemoConfigUseCase,
+} from '../application/public-demo-config.use-case';
 import type {
   UpdateGlobalPricingMatrixUseCase,
+  DeleteGlobalPricingPlanUseCase,
   SetTenantPricingOverrideUseCase,
   RemoveTenantPricingOverrideUseCase,
   GrantPromotionalMinutesUseCase,
@@ -50,8 +57,10 @@ import {
   reactivateOrganizationSchema,
   forceLogoutOrganizationSchema,
   updateGlobalPricingSchema,
+  createGlobalPricingSchema,
   setTenantOverrideSchema,
   grantPromotionalMinutesSchema,
+  updatePublicDemoConfigSchema,
   voiceAiKillSwitchSchema,
 } from '../domain/governance.entities';
 
@@ -87,17 +96,22 @@ function getRouteParam(path: string, keyName: string): string | undefined {
 export interface GovernanceHttpRoutesParams {
   readonly rlsPool: RlsDatabasePool;
   readonly adminRepo: PostgresGovernanceAdminRepository;
+  readonly auditRepo?: PostgresGovernanceAuditRepository | undefined;
   readonly getKillSwitchState: () => boolean;
   readonly getKillSwitchReason: () => string | null;
   readonly suspendOrgUseCase: SuspendOrganizationUseCase;
   readonly reactivateOrgUseCase: ReactivateOrganizationUseCase;
   readonly forceLogoutUseCase: ForceGlobalLogoutOrganizationUseCase;
   readonly listOrgsUseCase: ListGovernanceOrganizationsUseCase;
+  readonly deleteOrgUseCase?: DeleteOrganizationUseCase | undefined;
   readonly updatePricingUseCase: UpdateGlobalPricingMatrixUseCase;
+  readonly deletePricingUseCase?: DeleteGlobalPricingPlanUseCase | undefined;
   readonly setOverrideUseCase: SetTenantPricingOverrideUseCase;
   readonly removeOverrideUseCase: RemoveTenantPricingOverrideUseCase;
   readonly grantMinutesUseCase: GrantPromotionalMinutesUseCase;
   readonly killSwitchUseCase: SwitchVoiceAiKillSwitchUseCase;
+  readonly getDemoConfigUseCase: GetPublicDemoConfigUseCase;
+  readonly updateDemoConfigUseCase: UpdatePublicDemoConfigUseCase;
 }
 
 /**
@@ -195,6 +209,50 @@ export function registerGovernanceHttpRoutes(
     }),
   });
 
+  // DELETE /api/v1/superadmin/organizations/:orgId
+  router.register({
+    method: 'DELETE',
+    path: '/api/v1/superadmin/organizations/:orgId',
+    access: 'SUPERADMIN',
+    requiredScopes: ['admin:govern_tenants'],
+    ownerModule: '06-superadmin-governance',
+    requiresRawBody: false,
+    handler: wrapHandler(async (req: HttpRequestLike, ctx: AuthenticatedRequestContext): Promise<HttpHandlerResult> => {
+      const principal = assertSuperAdminPrincipal(ctx);
+      const orgId = getRouteParam(req.path, 'organizations');
+      if (!orgId) {
+        throw new ValidationError('Parametro :orgId requerido en la ruta');
+      }
+      if (!deps.deleteOrgUseCase) {
+        throw new ValidationError('Servicio de eliminacion de organizacion no configurado');
+      }
+      const res = await deps.deleteOrgUseCase.execute(principal.userId, orgId);
+      if (!res.ok) {
+        throw res.error;
+      }
+      return { status: 200, body: res.value };
+    }),
+  });
+
+  // POST /api/v1/superadmin/pricing-matrix
+  router.register({
+    method: 'POST',
+    path: '/api/v1/superadmin/pricing-matrix',
+    access: 'SUPERADMIN',
+    requiredScopes: ['admin:manage_pricing'],
+    ownerModule: '06-superadmin-governance',
+    requiresRawBody: false,
+    handler: wrapHandler(async (req: HttpRequestLike, ctx: AuthenticatedRequestContext): Promise<HttpHandlerResult> => {
+      const principal = assertSuperAdminPrincipal(ctx);
+      const parsedBody = createGlobalPricingSchema.parse(req.body);
+      const res = await deps.updatePricingUseCase.execute(principal.userId, parsedBody.planCode, parsedBody);
+      if (!res.ok) {
+        throw res.error;
+      }
+      return { status: 201, body: res.value };
+    }),
+  });
+
   // PUT /api/v1/superadmin/pricing-matrix/:planCode
   router.register({
     method: 'PUT',
@@ -215,6 +273,31 @@ export function registerGovernanceHttpRoutes(
         throw res.error;
       }
       return { status: 200, body: res.value };
+    }),
+  });
+
+  // DELETE /api/v1/superadmin/pricing-matrix/:planCode
+  router.register({
+    method: 'DELETE',
+    path: '/api/v1/superadmin/pricing-matrix/:planCode',
+    access: 'SUPERADMIN',
+    requiredScopes: ['admin:manage_pricing'],
+    ownerModule: '06-superadmin-governance',
+    requiresRawBody: false,
+    handler: wrapHandler(async (req: HttpRequestLike, ctx: AuthenticatedRequestContext): Promise<HttpHandlerResult> => {
+      const principal = assertSuperAdminPrincipal(ctx);
+      const planCode = getRouteParam(req.path, 'pricing-matrix');
+      if (!planCode) {
+        throw new ValidationError('Parametro :planCode requerido en la ruta');
+      }
+      if (!deps.deletePricingUseCase) {
+        throw new ValidationError('Servicio de eliminacion no configurado');
+      }
+      const res = await deps.deletePricingUseCase.execute(principal.userId, planCode);
+      if (!res.ok) {
+        throw res.error;
+      }
+      return { status: 200, body: { success: res.value } };
     }),
   });
 
@@ -323,6 +406,82 @@ export function registerGovernanceHttpRoutes(
         );
       });
       return { status: 200, body: snapshot };
+    }),
+  });
+
+  // GET /api/v1/superadmin/pricing-matrix
+  router.register({
+    method: 'GET',
+    path: '/api/v1/superadmin/pricing-matrix',
+    access: 'SUPERADMIN',
+    requiredScopes: ['admin:manage_pricing'],
+    ownerModule: '06-superadmin-governance',
+    requiresRawBody: false,
+    handler: wrapHandler(async (_req: HttpRequestLike, ctx: AuthenticatedRequestContext): Promise<HttpHandlerResult> => {
+      const principal = assertSuperAdminPrincipal(ctx);
+      const plans = await deps.rlsPool.runInSuperAdminTransaction(principal.userId, async (client) => {
+        return await deps.adminRepo.listPricingPlans(client);
+      });
+      return { status: 200, body: { plans } };
+    }),
+  });
+
+  // GET /api/v1/superadmin/audit-logs
+  router.register({
+    method: 'GET',
+    path: '/api/v1/superadmin/audit-logs',
+    access: 'SUPERADMIN',
+    requiredScopes: ['admin:govern_tenants'],
+    ownerModule: '06-superadmin-governance',
+    requiresRawBody: false,
+    handler: wrapHandler(async (req: HttpRequestLike, ctx: AuthenticatedRequestContext): Promise<HttpHandlerResult> => {
+      const principal = assertSuperAdminPrincipal(ctx);
+      if (!deps.auditRepo) {
+        return { status: 200, body: { logs: [] } };
+      }
+      const severity = req.query['severity'] as string | undefined;
+      const limit = Number(req.query['limit'] ?? 50);
+      const logs = await deps.rlsPool.runInSuperAdminTransaction(principal.userId, async (client) => {
+        return await deps.auditRepo!.listAuditLogs(client, { severity, limit });
+      });
+      return { status: 200, body: { logs } };
+    }),
+  });
+
+  // GET /api/v1/superadmin/public-demo-config — configuración gobernable de la demo pública (Redis).
+  router.register({
+    method: 'GET',
+    path: '/api/v1/superadmin/public-demo-config',
+    access: 'SUPERADMIN',
+    requiredScopes: ['admin:manage_pricing'],
+    ownerModule: '06-superadmin-governance',
+    requiresRawBody: false,
+    handler: wrapHandler(async (_req: HttpRequestLike, ctx: AuthenticatedRequestContext): Promise<HttpHandlerResult> => {
+      assertSuperAdminPrincipal(ctx);
+      const res = await deps.getDemoConfigUseCase.execute();
+      if (!res.ok) {
+        throw res.error;
+      }
+      return { status: 200, body: res.value };
+    }),
+  });
+
+  // PUT /api/v1/superadmin/public-demo-config — fija duración y límite por IP de la demo pública.
+  router.register({
+    method: 'PUT',
+    path: '/api/v1/superadmin/public-demo-config',
+    access: 'SUPERADMIN',
+    requiredScopes: ['admin:manage_pricing'],
+    ownerModule: '06-superadmin-governance',
+    requiresRawBody: false,
+    handler: wrapHandler(async (req: HttpRequestLike, ctx: AuthenticatedRequestContext): Promise<HttpHandlerResult> => {
+      assertSuperAdminPrincipal(ctx);
+      const parsedBody = updatePublicDemoConfigSchema.parse(req.body);
+      const res = await deps.updateDemoConfigUseCase.execute(parsedBody);
+      if (!res.ok) {
+        throw res.error;
+      }
+      return { status: 200, body: res.value };
     }),
   });
 }

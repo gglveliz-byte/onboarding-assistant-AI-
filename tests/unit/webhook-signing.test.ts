@@ -1,368 +1,311 @@
 /**
  * @archivo tests/unit/webhook-signing.test.ts
- * @modulo 04-billing-and-whop (Prueba de Fuego de Firmas de Webhook y Enlaces de Pago)
+ * @modulo 04-billing-and-whop (Prueba de Fuego de la Firma Real de Webhooks)
  * @proposito
- *   Certifica la criptografia de las dos fronteras de cobro: la verificacion de las firmas de
- *   webhook entrantes y la firma de los metadatos de los enlaces de pago. Se comprueba que una firma
- *   manipulada, un cuerpo alterado o un evento fuera de la ventana anti-repeticion sean rechazados
- *   siempre, y que el parser de payloads normalice correctamente las dos nomenclaturas que puede
- *   emitir la pasarela sin aceptar cuerpos sin organizacion.
+ *   Verifica que el verificador acepte EXACTAMENTE el esquema que la pasarela envia y rechace el que
+ *   usaba la integracion anterior. La version previa firmaba `{timestamp}.{cuerpo}` en hexadecimal y
+ *   exigia cabeceras `x-whop-*`, incompatibles con Standard Webhooks: ninguna entrega legitima pasaba
+ *   y toda suscripcion se rechazaba con 401.
+ *
+ *   El contrato real, copiado de `@whop/sdk/helpers/verifyWebhook`: HMAC-SHA256 sobre
+ *   `{webhook-id}.{webhook-timestamp}.{cuerpo crudo}`, codificado en Base64, presentado como
+ *   `v1,<base64>`, firmado con los BYTES LITERALES del secreto `ws_...` (la pasarela no lo recorta ni
+ *   lo decodifica), y con ventana de tolerancia sobre `webhook-timestamp`.
  *
  * @resumen_contenido
- *   - Bloque `verifyWebhookSignatureAcceptance()`: Firma valida sobre el cuerpo crudo.
- *   - Bloque `verifyWebhookSignatureRejection()`: Manipulacion, repeticion y cuerpo alterado.
- *   - Bloque `verifyCheckoutLinkSigning()`: Firma, vigencia y URL firmada del enlace de pago.
- *   - Bloque `verifyPayloadParsing()`: Normalizacion de payloads y rechazo de cuerpos invalidos.
+ *   - `verifyRealSchemeSignature()`: firma correcta aceptada; variantes manipuladas rechazadas.
+ *   - `verifyLegacyHexSignatureIsRejected()`: el esquema hexagesimal antiguo ya no pasa.
+ *   - `verifyToleranceWindow()`: eventos fuera de ventana se rechazan.
+ *   - `verifyEventNames()`: nombres actuales y alias legacy.
+ *   - `verifyMetadataUnwrapping()`: la metadata del checkout se desanida desde `data.metadata`.
+ *   - `verifyMoneyAndSubstatus()`: objeto monetario, moneda y `substatus`.
+ *   - `verifyMembershipUpdatedDecidesByStatus()`: alta o morosidad segun `status`.
+ *   - `verifyAdapterCredentialGuards()`: credenciales incompletas o invalidas fallan al construir.
  *
  * @dependencias_internas
- *   - `WhopApiAndHmacAdapter` (`src/modules/04-billing-and-whop/infrastructure/whop-api-and-hmac.adapter.ts`).
- *   - `WhopWebhookPayloadParser` (`src/modules/04-billing-and-whop/application/webhook-payload.parser.ts`).
- *   - `CryptoUtils` (`src/shared/kernel/crypto.util.ts`) y `DecimalMath` del kernel.
+ *   - `WhopApiAndHmacAdapter`, `WebhookSignatureVerifier`, `WhopWebhookPayloadParser`.
+ *   - `CryptoUtils.hmacSha256Base64` (kernel): unico generador de fixtures.
  *
  * @dependencias_externas
- *   - `node:assert` (Aserciones nativas, sin dependencias adicionales).
+ *   - `node:assert`.
  *
  * @tablas_bd_o_redis
- *   - Ninguna (Prueba puramente criptografica: no abre conexiones ni escribe datos).
+ *   - Ninguna (Prueba pura de firma y parseo, sin base de datos).
  */
 
-import * as assert from 'node:assert';
-import { WhopWebhookPayloadParser } from '../../src/modules/04-billing-and-whop/application/webhook-payload.parser';
-import type { CheckoutSignedMetadata } from '../../src/modules/04-billing-and-whop/domain/billing-whop.types';
-import {
-  WhopApiAndHmacAdapter,
-  type WhopWebhookHeaders,
-} from '../../src/modules/04-billing-and-whop/infrastructure/whop-api-and-hmac.adapter';
+import assert from 'node:assert';
 import { CryptoUtils } from '../../src/shared/kernel/crypto.util';
+import { WhopApiAndHmacAdapter, type WhopWebhookHeaders } from '../../src/modules/04-billing-and-whop/infrastructure/whop-api-and-hmac.adapter';
+import { WhopWebhookPayloadParser } from '../../src/modules/04-billing-and-whop/application/webhook-payload.parser';
 
-/** Secreto de webhooks de prueba en formato hexadecimal. */
-const TEST_WEBHOOK_SECRET = 'whop_webhook_secret_placeholder_dev_32chars';
-
-/** Secreto interno de checkout de prueba. */
-const TEST_CHECKOUT_SECRET = 'dev_internal_checkout_hmac_secret_min32chars_ok';
+/** Secreto literal de la pasarela usado por las fixtures. */
+const TEST_WEBHOOK_SECRET = 'ws_test_secret_literal_bytes_0123456789';
+/** Secreto interno de firma de enlaces de pago. */
+const TEST_CHECKOUT_SECRET = 'internal_checkout_hmac_secret_at_least_32_chars';
+/** Cuenta de empresa de prueba. */
+const TEST_COMPANY_ID = 'biz_test_company_001';
+/** Tolerancia anti-repeticion bajo prueba, en segundos. */
+const TEST_TOLERANCE_SECONDS = 300;
 
 /** Adaptador bajo prueba con credenciales sinteticas. */
 const adapter = new WhopApiAndHmacAdapter({
-  apiKey: 'whop_api_key_placeholder_dev',
+  companyApiKey: 'apik_test_company_key_literal',
+  companyId: TEST_COMPANY_ID,
   webhookSecret: TEST_WEBHOOK_SECRET,
   checkoutHmacSecret: TEST_CHECKOUT_SECRET,
-  apiBaseUrl: 'https://api.interno.local',
   checkoutBaseUrl: 'https://pago.interno.local/checkout',
-  webhookToleranceSeconds: 300,
+  webhookToleranceSeconds: TEST_TOLERANCE_SECONDS,
 });
 
-/** Contador de verificaciones superadas durante la ejecucion. */
+/** Contador de verificaciones superadas. */
 let passedAssertions = 0;
 
-/**
- * Aserta una condicion y contabiliza la verificacion superada.
- *
- * @param condition - Condicion booleana que debe cumplirse.
- * @param description - Descripcion legible del comportamiento verificado.
- */
+/** Aserta una condicion y contabiliza la verificacion superada. */
 function check(condition: boolean, description: string): void {
   assert.ok(condition, `FALLO: ${description}`);
   passedAssertions += 1;
 }
 
 /**
- * Construye el cuerpo crudo y las cabeceras firmadas de un webhook sintetico.
+ * Construye una entrega de webhook con el esquema REAL de la pasarela.
  *
- * @param payload - Objeto que se serializa como cuerpo del webhook.
- * @param timestampSeconds - Marca temporal declarada, en segundos desde el epoch.
- * @param secret - Secreto con el que se firma.
- * @returns Cuerpo crudo y cabeceras listas para la verificacion.
+ * @param eventId - Identificador `msg_...` del evento.
+ * @param body - Sobre del evento que se serializa como cuerpo crudo.
+ * @param timestampSeconds - Marca temporal de `webhook-timestamp`.
+ * @param secret - Secreto literal con el que se firma.
+ * @returns Cuerpo crudo y cabeceras normalizadas listas para la verificacion.
  */
-function buildSignedWebhook(
-  payload: Readonly<Record<string, unknown>>,
-  timestampSeconds: number,
+function buildRealWebhook(
+  eventId: string,
+  body: Readonly<Record<string, unknown>>,
+  timestampSeconds: number = Math.floor(Date.now() / 1000),
   secret: string = TEST_WEBHOOK_SECRET
 ): { readonly rawBody: Buffer; readonly headers: WhopWebhookHeaders } {
-  const rawBody = Buffer.from(JSON.stringify(payload), 'utf8');
-  const signatureHeader = CryptoUtils.hmacSha256Hex(secret, `${timestampSeconds}.${rawBody.toString('utf8')}`);
+  const rawBody = Buffer.from(JSON.stringify(body), 'utf8');
+  const signingInput = `${eventId}.${timestampSeconds}.${rawBody.toString('utf8')}`;
   return {
     rawBody,
     headers: {
-      eventId: typeof payload['event_id'] === 'string' ? payload['event_id'] : 'evt-sintetico',
+      eventId,
       timestampHeader: String(timestampSeconds),
-      signatureHeader,
-      eventNameHeader: typeof payload['event_type'] === 'string' ? payload['event_type'] : 'payment.succeeded',
+      signatureHeader: `v1,${CryptoUtils.hmacSha256Base64(secret, signingInput)}`,
     },
   };
 }
 
-/**
- * Devuelve la marca temporal actual en segundos desde el epoch.
- *
- * @returns Marca temporal en segundos.
- */
-function currentTimestampSeconds(): number {
-  return Math.floor(Date.now() / 1000);
+/** Sobre de evento de activacion con la metadata anidada como la envia la pasarela. */
+function activationEnvelope(eventId: string): Record<string, unknown> {
+  return {
+    id: eventId,
+    type: 'membership.activated',
+    api_version: 'v1',
+    account_id: TEST_COMPANY_ID,
+    data: {
+      id: 'mem_real_001',
+      status: 'active',
+      plan_id: 'plan_kVPGj57x5DVsm',
+      user_id: 'user_real_001',
+      current_period_start: '2026-10-20T00:00:00.000Z',
+      current_period_end: '2026-11-19T00:00:00.000Z',
+      metadata: { organization_id: 'org-real-1', internal_plan_code: 'PLAN_5', checkout_mode: 'SUBSCRIPTION' },
+    },
+  };
 }
 
-/** Verifica que una firma correcta sobre el cuerpo crudo sea aceptada. */
-function verifyWebhookSignatureAcceptance(): void {
-  const timestamp = currentTimestampSeconds();
-  const { rawBody, headers } = buildSignedWebhook(
-    { event_id: 'evt-1', event_type: 'membership.went_valid', organization_id: 'org-1', membership_id: 'mem-1', internal_plan_code: 'PLAN_30' },
-    timestamp
+/** Verifica que la firma del esquema real se acepte y que las manipulaciones se rechacen. */
+function verifyRealSchemeSignature(): void {
+  const { rawBody, headers } = buildRealWebhook('msg_ok_1', activationEnvelope('msg_ok_1'));
+
+  const verification = adapter.verifyWebhookSignature(rawBody, headers);
+  check(verification.valid, 'Una firma correcta del esquema real debe aceptarse');
+  check(verification.rejectionReason === null, 'Una verificacion exitosa no reporta motivo de rechazo');
+  check(verification.eventId === 'msg_ok_1', 'El identificador del evento debe propagarse al resultado');
+  check(verification.payload !== null, 'El helper debe devolver el cuerpo ya deserializado');
+  check((verification.payload ?? {})['type'] === 'membership.activated', 'El payload parseado debe conservar el tipo de evento');
+
+  const strict = adapter.assertValidWebhookSignature(rawBody, headers);
+  check(strict.valid, 'La variante estricta devuelve el resultado cuando la firma es valida');
+
+  const tamperedBody = Buffer.from(`${rawBody.toString('utf8')} `, 'utf8');
+  check(!adapter.verifyWebhookSignature(tamperedBody, headers).valid, 'Anadir un espacio al cuerpo debe invalidar la firma');
+
+  const wrongSecret = buildRealWebhook('msg_ok_1', activationEnvelope('msg_ok_1'), Math.floor(Date.now() / 1000), 'ws_otro_secreto_distinto');
+  check(!adapter.verifyWebhookSignature(wrongSecret.rawBody, wrongSecret.headers).valid, 'Un secreto distinto debe rechazar la entrega');
+
+  const swappedId = buildRealWebhook('msg_ok_1', activationEnvelope('msg_ok_1'));
+  check(
+    !adapter.verifyWebhookSignature(swappedId.rawBody, { ...swappedId.headers, eventId: 'msg_otro' }).valid,
+    'Suplantar el webhook-id debe invalidar la firma, porque entra en la cadena firmada'
   );
-
-  const verification = adapter.verifyWebhookSignature(rawBody, headers, timestamp * 1000);
-  check(verification.valid, 'Una firma correcta sobre el cuerpo crudo debe ser aceptada');
-  check(verification.rejectionReason === null, 'Una verificacion exitosa no debe reportar motivo de rechazo');
-  check(verification.ageSeconds === 0, 'Un evento del instante declarado debe tener antiguedad cero');
-  check(verification.acceptedScheme === 1, 'El primer esquema de secreto debe ser el aceptado con un secreto textual');
-
-  const assertResult = adapter.assertValidWebhookSignature(rawBody, headers, timestamp * 1000);
-  check(assertResult.valid, 'La variante estricta debe devolver el resultado cuando la firma es valida');
-
-  const withVersionPrefix = `v1=${headers.signatureHeader}`;
-  const prefixedVerification = adapter.verifyWebhookSignature(rawBody, { ...headers, signatureHeader: withVersionPrefix }, timestamp * 1000);
-  check(prefixedVerification.valid, 'La firma con prefijo de version debe aceptarse');
-
-  const multipleCandidates = adapter.verifyWebhookSignature(
-    rawBody,
-    { ...headers, signatureHeader: `${'a'.repeat(64)} ${headers.signatureHeader}` },
-    timestamp * 1000
-  );
-  check(multipleCandidates.valid, 'Debe aceptarse cuando uno de los candidatos de firma es correcto');
 }
 
-/** Verifica que las manipulaciones y las repeticiones sean rechazadas. */
-function verifyWebhookSignatureRejection(): void {
-  const timestamp = currentTimestampSeconds();
-  const payload = { event_id: 'evt-2', event_type: 'payment.succeeded', organization_id: 'org-1', amount_usd: 30 };
-  const { rawBody, headers } = buildSignedWebhook(payload, timestamp);
+/** Verifica que el esquema hexagesimal legacy de esta plataforma ya no sea aceptado. */
+function verifyLegacyHexSignatureIsRejected(): void {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const { rawBody, headers } = buildRealWebhook('msg_hex_1', activationEnvelope('msg_hex_1'), timestamp);
+  const legacyHex = CryptoUtils.hmacSha256Hex(TEST_WEBHOOK_SECRET, `${timestamp}.${rawBody.toString('utf8')}`);
 
-  const tamperedSignature = `${headers.signatureHeader.slice(0, -1)}${headers.signatureHeader.endsWith('0') ? '1' : '0'}`;
-  const tamperedResult = adapter.verifyWebhookSignature(rawBody, { ...headers, signatureHeader: tamperedSignature }, timestamp * 1000);
-  check(!tamperedResult.valid, 'Una firma manipulada en un caracter debe ser rechazada');
-  check(tamperedResult.rejectionReason === 'FIRMA_HMAC_INVALIDA', 'El motivo debe identificar la firma invalida');
-
-  const alteredBody = Buffer.from(JSON.stringify({ ...payload, amount_usd: 1 }), 'utf8');
-  const alteredResult = adapter.verifyWebhookSignature(alteredBody, headers, timestamp * 1000);
-  check(!alteredResult.valid, 'Un cuerpo alterado debe invalidar la firma');
-
-  const wrongSecretTimestamp = currentTimestampSeconds();
-  const wrongSecretWebhook = buildSignedWebhook(payload, wrongSecretTimestamp, 'otro_secreto_completamente_distinto_32');
-  const wrongSecretResult = adapter.verifyWebhookSignature(wrongSecretWebhook.rawBody, wrongSecretWebhook.headers, wrongSecretTimestamp * 1000);
-  check(!wrongSecretResult.valid, 'Una firma calculada con otro secreto debe ser rechazada');
-
-  const expiredTimestamp = currentTimestampSeconds() - 3600;
-  const expiredWebhook = buildSignedWebhook(payload, expiredTimestamp);
-  const expiredResult = adapter.verifyWebhookSignature(expiredWebhook.rawBody, expiredWebhook.headers, currentTimestampSeconds() * 1000);
-  check(!expiredResult.valid, 'Un evento con una hora de antiguedad debe ser rechazado');
-  check(
-    expiredResult.rejectionReason?.includes('VENTANA_ANTI_REPETICION_EXCEDIDA') === true,
-    'El motivo debe identificar la ventana anti-repeticion excedida'
-  );
-  check(expiredResult.ageSeconds >= 3500, 'La antiguedad calculada debe reflejar el retraso real');
-
-  const futureWebhook = buildSignedWebhook(payload, currentTimestampSeconds() + 3600);
-  const futureResult = adapter.verifyWebhookSignature(futureWebhook.rawBody, futureWebhook.headers, currentTimestampSeconds() * 1000);
-  check(!futureResult.valid, 'Un evento con una hora de futuro tambien debe rechazarse');
-
-  const withinTolerance = buildSignedWebhook(payload, currentTimestampSeconds() - 250);
-  const withinToleranceResult = adapter.verifyWebhookSignature(
-    withinTolerance.rawBody,
-    withinTolerance.headers,
-    currentTimestampSeconds() * 1000
-  );
-  check(withinToleranceResult.valid, 'Un evento dentro de la ventana de tolerancia debe aceptarse');
-
-  const millisecondsTimestamp = Date.now();
-  const millisecondWebhook = buildSignedWebhook(payload, millisecondsTimestamp);
-  const millisecondResult = adapter.verifyWebhookSignature(
-    millisecondWebhook.rawBody,
-    { ...millisecondWebhook.headers, timestampHeader: String(millisecondsTimestamp) },
-    millisecondsTimestamp
-  );
-  check(millisecondResult.valid, 'Una marca temporal en milisegundos debe normalizarse y aceptarse');
-
-  const illegibleResult = adapter.verifyWebhookSignature(rawBody, { ...headers, timestampHeader: 'no-es-numero' }, Date.now());
-  check(!illegibleResult.valid, 'Una marca temporal ilegible debe rechazarse');
-  check(illegibleResult.rejectionReason === 'MARCA_TEMPORAL_ILEGIBLE', 'El motivo debe identificar la marca ilegible');
-
-  let thrownError: unknown = null;
-  try {
-    adapter.assertValidWebhookSignature(rawBody, { ...headers, signatureHeader: 'a'.repeat(64) }, Date.now());
-  } catch (error) {
-    thrownError = error;
-  }
-  check(thrownError instanceof Error, 'La variante estricta debe lanzar un error controlado');
-  check(
-    thrownError instanceof Error && thrownError.message.includes('firma invalida'),
-    'El error debe explicar en espanol el motivo del rechazo'
-  );
-
-  const base64Secret = `whsec_${Buffer.from(TEST_WEBHOOK_SECRET, 'utf8').toString('base64')}`;
-  const base64Adapter = new WhopApiAndHmacAdapter({
-    apiKey: 'clave',
-    webhookSecret: base64Secret,
-    checkoutHmacSecret: TEST_CHECKOUT_SECRET,
-    apiBaseUrl: 'https://api.interno.local',
-    checkoutBaseUrl: 'https://pago.interno.local/checkout',
-    webhookToleranceSeconds: 300,
-  });
-  const decodedSecretWebhook = buildSignedWebhook(payload, currentTimestampSeconds(), TEST_WEBHOOK_SECRET);
-  const decodedSecretResult = base64Adapter.verifyWebhookSignature(
-    decodedSecretWebhook.rawBody,
-    decodedSecretWebhook.headers,
-    currentTimestampSeconds() * 1000
-  );
-  check(decodedSecretResult.valid, 'Un secreto declarado como whsec_ en Base64 debe validarse con su parte decodificada');
-  check(decodedSecretResult.acceptedScheme === 2, 'El segundo esquema de secreto debe reportarse cuando se usa el decodificado');
+  const rejected = adapter.verifyWebhookSignature(rawBody, { ...headers, signatureHeader: legacyHex });
+  check(!rejected.valid, 'La firma hexagesimal sobre {timestamp}.{cuerpo} debe rechazarse: no es el esquema de la pasarela');
+  check(rejected.rejectionReason !== null && rejected.rejectionReason.includes('FIRMA_HMAC_INVALIDA'), 'El rechazo debe reportar firma invalida');
 }
 
-/** Verifica la firma, la vigencia y la composicion de la URL del enlace de pago. */
-function verifyCheckoutLinkSigning(): void {
-  const issuedAtMs = Date.now();
-  const signedMetadata: CheckoutSignedMetadata = adapter.signCheckoutMetadata({
-    organizationId: 'org-1',
-    actorUserId: 'usr-1',
-    internalPlanCode: 'PLAN_50',
-    checkoutMode: 'SUBSCRIPTION',
-    topUpAmountUsd: null,
-    issuedAtMs,
-  });
+/** Verifica la ventana anti-repeticion sobre `webhook-timestamp`. */
+function verifyToleranceWindow(): void {
+  const staleSeconds = Math.floor(Date.now() / 1000) - (TEST_TOLERANCE_SECONDS + 120);
+  const { rawBody, headers } = buildRealWebhook('msg_stale_1', activationEnvelope('msg_stale_1'), staleSeconds);
 
-  check(signedMetadata.signatureHex.length === 64, 'La firma del enlace debe ser un hexadecimal de 64 caracteres');
-  check(
-    signedMetadata.signedPayload === `org-1.usr-1.PLAN_50.SUBSCRIPTION.0.000000.${issuedAtMs}`,
-    'La cadena firmada debe respetar el orden canonico de campos'
-  );
-  check(signedMetadata.signatureHex === CryptoUtils.hmacSha256Hex(TEST_CHECKOUT_SECRET, signedMetadata.signedPayload), 'La firma debe corresponder al HMAC del secreto interno');
-  check(adapter.verifyCheckoutSignature(signedMetadata), 'Un enlace recien firmado debe verificarse');
-  check(!adapter.verifyCheckoutSignature({ ...signedMetadata, signatureHex: 'f'.repeat(64) }), 'Una firma del enlace manipulada debe rechazarse');
-  check(
-    !adapter.verifyCheckoutSignature({ ...signedMetadata, signedPayload: `${signedMetadata.signedPayload}.extra` }),
-    'Una cadena firmada alterada debe rechazarse'
-  );
-  check(!adapter.verifyCheckoutSignature(signedMetadata, issuedAtMs + 16 * 60 * 1000), 'Un enlace de mas de 15 minutos debe rechazarse');
-  check(adapter.verifyCheckoutSignature(signedMetadata, issuedAtMs + 14 * 60 * 1000), 'Un enlace de 14 minutos debe seguir vigente');
-
-  const topUpMetadata = adapter.signCheckoutMetadata({
-    organizationId: 'org-2',
-    actorUserId: 'usr-2',
-    internalPlanCode: 'PAYG',
-    checkoutMode: 'TOP_UP',
-    topUpAmountUsd: '25.000000',
-    issuedAtMs,
-  });
-  check(
-    topUpMetadata.signedPayload.includes('25.000000'),
-    'El importe de recarga debe formar parte de la cadena firmada'
-  );
-  check(
-    !adapter.verifyCheckoutSignature({ ...topUpMetadata, signedPayload: topUpMetadata.signedPayload.replace('25.000000', '250.000000') }),
-    'Un importe de recarga alterado debe invalidar la firma'
-  );
-
-  const signedUrl = adapter.buildSignedCheckoutUrl(topUpMetadata, 'whop_plan_payg_usage_only');
-  check(signedUrl.startsWith('https://pago.interno.local/checkout/whop_plan_payg_usage_only?'), 'La URL debe apuntar al plan en la pasarela');
-  check(signedUrl.includes('org=org-2'), 'La URL debe declarar la organizacion');
-  check(signedUrl.includes('amount=25.000000'), 'La URL debe declarar el importe de recarga');
-  check(signedUrl.includes(`sig=${topUpMetadata.signatureHex}`), 'La URL debe incluir la firma de los metadatos');
-  check(!signedUrl.includes(TEST_CHECKOUT_SECRET), 'La URL jamas debe exponer el secreto interno');
+  const result = adapter.verifyWebhookSignature(rawBody, headers);
+  check(!result.valid, 'Un evento fuera de la ventana de tolerancia debe rechazarse');
+  check(result.ageSeconds > TEST_TOLERANCE_SECONDS, 'La antiguedad reportada debe exceder la tolerancia');
 }
 
-/** Verifica la normalizacion de payloads y el rechazo de cuerpos invalidos. */
-function verifyPayloadParsing(): void {
-  check(
-    WhopWebhookPayloadParser.normalizeEventName('membership.went_valid') === 'membership.went_valid',
-    'Un nombre de evento soportado debe normalizarse'
-  );
+/** Verifica la normalizacion de nombres de evento actuales y legacy. */
+function verifyEventNames(): void {
+  check(WhopWebhookPayloadParser.normalizeEventName('membership.activated') === 'membership.activated', 'El evento actual de alta debe aceptarse');
+  check(WhopWebhookPayloadParser.normalizeEventName('membership.updated') === 'membership.updated', 'El evento de cambio debe aceptarse');
+  check(WhopWebhookPayloadParser.normalizeEventName('membership.deactivated') === 'membership.deactivated', 'El evento de baja debe aceptarse');
   check(WhopWebhookPayloadParser.normalizeEventName('  PAYMENT.SUCCEEDED  ') === 'payment.succeeded', 'El nombre debe normalizarse a minusculas y sin espacios');
+  check(WhopWebhookPayloadParser.normalizeEventName('membership.went_valid') === 'membership.activated', 'El alias legacy de alta debe mapearse al canonico');
+  check(WhopWebhookPayloadParser.normalizeEventName('membership.went_invalid') === 'membership.deactivated', 'El alias legacy de baja debe mapearse al canonico');
 
-  let unsupportedError: unknown = null;
+  let unsupportedRejected = false;
   try {
     WhopWebhookPayloadParser.normalizeEventName('invoice.created');
-  } catch (error) {
-    unsupportedError = error;
+  } catch {
+    unsupportedRejected = true;
   }
-  check(unsupportedError instanceof Error, 'Un evento no soportado debe rechazarse con un error');
-
-  const snakeCaseBody = Buffer.from(
-    JSON.stringify({
-      event_id: 'evt-10',
-      event_type: 'membership.went_valid',
-      data: { organization_id: 'org-9', membership_id: 'mem-9', internal_plan_code: 'PLAN_10' },
-    }),
-    'utf8'
-  );
-  const nestedValid = WhopWebhookPayloadParser.parseMembershipValid(WhopWebhookPayloadParser.extractEventData(snakeCaseBody));
-  check(nestedValid.organizationId === 'org-9', 'La organizacion debe extraerse del objeto anidado `data`');
-  check(nestedValid.internalPlanCode === 'PLAN_10', 'El codigo interno del plan debe conservarse');
-  check(nestedValid.membershipId === 'mem-9', 'La membresia debe extraerse correctamente');
-  check(!Number.isNaN(Date.parse(nestedValid.periodStartIso)), 'La fecha de inicio debe ser una marca ISO valida');
-
-  const camelCaseBody = Buffer.from(
-    JSON.stringify({ eventId: 'evt-11', organizationId: 'org-8', membershipId: 'mem-8', internalPlanCode: 'PLAN_5' }),
-    'utf8'
-  );
-  const camelCaseValid = WhopWebhookPayloadParser.parseMembershipValid(WhopWebhookPayloadParser.extractEventData(camelCaseBody));
-  check(camelCaseValid.organizationId === 'org-8', 'La nomenclatura camelCase debe aceptarse');
-  check(camelCaseValid.eventId === 'evt-11', 'El identificador del evento debe aceptarse en camelCase');
-
-  const paymentBody = Buffer.from(
-    JSON.stringify({ organization_id: 'org-7', payment_id: 'pay-1', amount_usd: 49.5, payment_kind: 'top_up' }),
-    'utf8'
-  );
-  const paymentParsed = WhopWebhookPayloadParser.parsePaymentSucceeded(WhopWebhookPayloadParser.extractEventData(paymentBody));
-  check(paymentParsed.amountUsd === '49.500000', 'El importe numerico debe normalizarse a 6 decimales exactos');
-  check(paymentParsed.paymentKind === 'TOP_UP', 'El tipo de pago debe normalizarse a mayusculas');
-
-  let invalidJsonError: unknown = null;
-  try {
-    WhopWebhookPayloadParser.extractEventData(Buffer.from('{no-json', 'utf8'));
-  } catch (error) {
-    invalidJsonError = error;
-  }
-  check(invalidJsonError instanceof Error, 'Un cuerpo que no es JSON valido debe rechazarse');
-
-  let missingOrganizationError: unknown = null;
-  try {
-    WhopWebhookPayloadParser.parsePaymentSucceeded({ payment_id: 'pay-2', amount_usd: 10 });
-  } catch (error) {
-    missingOrganizationError = error;
-  }
-  check(missingOrganizationError instanceof Error, 'Un evento sin organizacion debe rechazarse');
-
-  const invalidBody = Buffer.from(JSON.stringify({ organization_id: 'org-1', amount_usd: 'no-es-numero' }), 'utf8');
-  let invalidAmountError: unknown = null;
-  try {
-    WhopWebhookPayloadParser.parsePaymentSucceeded(WhopWebhookPayloadParser.extractEventData(invalidBody));
-  } catch (error) {
-    invalidAmountError = error;
-  }
-  check(invalidAmountError instanceof Error, 'Un importe con formato invalido debe rechazarse');
-
-  const invalidEvent = WhopWebhookPayloadParser.parseMembershipInvalid(
-    WhopWebhookPayloadParser.extractEventData(Buffer.from(JSON.stringify({ organization_id: 'org-3', membership_id: 'mem-3' }), 'utf8'))
-  );
-  check(invalidEvent.reason === 'MOTIVO_NO_DECLARADO', 'Una invalidacion sin motivo debe declararlo como no declarado');
+  check(unsupportedRejected, 'Un evento no soportado debe lanzar error de validacion');
 }
 
-/** Ejecuta los 4 grupos de aserciones e informa el resultado consolidado. */
+/** Verifica que la metadata del checkout se desanide desde `data.metadata`. */
+function verifyMetadataUnwrapping(): void {
+  const data = WhopWebhookPayloadParser.extractEventData(Buffer.from(JSON.stringify(activationEnvelope('msg_meta_1')), 'utf8'));
+  const parsed = WhopWebhookPayloadParser.parseMembershipValid(data);
+
+  check(parsed.organizationId === 'org-real-1', 'La organizacion debe leerse desde la metadata anidada del checkout');
+  check(parsed.internalPlanCode === 'PLAN_5', 'El plan interno debe leerse desde la metadata anidada del checkout');
+  check(parsed.membershipId === 'mem_real_001', 'La membresia debe leerse de data.id');
+  check(parsed.externalPlanId === 'plan_kVPGj57x5DVsm', 'El plan externo debe propagarse');
+  check(parsed.periodStartIso === '2026-10-20T00:00:00.000Z', 'El inicio de periodo debe leerse de current_period_start');
+  check(parsed.periodEndIso === '2026-11-19T00:00:00.000Z', 'El fin de periodo debe leerse de current_period_end');
+
+  const withoutOrg = { id: 'msg_x', type: 'membership.activated', data: { id: 'mem_1', status: 'active', metadata: {} } };
+  let missingOrgRejected = false;
+  try {
+    WhopWebhookPayloadParser.parseMembershipValid(WhopWebhookPayloadParser.extractEventData(Buffer.from(JSON.stringify(withoutOrg), 'utf8')));
+  } catch {
+    missingOrgRejected = true;
+  }
+  check(missingOrgRejected, 'Un evento sin organizacion acreditada debe rechazarse, no adivinarla');
+}
+
+/** Verifica la lectura del importe, la moneda y el `substatus` del pago. */
+function verifyMoneyAndSubstatus(): void {
+  const paymentEnvelope = {
+    id: 'msg_pay_1',
+    type: 'payment.succeeded',
+    data: {
+      id: 'pay_real_1',
+      membership_id: 'mem_real_1',
+      status: 'paid',
+      substatus: 'succeeded',
+      currency: 'usd',
+      total: { amount: '5.50', currency: 'usd', decimals: 2, display_decimals: 2 },
+      metadata: { organization_id: 'org-pay-1', checkout_mode: 'TOP_UP', internal_plan_code: 'PAYG' },
+    },
+  };
+
+  const parsed = WhopWebhookPayloadParser.parsePaymentSucceeded(
+    WhopWebhookPayloadParser.extractEventData(Buffer.from(JSON.stringify(paymentEnvelope), 'utf8'))
+  );
+  check(parsed.amountUsd === '5.500000', 'El importe debe leerse del objeto monetario total.amount');
+  check(parsed.paymentKind === 'TOP_UP', 'La metadata del checkout define la naturaleza del cobro');
+  check(parsed.paymentId === 'pay_real_1', 'El identificador del pago debe propagarse');
+  check(parsed.membershipId === 'mem_real_1', 'La membresia del pago debe propagarse');
+  check(parsed.periodStartIso === null, 'Una recarga no declara periodo');
+
+  const notSettled = { ...paymentEnvelope, data: { ...paymentEnvelope.data, substatus: 'pending' } };
+  let pendingRejected = false;
+  try {
+    WhopWebhookPayloadParser.parsePaymentSucceeded(WhopWebhookPayloadParser.extractEventData(Buffer.from(JSON.stringify(notSettled), 'utf8')));
+  } catch {
+    pendingRejected = true;
+  }
+  check(pendingRejected, 'Un pago con substatus distinto de succeeded no debe acreditarse');
+
+  const wrongCurrency = { ...paymentEnvelope, data: { ...paymentEnvelope.data, currency: 'eur' } };
+  let currencyRejected = false;
+  try {
+    WhopWebhookPayloadParser.parsePaymentSucceeded(WhopWebhookPayloadParser.extractEventData(Buffer.from(JSON.stringify(wrongCurrency), 'utf8')));
+  } catch {
+    currencyRejected = true;
+  }
+  check(currencyRejected, 'Un cobro en una moneda distinta de USD debe rechazarse en lugar de convertirse a ciegas');
+}
+
+/** Verifica que `membership.updated` decida alta o morosidad por el estado declarado. */
+function verifyMembershipUpdatedDecidesByStatus(): void {
+  const active = { id: 'msg_up_1', type: 'membership.updated', data: { id: 'mem_1', status: 'active', metadata: { organization_id: 'org-1', internal_plan_code: 'PLAN_10' } } };
+  const pastDue = { id: 'msg_up_2', type: 'membership.updated', data: { id: 'mem_2', status: 'past_due', metadata: { organization_id: 'org-2', internal_plan_code: 'PLAN_10' } } };
+
+  const flatten = (envelope: Record<string, unknown>) => WhopWebhookPayloadParser.extractEventData(Buffer.from(JSON.stringify(envelope), 'utf8'));
+  check(WhopWebhookPayloadParser.membershipStatusIsCurrent(flatten(active)), 'Un estado active debe conceder acceso vigente');
+  check(!WhopWebhookPayloadParser.membershipStatusIsCurrent(flatten(pastDue)), 'Un estado past_due no debe conceder acceso');
+
+  const canceled = { id: 'msg_up_3', type: 'membership.updated', data: { id: 'mem_3', status: 'canceled', metadata: { organization_id: 'org-3' } } };
+  const invalidPayload = WhopWebhookPayloadParser.parseMembershipInvalid(flatten(canceled));
+  check(invalidPayload.reason === 'canceled', 'El motivo de la morosidad debe tomar el estado declarado por la pasarela');
+}
+
+/** Verifica que el adaptador exija credenciales completas y coherentes. */
+function verifyAdapterCredentialGuards(): void {
+  const base = {
+    companyId: TEST_COMPANY_ID,
+    webhookSecret: TEST_WEBHOOK_SECRET,
+    checkoutHmacSecret: TEST_CHECKOUT_SECRET,
+    checkoutBaseUrl: 'https://pago.interno.local/checkout',
+    webhookToleranceSeconds: TEST_TOLERANCE_SECONDS,
+  };
+
+  let missingKeyRejected = false;
+  try {
+    new WhopApiAndHmacAdapter({ ...base, companyApiKey: '   ' });
+  } catch {
+    missingKeyRejected = true;
+  }
+  check(missingKeyRejected, 'La pasarela debe exigir la clave de empresa; la clave publica del app no autoriza cobros');
+
+  let badCompanyRejected = false;
+  try {
+    new WhopApiAndHmacAdapter({ ...base, companyApiKey: 'apik_ok', companyId: 'company_sin_prefijo' });
+  } catch {
+    badCompanyRejected = true;
+  }
+  check(badCompanyRejected, 'El identificador de empresa debe tener el formato biz_ que la API v1 exige');
+
+  let missingSecretRejected = false;
+  try {
+    new WhopApiAndHmacAdapter({ ...base, companyApiKey: 'apik_ok', webhookSecret: '' });
+  } catch {
+    missingSecretRejected = true;
+  }
+  check(missingSecretRejected, 'Sin secreto de webhooks no puede verificarse ninguna entrega');
+}
+
+/** Ejecuta la bateria de verificaciones. */
 function main(): void {
-  console.log('PRUEBA DE FUEGO DE FIRMAS DE WEBHOOK Y ENLACES DE PAGO (PARTE 9)');
-  console.log('='.repeat(96));
-
-  verifyWebhookSignatureAcceptance();
-  console.log('[1/4] Aceptacion de firmas validas sobre el cuerpo crudo: APROBADO.');
-
-  verifyWebhookSignatureRejection();
-  console.log('[2/4] Rechazo de manipulacion, repeticion y cuerpo alterado: APROBADO.');
-
-  verifyCheckoutLinkSigning();
-  console.log('[3/4] Firma, vigencia y URL del enlace de pago: APROBADO.');
-
-  verifyPayloadParsing();
-  console.log('[4/4] Normalizacion defensiva de payloads de webhook: APROBADO.');
-
-  console.log('='.repeat(96));
-  console.log(`RESULTADO: APROBADO. ${passedAssertions} aserciones superadas.`);
+  console.log('PRUEBA DE FIRMA REAL DE WEBHOOKS DE LA PASARELA (Standard Webhooks)');
+  console.log('=======================================================================');
+  verifyRealSchemeSignature();
+  verifyLegacyHexSignatureIsRejected();
+  verifyToleranceWindow();
+  verifyEventNames();
+  verifyMetadataUnwrapping();
+  verifyMoneyAndSubstatus();
+  verifyMembershipUpdatedDecidesByStatus();
+  verifyAdapterCredentialGuards();
+  console.log(`\nRESULTADO: OK — ${passedAssertions} aserciones superadas.`);
 }
 
 main();

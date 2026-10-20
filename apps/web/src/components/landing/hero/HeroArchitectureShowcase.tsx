@@ -56,7 +56,7 @@ export function HeroArchitectureShowcase(): ReactElement {
   return (
     <section
       id="plataforma"
-      className="relative scroll-mt-20 px-4 pt-6 pb-10 sm:px-8 sm:pt-14 sm:pb-20 lg:px-12 w-full overflow-hidden"
+      className="relative scroll-mt-20 px-4 pt-6 pb-10 sm:px-6 sm:pt-12 sm:pb-16 lg:px-8 w-full overflow-hidden"
     >
       <div className="max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
         {/* Columna izquierda con contenido editorial ampliado para llenar la pantalla */}
@@ -65,7 +65,7 @@ export function HeroArchitectureShowcase(): ReactElement {
           data-purpose="hero-content"
         >
           {/* Titular híbrido elegante de gran impacto visual */}
-          <h1 className="font-display text-[30px] sm:text-[44px] md:text-[58px] lg:text-[68px] xl:text-[74px] leading-[1.12] sm:leading-[1.05] tracking-[-0.025em] text-[#08252d] font-medium mb-3 sm:mb-6">
+          <h1 className="font-display text-[28px] xs:text-[34px] sm:text-[46px] md:text-[56px] lg:text-[66px] xl:text-[74px] leading-[1.14] sm:leading-[1.05] tracking-[-0.025em] text-[#08252d] font-medium mb-3 sm:mb-6 [text-wrap:balance]">
             El asistente de voz que{' '}
             <span className="italic font-normal">entiende</span> tu{' '}
             <span className="font-script text-[1.22em] text-[#08252d] font-bold tracking-normal inline-block transform -rotate-1 align-baseline relative">
@@ -85,60 +85,71 @@ export function HeroArchitectureShowcase(): ReactElement {
                   strokeWidth="2.5"
                 />
               </svg>
-            </span>
-            <br className="inline" /> y lo ejecuta por ti.
+            </span>{' '}
+            <span className="inline xl:block">y lo ejecuta por ti.</span>
           </h1>
 
           {/* Subtítulo explicativo con tipografía cómoda y legible */}
-          <p className="font-sans-editorial text-[#3d616c] text-[15px] sm:text-[17px] md:text-[19px] font-normal leading-relaxed max-w-xl lg:max-w-2xl mb-4 sm:mb-8">
+          <p className="font-sans-editorial text-[#3d616c] text-[15px] sm:text-[17px] md:text-[19px] font-normal leading-relaxed max-w-xl lg:max-w-2xl mb-4 sm:mb-8 [text-wrap:pretty]">
             Habla con tu producto y el asistente lo opera por ti: entiende cada pantalla, completa
             los pasos y se detiene en cuanto lo interrumpes.
           </p>
 
           {/* Fila de acciones: Botón CTA y caja de terminal */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-5 w-full sm:w-auto">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-4 w-full sm:w-auto">
             {/* Botón de acción principal (CTA) */}
             <a
               href="#demo-en-vivo"
-              className="w-full sm:w-auto inline-flex min-h-[44px] items-center justify-center gap-2 px-7 py-3 rounded-full bg-[#7346f6] text-white text-[12px] sm:text-[13px] tracking-wider uppercase font-bold hover:bg-[#6335ea] active:scale-[0.98] transition-all shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-[#7346f6] focus:ring-offset-2"
+              className="w-full sm:w-auto inline-flex min-h-[44px] items-center justify-center gap-2 px-7 py-3 rounded-full bg-[#7346f6] text-white text-[12px] sm:text-[13px] tracking-wider uppercase font-bold hover:bg-[#6335ea] active:scale-[0.98] transition-all shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-[#7346f6] focus:ring-offset-2 shrink-0"
             >
               <span>PROBAR ASISTENTE EN VIVO</span>
               <span className="text-sm font-semibold inline-block transform translate-y-[1px]">↓</span>
             </a>
 
-            {/* Píldora de comando CLI de instalación */}
+            {/* Píldora de comando CLI de instalación con enlace a Docs y botón de copiado */}
             <div
-              className="w-full sm:w-auto inline-flex items-center justify-between max-w-full px-4 py-2 sm:px-5 sm:py-2.5 rounded-full bg-white/90 border border-[#cbebe5] text-[#123944] shadow-xs hover:border-[#b1ded6] transition-all"
+              className="w-full sm:w-auto inline-flex items-center justify-between max-w-full min-w-0 px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full bg-white/95 border border-[#cbebe5] text-[#123944] shadow-xs hover:border-[#7346f6]/60 hover:bg-white transition-all group/pill"
               data-purpose="terminal-code-pill"
             >
-              <div className="flex items-center gap-2 overflow-x-auto text-[13px] sm:text-[14px] font-mono tracking-tight select-all whitespace-nowrap">
+              <a
+                href="/docs#cli"
+                className="flex items-center gap-2 overflow-x-auto min-w-0 text-[12px] sm:text-[14px] font-mono tracking-tight text-[#123944] hover:text-[#7346f6] transition-colors whitespace-nowrap focus:outline-none"
+                title="Ver documentación del comando CLI de entrenamiento"
+              >
                 <span className="text-[#7346f6] font-semibold">$</span>
                 <code>{TRAINING_CLI_COMMAND}</code>
-              </div>
+                <span className="text-slate-400 group-hover/pill:text-[#7346f6] text-xs font-sans transition-all inline-block transform group-hover/pill:translate-x-0.5 group-hover/pill:-translate-y-0.5">
+                  ↗
+                </span>
+              </a>
+
               <button
                 type="button"
                 onClick={handleCopyCommand}
                 aria-label="Copiar comando al portapapeles"
-                title="Copiar comando"
-                className={`ml-3 p-1.5 rounded-lg border transition-all flex items-center justify-center shrink-0 group ${
+                title={copiado ? '¡Comando copiado al portapapeles!' : 'Copiar comando'}
+                className={`ml-2.5 px-2.5 py-1 rounded-md text-[11px] font-sans font-medium border transition-all flex items-center gap-1 shrink-0 ${
                   copiado
                     ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
-                    : 'border-slate-200 hover:bg-slate-50 text-slate-700 hover:text-[#08252d]'
+                    : 'border-slate-200 hover:bg-slate-100 text-slate-600 hover:text-[#08252d]'
                 }`}
               >
-                <svg
-                  className="w-4 h-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <line x1="7" y1="17" x2="17" y2="7" />
-                  <polyline points="7 7 17 7 17 17" />
-                </svg>
+                {copiado ? (
+                  <>
+                    <svg className="w-3.5 h-3.5 text-emerald-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                    <span>Copiado</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-3.5 h-3.5 text-slate-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                    <span>Copiar</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

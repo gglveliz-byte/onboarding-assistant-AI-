@@ -2,53 +2,63 @@
  * @archivo src/modules/04-billing-and-whop/infrastructure/webhook-signature.verifier.ts
  * @modulo 04-billing-and-whop (Verificador Criptografico de Firmas de Webhook)
  * @proposito
- *   Comprueba la autenticidad de cada webhook entrante. La firma se calcula sobre
- *   `timestamp + "." + cuerpo crudo` y NUNCA sobre el JSON reserializado: el orden de las claves o
- *   el espaciado cambiarian la firma y rechazaria eventos legitimamente firmados. Ademas aplica una
- *   ventana anti-repeticion, de modo que un atacante que capture un evento valido no pueda reenviarlo
- *   indefinidamente. Se aisla del cliente HTTP para que la verificacion pueda probarse sin red.
+ *   Comprueba la autenticidad de cada webhook entrante delegando en el helper OFICIAL de la pasarela
+ *   (`unwrapWebhook`), que aplica el esquema Standard Webhooks: HMAC-SHA256 sobre
+ *   `{webhook-id}.{webhook-timestamp}.{cuerpo crudo}`, codificado en Base64 y presentado con prefijo
+ *   `v1,`, con ventana de 5 minutos sobre `webhook-timestamp`.
+ *
+ *   La version anterior calculaba el HMAC a mano sobre `{timestamp}.{cuerpo}` y lo comparaba en
+ *   hexadecimal, y ademas exigia las cabeceras `x-whop-timestamp` / `x-whop-signature`, que la
+ *   pasarela no envia. Las dos cosas son incompatibles con el contrato real: ninguna firma legitima
+ *   cuadraba y toda entrega se rechazaba con 401. Mantener un HMAC manual esta prohibido cuando el
+ *   SDK expone el helper, porque el esquema puede cambiar sin avisar y el calculo propio queda
+ *   obsoleto en silencio.
+ *
+ *   El cuerpo se recibe como `Buffer` intacto: la firma cubre los bytes exactos, y re-serializar el
+ *   JSON (reordenar claves o normalizar espacios) invalida firmas legitimas.
  *
  * @resumen_contenido
  *   - Interface `WebhookVerifierOptions`: Secreto de firma y tolerancia anti-repeticion.
- *   - Interface `WhopWebhookHeaders`: Cabeceras de firma normalizadas del webhook entrante.
- *   - Interface `WhopSignatureVerification`: Resultado detallado con el motivo del rechazo.
- *   - Clase `WebhookSignatureVerifier`:
- *       * `verify()`: Verificacion completa con diagnostico.
- *       * `assertValid()`: Variante estricta que lanza `UnauthorizedError`.
- *       * `normalizeTimestamp()`, `extractCandidateSignatures()` y `buildSecretCandidates()`.
+ *   - Interface `WhopWebhookHeaders`: Cabeceras normalizadas exigidas por Standard Webhooks.
+ *   - Interface `WhopSignatureVerification`: Resultado detallado con el motivo del rechazo y el evento
+ *     ya deserializado, para que el llamador no vuelva a parsear el cuerpo.
+ *   - Clase `WebhookSignatureVerifier`: `verify()` y `assertValid()`.
  *
  * @dependencias_internas
- *   - `CryptoUtils` (`src/shared/kernel/crypto.util.ts`) para HMAC y comparacion en tiempo constante.
  *   - `UnauthorizedError` (`src/shared/kernel/result-and-errors.ts`) para el rechazo estricto.
  *
  * @dependencias_externas
- *   - Ninguna (Criptografia provista por el kernel de la plataforma).
+ *   - `@whop/sdk/helpers` (`unwrapWebhook`, `WebhookVerificationError`): verificacion oficial.
  *
  * @tablas_bd_o_redis
  *   - Redis: `whop:webhook:evt:<id>` (La verificacion siempre precede a la marca de idempotencia).
  */
 
-import { CryptoUtils } from '../../../shared/kernel/crypto.util';
+import { unwrapWebhook, WebhookVerificationError } from '@whop/sdk/helpers';
 import { UnauthorizedError } from '../../../shared/kernel/result-and-errors';
 
 /** Parametros de construccion del verificador de firmas. */
 export interface WebhookVerifierOptions {
-  /** Secreto con el que la pasarela firma sus webhooks. */
+  /** Secreto con el que la pasarela firma sus webhooks, tal como lo muestra el panel. */
   readonly webhookSecret: string;
   /** Tolerancia anti-repeticion de la marca temporal, en segundos. */
   readonly toleranceSeconds: number;
 }
 
-/** Cabeceras de firma normalizadas de un webhook entrante. */
+/**
+ * Cabeceras de firma normalizadas de un webhook entrante.
+ *
+ * Solo se declaran las tres cabeceras que el estandar fija y que la pasarela envia: `webhook-id`,
+ * `webhook-timestamp` y `webhook-signature`. NO existe cabecera de tipo de evento: el nombre del
+ * evento viaja en el campo `type` del cuerpo JSON.
+ */
 export interface WhopWebhookHeaders {
-  /** Identificador unico del evento, base de la idempotencia. */
+  /** Identificador unico del evento (`msg_...`), base de la idempotencia. */
   readonly eventId: string;
-  /** Marca temporal de emision declarada por el emisor (segundos o milisegundos). */
+  /** Marca temporal de emision declarada por el emisor, en segundos desde el epoch. */
   readonly timestampHeader: string;
-  /** Firma declarada, posiblemente con varios candidatos separados por espacio. */
+  /** Firma declarada en Base64 con su prefijo de version (`v1,<base64>`). */
   readonly signatureHeader: string;
-  /** Nombre del evento, tal como lo declara el emisor. */
-  readonly eventNameHeader: string;
 }
 
 /** Resultado detallado de la verificacion de firma de un webhook. */
@@ -61,12 +71,15 @@ export interface WhopSignatureVerification {
   readonly declaredTimestampMs: number;
   /** Antiguedad del evento en segundos, usada para decidir si es una repeticion. */
   readonly ageSeconds: number;
-  /** Numero de esquema de firma aceptado (1 = textual, 2 = decodificado de `whsec_`). */
-  readonly acceptedScheme: number | null;
+  /** Identificador normalizado del evento, tomado de la cabecera `webhook-id`. */
+  readonly eventId: string;
+  /**
+   * Cuerpo ya deserializado por el helper oficial, solo presente cuando la firma es valida.
+   * Es la unica copia parseada del payload: el resto del sistema la consume y nadie mas vuelve a
+   * hacer `JSON.parse` sobre el cuerpo crudo.
+   */
+  readonly payload: Record<string, unknown> | null;
 }
-
-/** Prefijo de los secretos de firma emitidos por la pasarela en formato Base64. */
-const SIGNATURE_SECRET_PREFIX = 'whsec_';
 
 /** Milisegundos que componen un segundo. */
 const MILLISECONDS_PER_SECOND = 1000;
@@ -76,7 +89,7 @@ const SECONDS_TIMESTAMP_THRESHOLD = 100_000_000_000;
 
 /**
  * Verificador criptografico de firmas de webhook.
- * Admite los dos esquemas de secreto que emite la pasarela y varios candidatos de firma por cabecera.
+ * Delega el calculo en el helper oficial y conserva la interfaz que consume el resto del modulo.
  */
 export class WebhookSignatureVerifier {
   private readonly webhookSecret: string;
@@ -95,50 +108,70 @@ export class WebhookSignatureVerifier {
   }
 
   /**
-   * Verifica criptograficamente la firma de un webhook entrante.
+   * Normaliza la marca temporal del emisor, que el estandar entrega en segundos.
+   *
+   * @param rawTimestamp - Valor textual de la cabecera `webhook-timestamp`.
+   * @returns Marca temporal en milisegundos, o `null` cuando no es legible.
+   */
+  public normalizeTimestamp(rawTimestamp: string): number | null {
+    const numericValue = Number(rawTimestamp.trim());
+    if (!Number.isFinite(numericValue) || numericValue <= 0) {
+      return null;
+    }
+    return numericValue < SECONDS_TIMESTAMP_THRESHOLD ? numericValue * MILLISECONDS_PER_SECOND : numericValue;
+  }
+
+  /**
+   * Verifica criptograficamente un webhook entrante con el helper oficial.
    *
    * @param rawBodyBuffer - Cuerpo crudo exacto recibido en la peticion.
    * @param headers - Cabeceras de firma normalizadas del webhook.
    * @param nowMs - Instante de referencia para la ventana anti-repeticion.
-   * @returns Resultado detallado de la verificacion, con el motivo del rechazo cuando falla.
+   * @returns Resultado detallado de la verificacion, con el payload parseado cuando es valida.
    */
   public verify(rawBodyBuffer: Buffer, headers: WhopWebhookHeaders, nowMs: number = Date.now()): WhopSignatureVerification {
     const declaredTimestampMs = this.normalizeTimestamp(headers.timestampHeader);
+    const base = {
+      eventId: headers.eventId,
+      declaredTimestampMs: declaredTimestampMs ?? 0,
+      ageSeconds: declaredTimestampMs === null ? Number.POSITIVE_INFINITY : Math.abs(nowMs - declaredTimestampMs) / MILLISECONDS_PER_SECOND,
+      payload: null as Record<string, unknown> | null,
+    };
+
     if (declaredTimestampMs === null) {
-      return {
-        valid: false,
-        rejectionReason: 'MARCA_TEMPORAL_ILEGIBLE',
-        declaredTimestampMs: 0,
-        ageSeconds: Number.POSITIVE_INFINITY,
-        acceptedScheme: null,
-      };
+      return { ...base, valid: false, rejectionReason: 'MARCA_TEMPORAL_ILEGIBLE' };
     }
 
-    const ageSeconds = Math.abs(nowMs - declaredTimestampMs) / MILLISECONDS_PER_SECOND;
-    if (ageSeconds > this.toleranceSeconds) {
-      return {
-        valid: false,
-        rejectionReason: `VENTANA_ANTI_REPETICION_EXCEDIDA (${Math.round(ageSeconds)}s > ${this.toleranceSeconds}s)`,
-        declaredTimestampMs,
-        ageSeconds,
-        acceptedScheme: null,
-      };
-    }
+    try {
+      // El helper exige las cabeceras crudas con sus nombres estandar; se reconstruyen desde la
+      // forma normalizada para que el verificador no dependa de como el transporte las indexo.
+      const payload = unwrapWebhook<Record<string, unknown>>(rawBodyBuffer.toString('utf8'), {
+        headers: {
+          'webhook-id': headers.eventId,
+          'webhook-timestamp': headers.timestampHeader,
+          'webhook-signature': headers.signatureHeader,
+        },
+        key: this.webhookSecret,
+      });
 
-    const signingInput = `${headers.timestampHeader}.${rawBodyBuffer.toString('utf8')}`;
-    const candidateSignatures = this.extractCandidateSignatures(headers.signatureHeader);
-    const secretCandidates = this.buildSecretCandidates();
-
-    for (const candidateSignature of candidateSignatures) {
-      for (let schemeIndex = 0; schemeIndex < secretCandidates.length; schemeIndex += 1) {
-        const expectedSignature = CryptoUtils.hmacSha256Hex(secretCandidates[schemeIndex] as string, signingInput);
-        if (CryptoUtils.timingSafeEqualHex(expectedSignature, candidateSignature)) {
-          return { valid: true, rejectionReason: null, declaredTimestampMs, ageSeconds, acceptedScheme: schemeIndex + 1 };
-        }
+      // La ventana anti-repeticion la aplica el propio helper, pero se comprueba tambien aqui para
+      // poder reportar el motivo exacto al operador cuando el evento llega tarde.
+      if (base.ageSeconds > this.toleranceSeconds) {
+        return {
+          ...base,
+          payload: null,
+          valid: false,
+          rejectionReason: `VENTANA_ANTI_REPETICION_EXCEDIDA (${Math.round(base.ageSeconds)}s > ${this.toleranceSeconds}s)`,
+        };
       }
-    }
 
-    return { valid: false, rejectionReason: 'FIRMA_HMAC_INVALIDA', declaredTimestampMs, ageSeconds, acceptedScheme: null };
+      return { ...base, payload, valid: true, rejectionReason: null };
+    } catch (error) {
+      if (error instanceof WebhookVerificationError) {
+        return { ...base, valid: false, rejectionReason: `FIRMA_HMAC_INVALIDA: ${error.message}` };
+      }
+      return { ...base, valid: false, rejectionReason: `VERIFICACION_FALLIDA: ${error instanceof Error ? error.message : String(error)}` };
+    }
   }
 
   /**
@@ -156,68 +189,9 @@ export class WebhookSignatureVerifier {
     if (!verification.valid) {
       throw new UnauthorizedError(
         `Webhook rechazado por firma invalida: ${verification.rejectionReason ?? 'motivo desconocido'}. ` +
-          `Instante declarado: ${verification.declaredTimestampMs}.`
+          `Evento ${verification.eventId}, instante declarado ${verification.declaredTimestampMs}.`
       );
     }
     return verification;
-  }
-
-  /**
-   * Normaliza la marca temporal del emisor, que puede venir en segundos o en milisegundos.
-   *
-   * @param rawTimestamp - Valor textual de la cabecera de marca temporal.
-   * @returns Marca temporal en milisegundos, o `null` cuando no es legible.
-   */
-  public normalizeTimestamp(rawTimestamp: string): number | null {
-    const numericValue = Number(rawTimestamp.trim());
-    if (!Number.isFinite(numericValue) || numericValue <= 0) {
-      return null;
-    }
-    // Un valor menor al umbral es una marca en segundos, por lo que se convierte a milisegundos.
-    return numericValue < SECONDS_TIMESTAMP_THRESHOLD ? numericValue * MILLISECONDS_PER_SECOND : numericValue;
-  }
-
-  /**
-   * Extrae los candidatos de firma del encabezado, admitiendo varios separados por espacio y el
-   * prefijo de version (`v1=<firma>`).
-   *
-   * @param rawSignatureHeader - Valor textual del encabezado de firma.
-   * @returns Firmas hexadecimales candidatas, sin prefijo de version ni duplicados.
-   */
-  public extractCandidateSignatures(rawSignatureHeader: string): readonly string[] {
-    const candidates = new Set<string>();
-    for (const rawToken of rawSignatureHeader.trim().split(/\s+/u)) {
-      const withoutVersion = rawToken.includes('=') ? (rawToken.split('=').pop() ?? '') : rawToken;
-      const normalized = withoutVersion.trim().toLowerCase();
-      if (/^[0-9a-f]{64}$/u.test(normalized)) {
-        candidates.add(normalized);
-      }
-    }
-    return [...candidates];
-  }
-
-  /**
-   * Construye los secretos candidatos con los que puede haberse firmado un webhook.
-   * Un secreto declarado como `whsec_<base64>` se usa tanto en su forma textual completa como en su
-   * parte decodificada: distintas versiones de la pasarela firman con una u otra representacion.
-   *
-   * @returns Lista de secretos candidatos, sin duplicados.
-   */
-  public buildSecretCandidates(): readonly string[] {
-    const candidates = new Set<string>([this.webhookSecret]);
-
-    if (this.webhookSecret.startsWith(SIGNATURE_SECRET_PREFIX)) {
-      const base64Part = this.webhookSecret.slice(SIGNATURE_SECRET_PREFIX.length);
-      try {
-        const decoded = Buffer.from(base64Part, 'base64').toString('utf8');
-        if (decoded.length > 0) {
-          candidates.add(decoded);
-        }
-      } catch {
-        // Un secreto que no es Base64 valido se usa unicamente en su forma textual.
-      }
-    }
-
-    return [...candidates];
   }
 }

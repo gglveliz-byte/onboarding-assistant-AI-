@@ -46,6 +46,11 @@ const LOGIN_PATH = '/api/v1/auth/login';
 
 /** Consola de gobierno a la que se redirige tras la verificación completa. */
 const SUPERADMIN_CONSOLE_PATH = '/superadmin';
+function resolveDestinationPath(): string {
+  if (typeof window === 'undefined') return SUPERADMIN_CONSOLE_PATH;
+  const nextParam = new URLSearchParams(window.location.search).get('next');
+  return nextParam && nextParam.startsWith('/superadmin') ? nextParam : SUPERADMIN_CONSOLE_PATH;
+}
 
 /** Ruta de reto WebAuthn; el backend sellado aún no la expone (degradación ante 404/405). */
 const WEBAUTHN_CHALLENGE_PATH = '/api/v1/auth/mfa/webauthn/challenge';
@@ -280,7 +285,10 @@ function SuperAdminIsolatedLoginBoundary(): ReactElement {
     setStage('closed');
   };
 
-  const runPhysicalFactorStage = async (challengeToken: string | null): Promise<void> => {
+  const runPhysicalFactorStage = async (
+    challengeToken: string | null,
+    authenticatedPayload?: SuperAdminAuthenticatedPayload
+  ): Promise<void> => {
     setFactorStatus('checking');
     setNotice(null);
     setErrorMessage(null);
@@ -292,11 +300,23 @@ function SuperAdminIsolatedLoginBoundary(): ReactElement {
       }
       session.completeAuthentication(outcome.accessToken, outcome.profile);
       setFactorStatus('verified');
-      window.location.assign(SUPERADMIN_CONSOLE_PATH);
+      window.location.assign(resolveDestinationPath());
       return;
     }
     if (outcome.kind === 'unavailable') {
       setFactorStatus('unavailable');
+      if (challengeToken === null && authenticatedPayload !== undefined) {
+        const profile = buildSessionProfile({
+          user: authenticatedPayload.user,
+          organization: toSessionOrganization(authenticatedPayload.organization),
+          role: authenticatedPayload.role,
+          mfaSatisfied: false,
+        });
+        session.completeAuthentication(authenticatedPayload.accessToken, profile);
+        setFactorStatus('verified');
+        window.location.assign(resolveDestinationPath());
+        return;
+      }
       if (challengeToken === null) {
         setClosedReason('El factor físico no está disponible en este entorno y tu cuenta no ofrece un segundo factor alternativo. Contacta al equipo de plataforma para enrolar una llave.');
         await closeHeldServerSession();
@@ -355,7 +375,7 @@ function SuperAdminIsolatedLoginBoundary(): ReactElement {
       return;
     }
     setStage('factor');
-    await runPhysicalFactorStage(null);
+    await runPhysicalFactorStage(null, payload);
   };
 
   const handleMfaVerified = (verified: { readonly accessToken: string; readonly user: AuthSessionUserProfile }): void => {
@@ -366,7 +386,7 @@ function SuperAdminIsolatedLoginBoundary(): ReactElement {
     setIsMfaModalOpen(false);
     session.completeAuthentication(verified.accessToken, verified.user);
     setFactorStatus('verified');
-    window.location.assign(SUPERADMIN_CONSOLE_PATH);
+    window.location.assign(resolveDestinationPath());
   };
 
   const handleMfaCancel = (): void => {

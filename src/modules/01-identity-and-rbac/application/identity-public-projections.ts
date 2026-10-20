@@ -57,6 +57,8 @@ export interface PublicUser {
   readonly lastLoginAt: string | null;
   /** Telefono de contacto del usuario. */
   readonly phoneNumber?: string | null;
+  /** Indica si la cuenta cuenta con autoridad SuperAdmin de plataforma. */
+  readonly isPlatformSuperadmin: boolean;
   /** Momento de creacion de la cuenta. */
   readonly createdAt: string;
 }
@@ -88,6 +90,7 @@ export function toPublicUser(user: UserEntity): PublicUser {
     mfaTotpEnabled: user.mfaTotpEnabled,
     mfaWebauthnEnabled: user.mfaWebauthnEnabled,
     lastLoginAt: user.lastLoginAt ? new Date(user.lastLoginAt).toISOString() : null,
+    isPlatformSuperadmin: Boolean(user.isPlatformSuperadmin),
     phoneNumber: user.phoneNumber ?? null,
     createdAt: new Date(user.createdAt).toISOString(),
   };

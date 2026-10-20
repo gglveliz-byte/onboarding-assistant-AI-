@@ -40,6 +40,15 @@ export const publicPricingPlanSchema = z.object({
   planCode: z.string().min(1).max(50),
   displayName: z.string().min(1).max(100),
   monthlyFixedPriceUsd: z.string(),
+  /**
+   * Importe BRUTO que se cobra efectivamente en el checkout, con la comision de la pasarela ya
+   * trasladada al cliente. Se expone porque lo que ve el comprador en la landing debe coincidir con
+   * lo que le va a figurar en el recibo: anunciar $5 y cobrar $5.50 es una discrepancia de precio
+   * visible, no un detalle redondo. `null` mientras el plan no este aprovisionado en la pasarela.
+   */
+  whopGrossPriceUsd: z.string().nullable().default(null),
+  /** `true` cuando el plan existe de verdad en la pasarela y por tanto puede contratarse. */
+  isProvisioned: z.boolean().default(false),
   includedMinutes: z.string(),
   baseOverageRatePerMinuteUsd: z.string(),
   overageAllowed: z.boolean(),
@@ -66,6 +75,7 @@ export type PublicPricingMatrixEntity = z.infer<typeof publicPricingMatrixRespon
 export const demoSessionRequestSchema = z.object({
   turnstileToken: z.string().min(1, 'El token de verificación Cloudflare Turnstile es obligatorio'),
   preferredVoiceModel: z.enum(['QWEN', 'GEMINI']).optional().default('GEMINI'),
+  preferredVoiceName: z.string().max(24, 'Nombre de voz demasiado largo').optional(),
   userTimezone: z.string().optional(),
 });
 
@@ -80,6 +90,8 @@ export interface PublicLiveDemoSessionEntity {
   readonly websocketUrl: string;
   readonly maxDurationSeconds: number;
   readonly voiceModel: 'QWEN' | 'GEMINI';
+  /** Voz real resuelta contra la allowlist del motor y asignada al WebSocket (`&voice=...`). */
+  readonly voiceName: string;
   readonly expiresAtIso: string;
 }
 

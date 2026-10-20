@@ -68,7 +68,7 @@ export interface AccessTokenClaims {
 export interface EphemeralTokenPayload {
   readonly userId: string;
   readonly organizationId?: string | null;
-  readonly purpose: 'MFA_CHALLENGE' | 'SDK_HANDSHAKE' | 'EMAIL_VERIFICATION';
+  readonly purpose: 'MFA_CHALLENGE' | 'SDK_HANDSHAKE' | 'EMAIL_VERIFICATION' | 'LEGAL_CONSENT_CHALLENGE';
   readonly extraData?: Record<string, unknown>;
 }
 
@@ -77,7 +77,7 @@ export interface EphemeralTokenClaims {
   readonly tokenId: string;
   readonly userId: string;
   readonly organizationId?: string | null;
-  readonly purpose: 'MFA_CHALLENGE' | 'SDK_HANDSHAKE' | 'EMAIL_VERIFICATION';
+  readonly purpose: 'MFA_CHALLENGE' | 'SDK_HANDSHAKE' | 'EMAIL_VERIFICATION' | 'LEGAL_CONSENT_CHALLENGE';
   readonly extraData?: Record<string, unknown> | undefined;
   readonly expiresAt: Date;
 }
@@ -375,7 +375,7 @@ export class JwtEddsaSigner {
    */
   public static async verifyEphemeralToken(
     token: string,
-    expectedPurpose: 'MFA_CHALLENGE' | 'SDK_HANDSHAKE' | 'EMAIL_VERIFICATION'
+    expectedPurpose: 'MFA_CHALLENGE' | 'SDK_HANDSHAKE' | 'EMAIL_VERIFICATION' | 'LEGAL_CONSENT_CHALLENGE'
   ): Promise<EphemeralTokenClaims> {
     try {
       const publicKey = await this.getPublicKey();

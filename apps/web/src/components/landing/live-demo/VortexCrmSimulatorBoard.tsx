@@ -208,7 +208,7 @@ export const VortexCrmSimulatorBoard = forwardRef<CrmBoardHandle, VortexCrmSimul
     return (
       <div
         ref={containerRef}
-        className="relative bg-slate-50 min-h-[300px] md:min-h-[315px] flex flex-col md:flex-row overflow-hidden"
+        className="relative bg-slate-50 min-h-[320px] h-[330px] md:h-[355px] lg:h-[375px] flex flex-col md:flex-row overflow-hidden"
         data-purpose="crm-screen-viewport"
       >
         {/* Barra lateral interactiva (desktop >= lg) */}
@@ -265,8 +265,8 @@ export const VortexCrmSimulatorBoard = forwardRef<CrmBoardHandle, VortexCrmSimul
         </div>
 
         {/* Tablero principal del CRM */}
-        <div className="flex-1 p-2.5 sm:p-3 lg:p-3.5 overflow-hidden flex flex-col justify-between min-w-0">
-          <div>
+        <div className="flex-1 p-2.5 sm:p-3 lg:p-3.5 flex flex-col min-h-0 min-w-0">
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
             {/* Cabecera del tablero */}
             <div className="flex items-center justify-between gap-2 mb-2 flex-wrap sm:flex-nowrap">
               <div>

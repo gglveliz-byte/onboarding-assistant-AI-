@@ -30,6 +30,7 @@
  */
 
 import { Pool } from 'pg';
+import { DecimalMath } from '../../src/shared/kernel/decimal.util';
 import { DeductSessionMinutesUseCase } from '../../src/modules/04-billing-and-whop/application/deduct-session-minutes.use-case';
 import {
   BillingDashboardQueriesUseCase,
@@ -171,7 +172,11 @@ async function verifyConcurrentDeduction(useCase: DeductSessionMinutesUseCase, r
  * @param dashboard - Caso de uso de consultas del panel.
  * @param useCase - Caso de uso de deduccion, para forzar el tope de gasto.
  */
-async function verifyDashboardSnapshot(dashboard: BillingDashboardQueriesUseCase, useCase: DeductSessionMinutesUseCase): Promise<void> {
+async function verifyDashboardSnapshot(
+  dashboard: BillingDashboardQueriesUseCase,
+  useCase: DeductSessionMinutesUseCase,
+  repository: PostgresBillingRepository
+): Promise<void> {
   const snapshot = await dashboard.getConsumptionSnapshot(FIXTURE_ORG_ID);
   check(snapshot.planCode === 'PLAN_50', 'La instantanea debe declarar el plan contratado');
   check(
@@ -179,9 +184,14 @@ async function verifyDashboardSnapshot(dashboard: BillingDashboardQueriesUseCase
     `El tramo de volumen alcanzado debe ser el primero (obtenido: ${String(snapshot.appliedTierNumber)})`
   );
   check(snapshot.volumeDiscountPercent === '10.000000', 'La instantanea debe exponer el descuento por volumen vigente');
+  // La matriz de precios es editable en caliente por el SuperAdmin: la tarifa se deriva del catalogo
+  // vivo en lugar de fijar el numero de la semilla, y la invariante verificada es la del tramo.
+  const liveCatalog = await repository.getPlanCatalog();
+  const baseRate = liveCatalog.PLAN_50?.baseOverageRatePerMinuteUsd ?? '0.000000';
+  const expectedRate = DecimalMath.applyCompoundDiscount(baseRate, ['10.000000']);
   check(
-    snapshot.effectiveRatePerMinuteUsd === '0.128520',
-    `La tarifa efectiva debe ser 0.128520 (obtenido: ${snapshot.effectiveRatePerMinuteUsd})`
+    snapshot.effectiveRatePerMinuteUsd === expectedRate,
+    `La tarifa efectiva debe ser la base del plan (${baseRate}) con el tramo 1 al 10% = ${expectedRate} (obtenido: ${snapshot.effectiveRatePerMinuteUsd})`
   );
   check(snapshot.hardSpendCapUsd === '1.000000', 'La instantanea debe exponer el tope de gasto configurado');
   check(snapshot.includedMinutesRemaining === '0.000000', 'La instantanea debe reflejar la cuota agotada');
@@ -268,10 +278,10 @@ async function main(): Promise<void> {
   const redisClient = createRedisClusterClientFromEnv();
   const repository = new PostgresBillingRepository(pool);
   const gateway = new WhopApiAndHmacAdapter({
-    apiKey: environment.WHOP_API_KEY,
+    companyApiKey: environment.WHOP_API_KEY,
+    companyId: 'biz_test_company_001',
     webhookSecret: 'whop_webhook_secret_placeholder_dev_32chars',
     checkoutHmacSecret: environment.INTERNAL_CHECKOUT_HMAC_SECRET,
-    apiBaseUrl: environment.WHOP_API_BASE_URL,
     checkoutBaseUrl: environment.WHOP_CHECKOUT_BASE_URL,
     webhookToleranceSeconds: environment.WHOP_WEBHOOK_TOLERANCE_SECONDS,
   });
@@ -295,7 +305,7 @@ async function main(): Promise<void> {
     await verifyConcurrentDeduction(useCase, repository);
     console.log(`[1/2] ${CONCURRENT_DEDUCTION_COUNT} deducciones concurrentes con reparto exacto cuota/exceso: APROBADO.`);
 
-    await verifyDashboardSnapshot(dashboard, useCase);
+    await verifyDashboardSnapshot(dashboard, useCase, repository);
     console.log('[2/2] Instantanea del panel, paginacion por clave y corte por tope de gasto: APROBADO.');
 
     console.log('='.repeat(96));

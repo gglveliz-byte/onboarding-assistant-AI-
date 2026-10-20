@@ -415,6 +415,10 @@ async function runSuperAdminGovernanceSuite(): Promise<void> {
   const updatePricingRes = await portAdapter.updateGlobalPricingPlan({
     superAdminUserId,
     planCode: 'SCALE_PRO',
+    // El identificador de la pasarela se declara explicito: el puerto ya no lo inventa, porque un
+    // `plan_id` fabricado rompe el checkout contra la pasarela.
+    whopPlanId: 'plan_Sc4l3Pr0Test01',
+    displayName: 'Escala Pro (prueba de gobierno)',
     monthlyFixedPriceUsd: '199.00',
     includedMinutes: '1000',
     baseOverageRatePerMinuteUsd: '0.20',
@@ -428,6 +432,8 @@ async function runSuperAdminGovernanceSuite(): Promise<void> {
 
   assert.ok(updatePricingRes.ok, 'Actualizacion de plan SCALE_PRO debe ser exitosa');
   assert.equal(pricingStore.get('SCALE_PRO')?.monthlyFixedPriceUsd, '199.00');
+  // Las guardas de identidad del identificador de la pasarela viven en
+  // tests/unit/pricing-plan-identity-guard.test.ts, que las ejerce con dobles minimos.
 
   const overrideRes = await portAdapter.setTenantPricingOverride({
     superAdminUserId,

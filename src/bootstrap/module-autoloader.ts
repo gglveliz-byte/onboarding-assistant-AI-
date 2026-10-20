@@ -47,6 +47,7 @@ import { UnifiedSessionTokenVerifier } from '../shared/infrastructure/auth/unifi
 import { registerIdentityModule } from '../modules/01-identity-and-rbac/identity.manifest';
 import { registerAuthEssentialRoutes } from './auth-essential-http.routes';
 import { registerProjectsKeysModule } from '../modules/02-projects-and-keys/projects-keys.manifest';
+import { registerEndUserVoiceConsentModule } from '../modules/02-projects-and-keys/end-user-voice-consent.manifest';
 import { registerVisualTrainerRagModule } from '../modules/03-visual-trainer-and-rag/visual-trainer-rag.manifest';
 import type { VisualRagAndPromptPortAdapter } from '../modules/03-visual-trainer-and-rag/visual-trainer-rag.manifest';
 import { registerBillingWhopModule } from '../modules/04-billing-and-whop/billing-whop.manifest';
@@ -191,6 +192,7 @@ export function bootstrapBackendSystem(options: BootstrapOptions = {}): Bootstra
 
   const afterProjectsMs = Date.now();
   registerProjectsKeysModule(container, httpRouter, wsRegistry);
+  registerEndUserVoiceConsentModule(container, httpRouter);
   assemblyTimingsMs['02-projects-and-keys'] = Date.now() - afterProjectsMs;
 
   const afterRagMs = Date.now();

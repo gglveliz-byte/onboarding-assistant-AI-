@@ -316,6 +316,9 @@ async function handleIncomingVoiceConnection(
         strictStepEnforcement: parsedUrl.searchParams.get('strict') !== 'false',
         sampleRateHz: Number.parseInt(parsedUrl.searchParams.get('sampleRate') ?? '16000', 10),
         voicePersonaCode: parsedUrl.searchParams.get('voice') ?? 'aura-es-neutral',
+        // El selector de la landing (VOZ ULTRA-RAPIDA/ULTRA-PRECISA) solo existe en la demo publica:
+        // se propaga al orquestador para que respete el motor elegido en lugar del primario del entorno.
+        ...(demoOpening === null ? {} : { preferredVoiceModel: demoOpening.voiceModel }),
       },
       (frame: Buffer) => {
         if (socket.readyState === socket.OPEN) {

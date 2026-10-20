@@ -26,7 +26,7 @@
 import { z } from 'zod';
 
 /** Estado administrativo de una organizacion en la plataforma. */
-export type OrganizationGovernanceStatus = 'ACTIVE' | 'SUSPENDED' | 'PENDING_DELETION';
+export type OrganizationGovernanceStatus = 'ACTIVE' | 'SUSPENDED' | 'PENDING_DELETION' | 'DELETED';
 
 /** Nivel de severidad para eventos de auditoria forense. */
 export type GovernanceAuditSeverity = 'INFO' | 'WARN' | 'CRITICAL_SECURITY';
@@ -178,6 +178,12 @@ export const updateGlobalPricingSchema = z.object({
 
 export type UpdateGlobalPricingInput = z.infer<typeof updateGlobalPricingSchema>;
 
+/** Esquema para crear un nuevo plan en la matriz global de precios Whop. */
+export const createGlobalPricingSchema = updateGlobalPricingSchema.extend({
+  planCode: z.string().trim().min(2, 'planCode debe tener al menos 2 caracteres').max(60),
+});
+export type CreateGlobalPricingInput = z.infer<typeof createGlobalPricingSchema>;
+
 /** Esquema para fijar tarifas u overrides personalizados por cliente con cotas máximas (C1-16). */
 export const setTenantOverrideSchema = z.object({
   customRatePerMinuteUsd: z
@@ -209,6 +215,14 @@ export const grantPromotionalMinutesSchema = z.object({
 });
 
 export type GrantPromotionalMinutesInput = z.infer<typeof grantPromotionalMinutesSchema>;
+
+/** Esquema con el que el SuperAdmin gobierna duración y límite por IP de la demo pública (Redis `oa:demo:config`). */
+export const updatePublicDemoConfigSchema = z.object({
+  maxDurationSeconds: z.number().int().min(15, 'Mínimo 15 segundos').max(600, 'Máximo 600 segundos'),
+  demosPerIpPerDay: z.number().int().min(1, 'Mínimo 1 demostración por IP').max(1000, 'Máximo 1000 demostraciones por IP'),
+});
+
+export type UpdatePublicDemoConfigInput = z.infer<typeof updatePublicDemoConfigSchema>;
 
 /** Esquema para accionar el Kill-Switch de emergencia del motor de voz IA. */
 export const voiceAiKillSwitchSchema = z.object({

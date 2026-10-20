@@ -28,7 +28,8 @@ import { SUBSCRIPTION_COLUMNS } from './billing-row.mappers';
 
 /** Catalogo de planes activos, ordenado del mas economico al mas caro. */
 export const SELECT_ACTIVE_PLANS_SQL = `SELECT plan_code, whop_plan_id, display_name, monthly_fixed_price_usd, included_minutes,
-         base_overage_rate_per_minute_usd, overage_allowed, volume_discount_eligible, volume_discount_tiers_json
+         base_overage_rate_per_minute_usd, overage_allowed, volume_discount_eligible, volume_discount_tiers_json,
+         whop_gross_price_usd, whop_plan_is_live
     FROM pricing_plans_config
    WHERE is_active = TRUE
    ORDER BY monthly_fixed_price_usd ASC`;

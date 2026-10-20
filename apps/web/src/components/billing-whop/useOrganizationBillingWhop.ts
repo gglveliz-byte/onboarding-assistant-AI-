@@ -29,9 +29,10 @@
  * @notas
  *   - La organización se resuelve en el servidor a partir de la sesión; `organizationId` solo se
  *     usa como etiqueta local (por ejemplo, en el nombre del archivo CSV exportado).
- *   - `PUT /api/v1/billing/spend-cap` y `POST /api/v1/billing/whop/customer-portal` todavía NO
- *     están expuestos por el backend: ante un 404 la interfaz lo dice con claridad en lugar de
- *     simular un éxito.
+ *   - `PUT /api/v1/billing/spend-cap`, `POST /api/v1/billing/customer-portal` y
+ *     `POST /api/v1/billing/reconcile` ya están expuestos por el backend. El portal requiere que
+ *     exista una membresía en la pasarela —es decir, tras el primer pago confirmado—; mientras no la
+ *     haya el servidor responde 404 con causa legible y la interfaz lo comunica sin simular un éxito.
  *
  * @tablas_bd_o_redis
  *   - PostgreSQL: `whop_subscriptions`, `usage_ledger`, `organizations` (vía API REST).
@@ -351,9 +352,9 @@ export function useOrganizationBillingWhop(organizationId: string): UseOrganizat
    */
   const openCustomerPortal = useCallback(async (): Promise<string | null> => {
     try {
-      const payload = await backendFetch<unknown>('/api/v1/billing/whop/customer-portal', {
+      const payload = await backendFetch<unknown>('/api/v1/billing/customer-portal', {
         method: 'POST',
-        body: { organizationId, returnUrl: window.location.href },
+        body: { returnUrl: window.location.href },
       });
       const body = isRecord(payload) ? payload : {};
       const portalUrl = toText(body['portalUrl']) || toText(body['url']);
@@ -368,7 +369,7 @@ export function useOrganizationBillingWhop(organizationId: string): UseOrganizat
         ? caught.message
         : 'No se pudo abrir el portal de facturación';
       setError(isMissing
-        ? 'El portal de clientes de Whop todavía no está expuesto por la API.'
+        ? 'El portal de clientes todavía no está expuesto por la API.'
         : message);
       return null;
     }

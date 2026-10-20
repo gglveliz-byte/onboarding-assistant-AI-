@@ -10,6 +10,8 @@
  *   - Función `registerPublicCommercialModule()`: Registro en DI Container y HttpRouterRegistry.
  *   - Endpoints REST: `GET /api/v1/public/pricing-matrix`, `POST /api/v1/public/demo-session`,
  *     `POST /api/v1/public/sandbox/simulate-action`.
+ *   - El emisor de sesiones de demo lee la configuración gobernable (`readPublicDemoConfig`) publicada
+ *     por el Módulo 06; las rutas de gobierno de esa config viven en el módulo de gobierno.
  *
  * @dependencias_internas
  *   - `DependencyContainer`, `DI_TOKENS` (@shared/container/di-container.ts).
@@ -21,7 +23,7 @@
  *
  * @tablas_bd_o_redis
  *   - PostgreSQL: `pricing_plans_config`.
- *   - Redis: `oa:demo:ip:<sha256(ip)>`, `oa:demo:session:<sessionId>`.
+ *   - Redis: `oa:demo:ip:<sha256(ip)>`, `oa:demo:session:<sessionId>`, `oa:demo:config` (gobierno de la demo).
  */
 
 import type { DependencyContainer } from '../../shared/container/di-container';

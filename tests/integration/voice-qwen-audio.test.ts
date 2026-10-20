@@ -207,9 +207,18 @@ function verifyQwenSessionFrames(): void {
 
   const sessionBody = sessionMessage['session'] as Record<string, unknown>;
   check(sessionBody['instructions'] === 'Prompt del proyecto', 'Las instrucciones deben ser el prompt del proyecto');
-  check(sessionBody['voice'] === 'voz-propia', 'La voz declarada por el proyecto debe respetarse');
+  check(sessionBody['voice'] === 'voz-propia', 'La voz declarada por el proyecto debe respetarse (campo de compatibilidad)');
   check(sessionBody['temperature'] === 0.3, 'La temperatura debe propagarse sin alteracion');
-  check(sessionBody['input_audio_format'] === 'audio/pcm;rate=16000', 'El formato de audio debe declarar tipo y frecuencia');
+  // Qwen3.8-Omni-Realtime: audio anidado en session.audio (entrada 16k, salida 24k) y semantic_vad.
+  const audioCfg = (sessionBody['audio'] ?? {}) as Record<string, unknown>;
+  const audioInput = ((audioCfg['input'] ?? {}) as Record<string, unknown>);
+  const audioOutput = ((audioCfg['output'] ?? {}) as Record<string, unknown>);
+  const inFmt = ((audioInput['format'] ?? {}) as Record<string, unknown>);
+  const outFmt = ((audioOutput['format'] ?? {}) as Record<string, unknown>);
+  check(inFmt['type'] === 'pcm' && inFmt['sample_rate'] === 16000, 'El audio de entrada debe declarar pcm a 16 kHz (session.audio.input.format)');
+  check(outFmt['type'] === 'pcm' && outFmt['sample_rate'] === 24000, 'El audio de salida debe declarar pcm a 24 kHz (session.audio.output.format)');
+  check(audioOutput['voice'] === 'voz-propia', 'La voz debe viajar en session.audio.output.voice (forma nativa de 3.8)');
+  check((sessionBody['turn_detection'] as Record<string, unknown>)['type'] === 'semantic_vad', 'Qwen 3.8 debe usar semantic_vad');
   check(Array.isArray(sessionBody['tools']) && (sessionBody['tools'] as unknown[]).length === 3, 'Deben declararse las tres herramientas en la sesion');
   check(sessionBody['tool_choice'] === 'auto', 'El motor debe poder decidir cuando invocar las herramientas');
 
@@ -269,13 +278,17 @@ function verifyQwenSessionFrames(): void {
 
 /** Verifica la deserializacion defensiva de las tramas del servidor. */
 function verifyQwenServerParsing(): void {
+  // Qwen3.8-Omni-Realtime emite a 24 kHz; el mapper remuestrea a 16 kHz antes de entregar al gateway.
+  // 24 muestras (48 bytes) a 24 kHz -> 16 muestras (32 bytes) a 16 kHz.
+  const pcm24k = Buffer.alloc(48);
+  for (let i = 0; i < 24; i += 1) pcm24k.writeInt16LE(i * 100 - 1000, i * 2);
   const audioDelta = QwenProtocolMapper.parseServerMessage(
-    JSON.stringify({ type: 'response.audio.delta', delta: Buffer.from([9, 8, 7, 6]).toString('base64') })
+    JSON.stringify({ type: 'response.audio.delta', delta: pcm24k.toString('base64') })
   );
   check(audioDelta.kind === 'AUDIO', 'Una trama de audio debe reconocerse como tal');
   check(
-    audioDelta.audioBuffer !== undefined && audioDelta.audioBuffer.equals(Buffer.from([9, 8, 7, 6])),
-    'El audio recibido debe decodificarse exactamente a los bytes originales'
+    audioDelta.audioBuffer !== undefined && audioDelta.audioBuffer.length === 32,
+    'El audio 24 kHz debe remuestrearse a 16 kHz (24 muestras -> 16 muestras = 32 bytes)'
   );
 
   const partialTranscript = QwenProtocolMapper.parseServerMessage(

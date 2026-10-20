@@ -26,6 +26,16 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { getAccessToken } from '../../lib/api-client/http-client';
+
+function getSuperAdminHeaders(): Record<string, string> {
+  const token = getAccessToken();
+  return {
+    'Accept': 'application/json',
+    'Content-Type': 'application/json',
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+  };
+}
 
 export interface SsrfSecurityIncident {
   readonly id: string;
@@ -109,7 +119,7 @@ export function useRealtimeInfraTelemetrySse(): UseRealtimeInfraTelemetrySseRetu
   const pollSnapshot = useCallback(async () => {
     try {
       const res = await fetch('/api/v1/superadmin/telemetry/snapshot', {
-        headers: { 'Accept': 'application/json' },
+        headers: getSuperAdminHeaders(),
       });
       if (res.ok) {
         const data = await res.json();
@@ -138,7 +148,7 @@ export function useRealtimeInfraTelemetrySse(): UseRealtimeInfraTelemetrySseRetu
     try {
       const res = await fetch('/api/v1/superadmin/infrastructure/voice-ai-killswitch', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getSuperAdminHeaders(),
         body: JSON.stringify({ active, reason }),
       });
 

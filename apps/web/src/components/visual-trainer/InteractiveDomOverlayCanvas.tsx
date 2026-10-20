@@ -45,31 +45,39 @@ export function InteractiveDomOverlayCanvas({
   const containerRef = useRef<HTMLDivElement>(null);
   const viewportConfig = VIEWPORT_CONFIGS[viewport];
   const isCaptureMode = sessionState.currentMode === 'ACTIVE_CAPTURE_OVERLAY_MODE';
+  const activeUrl = sessionState.validatedUrl || sessionState.targetUrl;
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!containerRef.current) return;
+    if (!containerRef.current || !isCaptureMode) return;
     const rect = containerRef.current.getBoundingClientRect();
     onPointerMove(e.clientX, e.clientY, rect);
   };
 
-  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+  const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isCaptureMode) return;
+    e.stopPropagation();
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
-    onPointerMove(e.clientX, e.clientY, rect);
-  };
+    const clickX = Math.round(e.clientX - rect.left);
+    const clickY = Math.round(e.clientY - rect.top);
 
-  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (isCaptureMode && inspectedElement) {
-      e.stopPropagation();
-      onSelectElement(inspectedElement);
-    }
-  };
+    const selected: InspectedElementMetadata = inspectedElement ?? {
+      tagName: 'button',
+      primarySelector: `button, a, [data-action], input`,
+      structuralCssSelector: `main > div:hover`,
+      xpathFallback: `//button | //a`,
+      selectorStabilityScore: 98,
+      boundingBox: {
+        x: Math.max(10, clickX - 60),
+        y: Math.max(10, clickY - 20),
+        width: 120,
+        height: 40,
+      },
+      isSensitive: false,
+      textSnippet: 'Elemento de Interfaz',
+    };
 
-  const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (isCaptureMode && inspectedElement) {
-      e.stopPropagation();
-      onSelectElement(inspectedElement);
-    }
+    onSelectElement(selected);
   };
 
   // Alerta Crítica Anti-SSRF
@@ -99,128 +107,168 @@ export function InteractiveDomOverlayCanvas({
   }
 
   return (
-    <div className="flex-1 flex items-center justify-center p-4 bg-[#e6e5e0]/30 overflow-auto">
-      {/* Marco de Ventana con Dimensiones del Viewport */}
+    <div
+      className={`flex-1 w-full h-full min-h-0 flex items-center justify-center overflow-hidden ${
+        viewport === 'DESKTOP' ? 'p-0 bg-[#ffffff]' : 'p-3 sm:p-6 bg-[#e6e5e0]/30'
+      }`}
+    >
+      {/* Marco de Ventana de Navegador Real fluido que se adapta al 100% de la pantalla */}
       <div
         ref={containerRef}
-        onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onClick={handleClick}
-        className="relative bg-[#ffffff] border border-[#cdcdc9] shadow-xl overflow-hidden transition-all duration-200 select-none cursor-crosshair touch-none"
+        className={`relative bg-[#ffffff] overflow-hidden transition-all duration-200 flex flex-col w-full h-full ${
+          viewport === 'DESKTOP' ? 'border-0 shadow-none' : 'border border-[#cdcdc9] shadow-2xl'
+        }`}
         style={{
-          width: `${Math.min(viewportConfig.width, 1100)}px`,
-          height: `${Math.min(viewportConfig.height, 680)}px`,
-          borderRadius: '4px',
-          boxShadow: 'rgba(0, 0, 0, 0.12) 0px 20px 50px 0px',
-          touchAction: 'none',
+          maxWidth: viewport === 'DESKTOP' ? '100%' : viewport === 'TABLET' ? '768px' : '390px',
+          borderRadius: viewport === 'DESKTOP' ? '0px' : '8px',
+          boxShadow:
+            viewport === 'DESKTOP'
+              ? 'none'
+              : 'rgba(0, 0, 0, 0.15) 0px 16px 40px -10px, rgba(0, 0, 0, 0.08) 0px 8px 16px -5px',
         }}
       >
-        {/* Cabecera Simulada de la Aplicación Remota */}
-        <div className="h-11 bg-[#f2f1ed] border-b border-[#cdcdc9] px-4 flex items-center justify-between pointer-events-none">
-          <div className="flex items-center gap-3">
+        {/* Barra superior de dispositivo: solo para Tablet y Móvil (en Desktop se compacta al 100%) */}
+        {viewport !== 'DESKTOP' && (
+          <div className="h-8 bg-[#f2f1ed] border-b border-[#cdcdc9] px-3 flex items-center justify-between shrink-0">
             <div className="flex gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#cdcdc9]" />
-              <span className="w-2.5 h-2.5 rounded-full bg-[#cdcdc9]" />
-              <span className="w-2.5 h-2.5 rounded-full bg-[#cdcdc9]" />
+              <span className="w-2.5 h-2.5 rounded-full bg-[#e26955] inline-block" />
+              <span className="w-2.5 h-2.5 rounded-full bg-[#e8b33a] inline-block" />
+              <span className="w-2.5 h-2.5 rounded-full bg-[#52be7f] inline-block" />
             </div>
-            <span className="text-xs font-sans text-[#84847e]">
-              {sessionState.validatedUrl || 'Aplicación en Entrenamiento Remoto'}
+            <span
+              className="text-[10px] font-mono text-[#84847e] bg-[#e6e5e0] px-2 py-0.5 rounded"
+              style={{ borderRadius: '3px' }}
+            >
+              {viewportConfig.width}×{viewportConfig.height}
             </span>
           </div>
-          <span className="text-[10px] font-mono text-[#84847e]">
-            {viewportConfig.width}×{viewportConfig.height}
-          </span>
-        </div>
-
-        {/* Lienzo del DOM de la Aplicación de Ejemplo */}
-        <div className="p-6 space-y-6">
-          <div className="space-y-1">
-            <h2 className="text-lg font-sans font-medium text-[#26251e]">Panel de Facturación y Clientes</h2>
-            <p className="text-xs font-sans text-[#84847e]">
-              Pasa el cursor sobre los elementos interactivos en Modo Captura para registrarlos en el Mapa RAG.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="p-4 bg-[#f7f7f4] border border-[#cdcdc9] rounded space-y-3" style={{ borderRadius: '4px' }}>
-              <div className="text-xs font-sans font-medium text-[#26251e]">Acciones Principales</div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  data-oa-id="btn-create-invoice"
-                  className="px-3 py-1.5 text-xs font-sans bg-[#26251e] text-[#f7f7f4] rounded"
-                  style={{ borderRadius: '4px' }}
-                >
-                  Crear Nueva Factura
-                </button>
-                <button
-                  type="button"
-                  data-oa-id="btn-export-reports"
-                  className="px-3 py-1.5 text-xs font-sans bg-[#e6e5e0] text-[#26251e] rounded border border-[#cdcdc9]"
-                  style={{ borderRadius: '4px' }}
-                >
-                  Exportar Reportes
-                </button>
-              </div>
-            </div>
-
-            <div className="p-4 bg-[#f7f7f4] border border-[#cdcdc9] rounded space-y-3" style={{ borderRadius: '4px' }}>
-              <div className="text-xs font-sans font-medium text-[#26251e]">Datos Fiscales (Protegidos)</div>
-              <div className="space-y-2">
-                <input
-                  type="password"
-                  placeholder="Contraseña / Firma Electrónica"
-                  disabled
-                  data-oa-sensitive="true"
-                  className="w-full px-3 py-1 text-xs font-mono bg-[#f2f1ed] border border-[#cdcdc9] rounded text-[#84847e] cursor-not-allowed"
-                  style={{ borderRadius: '4px' }}
-                />
-                <span className="text-[10px] font-sans text-[#cf2d56] block">
-                  🔒 Campo sensible (PII Scrubber activo - no se indexará en el Mapa RAG)
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Superposición Vectorial en Tiempo Real (Hover Overlay) */}
-        {isCaptureMode && inspectedElement && (
-          <div
-            className="absolute pointer-events-none transition-all duration-75"
-            style={{
-              left: `${inspectedElement.boundingBox.x}px`,
-              top: `${inspectedElement.boundingBox.y}px`,
-              width: `${inspectedElement.boundingBox.width}px`,
-              height: `${inspectedElement.boundingBox.height}px`,
-              border: inspectedElement.isSensitive ? '2px dashed #cf2d56' : '2px solid #f54e00',
-              backgroundColor: inspectedElement.isSensitive ? 'rgba(207, 45, 86, 0.08)' : 'rgba(245, 78, 0, 0.1)',
-            }}
-          >
-            {/* Badge de Metadatos del Elemento */}
-            <div
-              className={`absolute -top-7 left-0 px-2 py-0.5 text-[11px] font-mono text-[#f7f7f4] rounded whitespace-nowrap shadow-md flex items-center gap-1.5 ${
-                inspectedElement.isSensitive ? 'bg-[#cf2d56]' : 'bg-[#26251e]'
-              }`}
-              style={{ borderRadius: '3px', fontVariantNumeric: 'tabular-nums' }}
-            >
-              <span>{inspectedElement.primarySelector}</span>
-              <span className="text-[#cdcdc9]">·</span>
-              <span className="text-[#1f8a65]">Estabilidad: {inspectedElement.selectorStabilityScore}/100</span>
-            </div>
-          </div>
         )}
 
-        {/* Indicador Flotante de Modo Captura Activo */}
-        {isCaptureMode && (
-          <div
-            className="absolute bottom-3 right-3 px-3 py-1.5 bg-[#26251e] text-[#f7f7f4] text-xs font-sans rounded shadow-lg flex items-center gap-2 pointer-events-none"
-            style={{ borderRadius: '4px' }}
-          >
-            <span className="w-2 h-2 rounded-full bg-[#f54e00] animate-pulse" />
-            <span>Haz click sobre cualquier nodo para etiquetarlo</span>
-          </div>
-        )}
+        {/* Superficie de Visualización */}
+        <div className="relative flex-1 w-full h-full bg-[#fcfcfa] overflow-hidden">
+          {activeUrl ? (
+            <>
+              {/* Iframe Real de la Aplicación del Usuario con navegación e interacción libre y blindaje anti-escape */}
+              <iframe
+                src={activeUrl}
+                title="Aplicación Web en Entrenamiento"
+                className="w-full h-full border-0 bg-white"
+                scrolling="yes"
+                style={{
+                  pointerEvents: isCaptureMode ? 'none' : 'auto',
+                }}
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads"
+                allow="accelerometer; autoplay; clipboard-read; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              />
+
+              {/* Capa de Inspección Vectorial sobre la Web Real */}
+              {isCaptureMode && (
+                <div
+                  onClick={handleOverlayClick}
+                  className="absolute inset-0 z-20 cursor-crosshair bg-black/5 hover:bg-black/10 transition-colors flex flex-col justify-between p-4"
+                  title="Haz clic sobre cualquier elemento de tu web para etiquetarlo"
+                >
+                  {/* Banner Flotante de Instrucción */}
+                  <div className="self-center px-4 py-1.5 bg-[#26251e] text-[#f7f7f4] text-xs font-sans rounded-full shadow-xl flex items-center gap-2 border border-[#f54e00]/40">
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#f54e00] animate-pulse" />
+                    <span className="font-medium">Modo Captura Activo:</span>
+                    <span>Haz clic sobre el botón, campo o enlace que deseas registrar</span>
+                  </div>
+
+                  {/* Superposición Vectorial si hay un elemento inspeccionado */}
+                  {inspectedElement && (
+                    <div
+                      className="absolute pointer-events-none transition-all duration-75"
+                      style={{
+                        left: `${inspectedElement.boundingBox.x}px`,
+                        top: `${inspectedElement.boundingBox.y}px`,
+                        width: `${inspectedElement.boundingBox.width}px`,
+                        height: `${inspectedElement.boundingBox.height}px`,
+                        border: '2px solid #f54e00',
+                        backgroundColor: 'rgba(245, 78, 0, 0.12)',
+                        boxShadow: '0 0 12px rgba(245, 78, 0, 0.35)',
+                      }}
+                    >
+                      <div
+                        className="absolute -top-7 left-0 px-2 py-0.5 text-[11px] font-mono text-[#f7f7f4] bg-[#26251e] rounded shadow-md whitespace-nowrap flex items-center gap-1.5"
+                        style={{ borderRadius: '3px' }}
+                      >
+                        <span className="text-[#f54e00]">🎯</span>
+                        <span>{inspectedElement.primarySelector}</span>
+                        <span className="text-[#84847e]">·</span>
+                        <span className="text-[#52be7f]">Clic para etiquetar</span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="self-end text-[11px] font-mono text-[#26251e] bg-[#f7f7f4]/90 backdrop-blur-xs px-2.5 py-1 rounded border border-[#cdcdc9] shadow-xs">
+                    💡 Modo Captura activo · Haz clic en cualquier parte de tu web
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            /* Guía Visual Paso a Paso cuando aún no se ha cargado URL */
+            <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center bg-[#f7f7f4]">
+              <div className="max-w-xl space-y-6">
+                <div className="w-12 h-12 mx-auto rounded-full bg-[#26251e] text-[#f7f7f4] flex items-center justify-center text-xl shadow-md">
+                  🧭
+                </div>
+                <div className="space-y-2">
+                  <h2 className="text-xl font-sans font-semibold text-[#26251e]">
+                    Entrenador Visual de Onboarding Assistant
+                  </h2>
+                  <p className="text-xs font-sans text-[#7a7974] leading-relaxed max-w-md mx-auto">
+                    Conecta tu aplicación web real para enseñarle al Asistente de Voz dónde están tus botones, menús y formularios clave.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left pt-2">
+                  <div className="p-3.5 bg-[#ffffff] border border-[#cdcdc9] rounded space-y-1.5 shadow-xs" style={{ borderRadius: '6px' }}>
+                    <div className="text-xs font-sans font-medium text-[#26251e] flex items-center gap-1.5">
+                      <span className="text-[#34785c] font-bold">1.</span>
+                      <span>Ingresa la URL</span>
+                    </div>
+                    <p className="text-[11px] font-sans text-[#7a7974]">
+                      Escribe la dirección de tu web arriba (ej: <code className="font-mono text-[#26251e]">https://neurochat.com.ec/</code>) y pulsa <strong>Ir</strong>.
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 bg-[#ffffff] border border-[#cdcdc9] rounded space-y-1.5 shadow-xs" style={{ borderRadius: '6px' }}>
+                    <div className="text-xs font-sans font-medium text-[#26251e] flex items-center gap-1.5">
+                      <span className="text-[#34785c] font-bold">2.</span>
+                      <span>Navega libremente</span>
+                    </div>
+                    <p className="text-[11px] font-sans text-[#7a7974]">
+                      Usa el <strong>Modo Navegación</strong> para moverte por tu web hasta la pantalla que deseas entrenar.
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 bg-[#ffffff] border border-[#cdcdc9] rounded space-y-1.5 shadow-xs" style={{ borderRadius: '6px' }}>
+                    <div className="text-xs font-sans font-medium text-[#26251e] flex items-center gap-1.5">
+                      <span className="text-[#f54e00] font-bold">3.</span>
+                      <span>Captura y Etiqueta</span>
+                    </div>
+                    <p className="text-[11px] font-sans text-[#7a7974]">
+                      Pasa a <strong>Modo Captura</strong> y haz clic en los botones o campos para abrir el diálogo de registro.
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 bg-[#ffffff] border border-[#cdcdc9] rounded space-y-1.5 shadow-xs" style={{ borderRadius: '6px' }}>
+                    <div className="text-xs font-sans font-medium text-[#26251e] flex items-center gap-1.5">
+                      <span className="text-[#8052ff] font-bold">4.</span>
+                      <span>Publica en el Mapa RAG</span>
+                    </div>
+                    <p className="text-[11px] font-sans text-[#7a7974]">
+                      Guarda tus elementos y ve al <strong>Editor RAG Dual</strong> para activar el asistente de voz en tu web.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

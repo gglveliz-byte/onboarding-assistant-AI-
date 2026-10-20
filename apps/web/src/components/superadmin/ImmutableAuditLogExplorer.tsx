@@ -23,7 +23,8 @@
  *   - PostgreSQL: `audit_logs` (tabla append-only protegida por trigger inmutable).
  */
 
-import React, { ReactElement, useState, useMemo } from 'react';
+import React, { ReactElement, useState, useMemo, useEffect, useCallback } from 'react';
+import { getAccessToken } from '../../lib/api-client/http-client';
 
 export interface AuditLogItem {
   readonly id: string;
@@ -93,11 +94,51 @@ const SAMPLE_AUDIT_LOGS: readonly AuditLogItem[] = [
  * Explorador forense de registros de auditoría SOC2 inmutables.
  */
 export function ImmutableAuditLogExplorer(): ReactElement {
-  const [logs] = useState<readonly AuditLogItem[]>(SAMPLE_AUDIT_LOGS);
+  const [logs, setLogs] = useState<readonly AuditLogItem[]>(SAMPLE_AUDIT_LOGS);
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
   const [selectedLog, setSelectedLog] = useState<AuditLogItem | null>(null);
   const [isVerifying, setIsVerifying] = useState<boolean>(false);
   const [chainVerified, setChainVerified] = useState<boolean>(true);
+
+  const fetchLiveLogs = useCallback(async () => {
+    try {
+      const token = getAccessToken();
+      const res = await fetch('/api/v1/superadmin/audit-logs?limit=50', {
+        headers: {
+          Accept: 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.logs) && data.logs.length > 0) {
+          setLogs(
+            data.logs.map((row: Record<string, unknown>, idx: number) => ({
+              id: String(row['id'] ?? `aud-${idx}`),
+              createdAt: String(row['createdAt'] ?? new Date().toISOString()),
+              organizationId: row['organizationId'] ? String(row['organizationId']) : null,
+              actorUserId: row['actorUserId'] ? String(row['actorUserId']) : null,
+              eventCategory: String(row['eventCategory'] ?? 'GOVERNANCE'),
+              eventAction: String(row['eventAction'] ?? 'SYSTEM_EVENT'),
+              severity: (row['severity'] as AuditLogItem['severity']) ?? 'INFO',
+              targetResourceType: row['targetResourceType'] ? String(row['targetResourceType']) : null,
+              targetResourceId: row['targetResourceId'] ? String(row['targetResourceId']) : null,
+              prevRecordSha256: row['previousRecordSha256'] ? String(row['previousRecordSha256']) : null,
+              recordSha256: String(row['recordSha256'] ?? ''),
+              beforeStateJson: (row['beforeStateJson'] as Record<string, unknown>) ?? null,
+              afterStateJson: (row['afterStateJson'] as Record<string, unknown>) ?? null,
+            }))
+          );
+        }
+      }
+    } catch {
+      // Fallback a registros de muestra ante desconexión
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchLiveLogs();
+  }, [fetchLiveLogs]);
 
   const filteredLogs = useMemo(() => {
     if (categoryFilter === 'ALL') return logs;

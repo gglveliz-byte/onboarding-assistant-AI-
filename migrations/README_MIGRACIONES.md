@@ -18,6 +18,7 @@ Todos los archivos cumplen estrictamente la skill `reglas-globales-construccion-
 | **008** | `008_foreign_key_indexes_and_schema_hardening.sql` | Índices en claves foráneas y endurecimiento de restricciones | Índices FK y restricciones `ON DELETE RESTRICT` |
 | **009** | `009_identity_resolution_before_tenant_context.sql` | Resolución segura de identidad previa al contexto de inquilino | Políticas de lectura de usuario para login B2B |
 | **010** | `010_user_and_org_phone_number.sql` | Soporte de teléfono internacional para usuarios y organizaciones | Columnas `phone_number` en `users` y `organizations` |
+| **011** | `011_end_user_voice_consents.sql` | Evidencia auditable del consentimiento de voz de usuarios finales certificado por el cliente B2B | `end_user_voice_consents` + índices + política RLS + trigger `updated_at` |
 | **CLI** | `../src/shared/infrastructure/database/migrator.ts` | Orquestador TypeScript con verificacion de integridad `SHA-256` | Tabla de control `schema_migrations` |
 
 > **Ejecutor unico:** el orquestador vive en `src/shared/infrastructure/database/migrator.ts` y resuelve por si mismo esta carpeta `migrations/` de la raiz del repositorio. No existe ninguna copia duplicada del migrador dentro de `migrations/` (Regla 1: cero duplicacion de utilidades).
@@ -39,4 +40,9 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/003_projects_domains_keys_
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/004_whop_billing_voice_sessions_and_audit_tables.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/005_row_level_security_policies_and_indexes.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/006_seed_pricing_matrix_and_legal_documents.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/007_application_role_without_bypassrls_and_identity_rls.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/008_foreign_key_indexes_and_schema_hardening.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/009_identity_resolution_before_tenant_context.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/010_user_and_org_phone_number.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/011_end_user_voice_consents.sql
 ```

@@ -195,7 +195,7 @@ export class VoiceWebSocketSession {
       externalEndUserId: nonceResult.externalEndUserId,
     };
 
-    const orchestration = await this.ports.orchestrator.orchestrateStream(openRequest, this.buildProviderHandlers());
+    const orchestration = await this.ports.orchestrator.orchestrateStream(openRequest, this.buildProviderHandlers(), this.request.preferredVoiceModel);
     if (!orchestration.ok) {
       this.closeClientSocket(VOICE_CLOSE_CODES.PROVIDER_UNAVAILABLE, 'El motor de voz no esta disponible en este momento.');
       return false;

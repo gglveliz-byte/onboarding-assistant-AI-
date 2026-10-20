@@ -34,9 +34,10 @@ import type { ToolInvocation, VoiceProviderEventHandlers } from '../../../shared
 import type { PhysicalVoiceToolName } from '../domain/voice-session-and-tools.types';
 import {
   KNOWN_TOOL_NAMES,
-  QWEN_AUDIO_MIME_TYPE,
   QWEN_DEFAULT_VOICE,
   QWEN_MAX_SESSION_PROMPT_CHARS,
+  QWEN_NATIVE_OUTPUT_RATE_HZ,
+  QWEN_TARGET_OUTPUT_RATE_HZ,
   QWEN_TOOL_DECLARATIONS,
   type ParsedQwenServerMessage,
   type QwenAudioAppendPayload,
@@ -72,17 +73,20 @@ export class QwenProtocolMapper {
     temperature: number,
     sampleRateHz: number
   ): string {
+    const voice = voiceName.length > 0 ? voiceName : QWEN_DEFAULT_VOICE;
     const payload: QwenSessionUpdatePayload = {
       type: 'session.update',
       session: {
         model: modelName,
-        modalities: ['audio', 'text'],
+        modalities: ['text', 'audio'],
         instructions: QwenProtocolMapper.truncateInstructions(systemPrompt),
-        voice: voiceName.length > 0 ? voiceName : QWEN_DEFAULT_VOICE,
+        voice,
         temperature: QwenProtocolMapper.normalizeTemperature(temperature),
-        input_audio_format: `${QWEN_AUDIO_MIME_TYPE};rate=${sampleRateHz}`,
-        output_audio_format: `${QWEN_AUDIO_MIME_TYPE};rate=${sampleRateHz}`,
-        turn_detection: { type: 'server_vad', threshold: 0.5, prefix_padding_ms: 300, silence_duration_ms: 500 },
+        turn_detection: { type: 'semantic_vad', threshold: 0.5, prefix_padding_ms: 300, silence_duration_ms: 500 },
+        audio: {
+          input: { format: { type: 'pcm', sample_rate: sampleRateHz, sample_format: 's16le', channels: 1, packing: 'interleaved', channel_layout: 'mono' } },
+          output: { voice, format: { type: 'pcm', sample_rate: QWEN_NATIVE_OUTPUT_RATE_HZ } },
+        },
         tools: QWEN_TOOL_DECLARATIONS.map((declaration) => ({ type: 'function' as const, function: declaration })),
         tool_choice: 'auto',
       },
@@ -192,8 +196,12 @@ export class QwenProtocolMapper {
     switch (messageType) {
       case 'response.audio.delta':
       case 'response.output_item.audio': {
-        const audioBuffer = QwenProtocolMapper.decodeAudioField(record['delta'] ?? record['audio']);
-        return audioBuffer === null ? { kind: 'UNKNOWN', rawServerPayload } : { kind: 'AUDIO', audioBuffer, rawServerPayload };
+        const decoded = QwenProtocolMapper.decodeAudioField(record['delta'] ?? record['audio']);
+        if (decoded === null) return { kind: 'UNKNOWN', rawServerPayload };
+        // Qwen3.8-Omni-Realtime emite a 24 kHz; el navegador/gateway espera 16 kHz. Sin remuestrear,
+        // la voz se reproduciria 1.5x mas lenta y grave (mismo defecto que se corrigio en Gemini).
+        const audioBuffer = QwenProtocolMapper.resamplePcm16To16k(decoded, QWEN_NATIVE_OUTPUT_RATE_HZ);
+        return { kind: 'AUDIO', audioBuffer, rawServerPayload };
       }
 
       case 'response.audio_transcript.delta': {
@@ -324,6 +332,32 @@ export class QwenProtocolMapper {
     return systemPrompt.length <= QWEN_MAX_SESSION_PROMPT_CHARS
       ? systemPrompt
       : systemPrompt.slice(0, QWEN_MAX_SESSION_PROMPT_CHARS);
+  }
+
+  /**
+   * Remuestrea PCM16 little-endian de `sourceRate` a 16 kHz por interpolacion lineal.
+   * Qwen3.8-Omni-Realtime emite a 24 kHz y el navegador espera 16 kHz; sin esto la voz suena
+   * 1.5x mas lenta y grave. Si la tasa ya es 16 kHz o el buffer es demasiado corto, se devuelve tal cual.
+   *
+   * @param input - Buffer PCM16 en la tasa de origen.
+   * @param sourceRate - Frecuencia de muestreo del origen (Hz).
+   * @returns Buffer PCM16 a 16 kHz.
+   */
+  public static resamplePcm16To16k(input: Buffer, sourceRate: number): Buffer {
+    if (sourceRate === QWEN_TARGET_OUTPUT_RATE_HZ || input.length < 2) return input;
+    const inputSamples = Math.floor(input.length / 2);
+    const outputSamples = Math.max(1, Math.round((inputSamples * QWEN_TARGET_OUTPUT_RATE_HZ) / sourceRate));
+    const output = Buffer.alloc(outputSamples * 2);
+    const ratio = sourceRate / QWEN_TARGET_OUTPUT_RATE_HZ;
+    for (let i = 0; i < outputSamples; i += 1) {
+      const srcIndex = i * ratio;
+      const low = Math.floor(srcIndex);
+      const high = Math.min(low + 1, inputSamples - 1);
+      const frac = srcIndex - low;
+      const interpolated = Math.round(input.readInt16LE(low * 2) + (input.readInt16LE(high * 2) - input.readInt16LE(low * 2)) * frac);
+      output.writeInt16LE(Math.max(-32768, Math.min(32767, interpolated)), i * 2);
+    }
+    return output;
   }
 
   /**

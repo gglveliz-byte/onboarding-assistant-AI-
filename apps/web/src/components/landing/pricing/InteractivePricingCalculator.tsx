@@ -59,7 +59,7 @@ export function InteractivePricingCalculator(): ReactElement {
   return (
     <section
       id="precios"
-      className="scroll-mt-16 max-w-[1240px] mx-auto px-3 sm:px-6 pt-1 pb-4 sm:pt-2 sm:pb-6"
+      className="scroll-mt-16 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-2 pb-6 w-full"
       aria-labelledby="oa-pricing-title"
       data-purpose="compact-pricing-section"
     >

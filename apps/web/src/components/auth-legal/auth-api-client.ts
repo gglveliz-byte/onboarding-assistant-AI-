@@ -40,6 +40,7 @@ export interface BackendPublicUser {
   readonly mfaTotpEnabled: boolean;
   readonly mfaWebauthnEnabled: boolean;
   readonly lastLoginAt: string | null;
+  readonly isPlatformSuperadmin?: boolean;
   readonly createdAt: string;
 }
 

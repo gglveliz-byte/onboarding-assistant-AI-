@@ -37,79 +37,73 @@ import type {
 /** Minutos incluidos que otorga el plan de pago por uso: ninguno. */
 const PAYG_INCLUDED_MINUTES: Fixed6String = '0.000000';
 
-/** Catalogo de respaldo de planes, alineado con la semilla de `pricing_plans_config`. */
+/**
+ * Construye una entrada del catalogo de respaldo con los dos campos de aprovisionamiento ya resueltos.
+ *
+ * @param planCode - Codigo del plan.
+ * @param externalPlanId - Identificador REAL del plan en la pasarela (prefijo `plan_`).
+ * @param displayName - Nombre comercial del plan.
+ * @param monthlyFixedPriceUsd - Cuota fija MENSUAL en USD (neto que liquida en el panel).
+ * @param grossPriceUsd - Importe BRUTO cobrado al cliente, con la comision de la pasarela trasladada.
+ * @param includedMinutes - Minutos incluidos en el periodo.
+ * @param baseOverageRatePerMinuteUsd - Tarifa base por minuto excedente.
+ * @param volumeDiscountTiers - Tramos de descuento por volumen.
+ * @returns Entrada normalizada y congelada del catalogo.
+ */
+function fallbackPlan(
+  planCode: BillingPlanCode,
+  externalPlanId: string,
+  displayName: string,
+  monthlyFixedPriceUsd: Fixed6String,
+  grossPriceUsd: Fixed6String,
+  includedMinutes: Fixed6String,
+  baseOverageRatePerMinuteUsd: Fixed6String,
+  volumeDiscountTiers: readonly VolumeDiscountTier[] = []
+): PricingPlanConfig {
+  return Object.freeze({
+    planCode,
+    externalPlanId,
+    displayName,
+    monthlyFixedPriceUsd,
+    includedMinutes,
+    baseOverageRatePerMinuteUsd,
+    overageAllowed: true,
+    volumeDiscountEligible: volumeDiscountTiers.length > 0,
+    volumeDiscountTiers,
+    grossPriceUsd,
+    isProvisioned: /^plan_[A-Za-z0-9]+$/u.test(externalPlanId),
+  });
+}
+
+/**
+ * Catalogo de respaldo de planes, alineado con la semilla de `pricing_plans_config`.
+ *
+ * Los `externalPlanId` son los identificadores REALES aprovisionados en la pasarela: los marcadores
+ * legacy (`whop_plan_starter_5usd`) no existen en Whop y provocaban el fallo de todo checkout. Los
+ * importes brutos llevan la comision de la pasarela (3.5% + $0.30) trasladada al cliente, de modo que
+ * el neto que liquida en el panel es exactamente la cuota fija de cada plan.
+ */
 export const DEFAULT_PLAN_CATALOG: Readonly<Record<BillingPlanCode, PricingPlanConfig>> = Object.freeze({
-  PAYG: {
-    planCode: 'PAYG',
-    externalPlanId: 'whop_plan_payg_usage_only',
-    displayName: 'Pago por Uso Puro (Pay-As-You-Go)',
-    monthlyFixedPriceUsd: '0.000000',
-    includedMinutes: PAYG_INCLUDED_MINUTES,
-    baseOverageRatePerMinuteUsd: '0.200000',
-    overageAllowed: true,
-    volumeDiscountEligible: false,
-    volumeDiscountTiers: [],
-  },
-  PLAN_5: {
-    planCode: 'PLAN_5',
-    externalPlanId: 'whop_plan_starter_5usd',
-    displayName: 'Plan Starter $5 USD / mes',
-    monthlyFixedPriceUsd: '5.000000',
-    includedMinutes: '25.000000',
-    baseOverageRatePerMinuteUsd: '0.200000',
-    overageAllowed: true,
-    volumeDiscountEligible: false,
-    volumeDiscountTiers: [],
-  },
-  PLAN_10: {
-    planCode: 'PLAN_10',
-    externalPlanId: 'whop_plan_growth_10usd',
-    displayName: 'Plan Growth $10 USD / mes',
-    monthlyFixedPriceUsd: '10.000000',
-    includedMinutes: '55.000000',
-    baseOverageRatePerMinuteUsd: '0.181800',
-    overageAllowed: true,
-    volumeDiscountEligible: false,
-    volumeDiscountTiers: [],
-  },
-  PLAN_30: {
-    planCode: 'PLAN_30',
-    externalPlanId: 'whop_plan_pro_30usd',
-    displayName: 'Plan Pro $30 USD / mes',
-    monthlyFixedPriceUsd: '30.000000',
-    includedMinutes: '180.000000',
-    baseOverageRatePerMinuteUsd: '0.166700',
-    overageAllowed: true,
-    volumeDiscountEligible: false,
-    volumeDiscountTiers: [],
-  },
-  PLAN_50: {
-    planCode: 'PLAN_50',
-    externalPlanId: 'whop_plan_scale_50usd_volume',
-    displayName: 'Plan Scale & Masivo $50 USD / mes',
-    monthlyFixedPriceUsd: '50.000000',
-    includedMinutes: '350.000000',
-    baseOverageRatePerMinuteUsd: '0.142800',
-    overageAllowed: true,
-    volumeDiscountEligible: true,
-    volumeDiscountTiers: [
+  PAYG: fallbackPlan('PAYG', 'plan_uEqJlVAg0fuE9', 'Pago por Uso Puro (Pay-As-You-Go)', '0.000000', '0.000000', PAYG_INCLUDED_MINUTES, '0.200000'),
+  PLAN_5: fallbackPlan('PLAN_5', 'plan_kVPGj57x5DVsm', 'Plan Starter $5 USD / mes', '5.000000', '5.500000', '25.000000', '0.200000'),
+  PLAN_10: fallbackPlan('PLAN_10', 'plan_21zGkl7lUR5UN', 'Plan Growth $10 USD / mes', '10.000000', '10.680000', '55.000000', '0.181800'),
+  PLAN_30: fallbackPlan('PLAN_30', 'plan_CJ1kwuWUWzdmh', 'Plan Pro $30 USD / mes', '30.000000', '31.400000', '180.000000', '0.166700'),
+  PLAN_50: fallbackPlan(
+    'PLAN_50',
+    'plan_EX3G3Ydbxojg6',
+    'Plan Scale & Masivo $50 USD / mes',
+    '50.000000',
+    '52.130000',
+    '350.000000',
+    '0.142800',
+    [
       { tier: 1, minOveragesMinutes: '0.000000', maxOveragesMinutes: '1000.000000', discountPercent: '10.000000' },
       { tier: 2, minOveragesMinutes: '1000.000001', maxOveragesMinutes: '5000.000000', discountPercent: '20.000000' },
       { tier: 3, minOveragesMinutes: '5000.000001', maxOveragesMinutes: '25000.000000', discountPercent: '35.000000' },
       { tier: 4, minOveragesMinutes: '25000.000001', maxOveragesMinutes: null, discountPercent: '50.000000' },
-    ],
-  },
-  CUSTOM_ENTERPRISE: {
-    planCode: 'CUSTOM_ENTERPRISE',
-    externalPlanId: 'whop_plan_custom_enterprise_override',
-    displayName: 'Plan Corporativo Personalizado',
-    monthlyFixedPriceUsd: '0.000000',
-    includedMinutes: PAYG_INCLUDED_MINUTES,
-    baseOverageRatePerMinuteUsd: '0.200000',
-    overageAllowed: true,
-    volumeDiscountEligible: true,
-    volumeDiscountTiers: [],
-  },
+    ]
+  ),
+  CUSTOM_ENTERPRISE: fallbackPlan('CUSTOM_ENTERPRISE', 'plan_RcNAAQqUZaFfj', 'Plan Corporativo Personalizado', '0.000000', '0.000000', PAYG_INCLUDED_MINUTES, '0.200000'),
 });
 
 /**

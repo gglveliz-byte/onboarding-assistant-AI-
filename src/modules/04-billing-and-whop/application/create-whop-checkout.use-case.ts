@@ -101,6 +101,13 @@ export class CreateWhopCheckoutUseCase {
     if (plan === undefined) {
       throw new NotFoundError(`plan de precios ${input.planCode}`);
     }
+    // Un plan sin aprovisionar lleva un identificador marcador, no un `plan_...` real: enviarlo a la
+    // pasarela produciria un error opaco de medio cobro. Se rechaza aqui, con causa legible.
+    if (!plan.isProvisioned) {
+      throw new ValidationError(
+        `El plan ${input.planCode} aun no esta aprovisionado en la pasarela. Ejecute el alta de planes antes de ofrecerlo.`
+      );
+    }
 
     const issuedAtMs = Date.now();
     const signedMetadata: CheckoutSignedMetadata = this.dependencies.gateway.signCheckoutMetadata({

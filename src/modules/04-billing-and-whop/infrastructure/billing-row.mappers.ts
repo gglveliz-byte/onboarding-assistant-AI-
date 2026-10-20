@@ -50,6 +50,8 @@ export interface PlanRow {
   readonly overage_allowed: boolean;
   readonly volume_discount_eligible: boolean;
   readonly volume_discount_tiers_json: unknown;
+  readonly whop_gross_price_usd: string | null;
+  readonly whop_plan_is_live: boolean;
 }
 
 /** Fila cruda de la suscripcion. */
@@ -209,6 +211,10 @@ export function mapPlanRow(row: PlanRow): PricingPlanConfig {
     overageAllowed: row.overage_allowed,
     volumeDiscountEligible: row.volume_discount_eligible,
     volumeDiscountTiers: parseVolumeTiers(row.volume_discount_tiers_json),
+    // Importe bruto real cobrado en la pasarela (neto + comision trasladada) y marca de que el
+    // `whop_plan_id` es un plan vivo. Un plan sin aprovisionar no puede venderse.
+    grossPriceUsd: row.whop_gross_price_usd === null ? null : DecimalMath.formatFixed6(row.whop_gross_price_usd, 'precio bruto'),
+    isProvisioned: row.whop_plan_is_live === true,
   });
 }
 

@@ -50,14 +50,14 @@ import { buildConstellation } from './dala-constellation-sculptures';
 import { renderConstellationFrame } from './dala-constellation-render';
 import { createConstellationRenderState } from './dala-constellation-render-state';
 
-/** Umbrales del gobernador de cadencia (ms de coste de pintura por fotograma). */
-const STRIDE_UPGRADE_COST_MS = 11;
-const STRIDE_DOWNGRADE_COST_MS = 7;
+/** Umbrales del gobernador de cadencia (ms de coste de pintura por fotograma: 18ms da margen para 60/120 Hz). */
+const STRIDE_UPGRADE_COST_MS = 18;
+const STRIDE_DOWNGRADE_COST_MS = 10;
 /** Fotogramas entre reevaluaciones del gobernador de cadencia. */
 const STRIDE_DECISION_WINDOW = 45;
-/** Constantes de tiempo (segundos) del suavizado exponencial: independiente del refresco. */
-const SCROLL_SMOOTHING_TAU = 0.085;
-const SCROLL_VELOCITY_TAU = 0.16;
+/** Constantes de tiempo (segundos) del suavizado exponencial: respuesta instantánea sin lag gomoso. */
+const SCROLL_SMOOTHING_TAU = 0.035;
+const SCROLL_VELOCITY_TAU = 0.08;
 const POINTER_SMOOTHING_TAU = 0.12;
 
 export interface DalaConstellationBackdropProps {
@@ -287,6 +287,7 @@ export function DalaConstellationBackdrop({ className = '' }: DalaConstellationB
       ref={canvasRef}
       aria-hidden="true"
       data-purpose="landing-constellation-backdrop"
+      style={{ willChange: 'transform', transform: 'translateZ(0)' }}
       className={`pointer-events-none fixed inset-0 z-0 h-full w-full select-none ${className}`.trim()}
     />
   );

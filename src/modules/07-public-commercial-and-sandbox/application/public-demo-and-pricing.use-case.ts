@@ -5,7 +5,8 @@
  *   Orquesta las operaciones públicas consumidas por la Landing Comercial y la Documentación:
  *   1. `GetPublicPricingMatrixUseCase`: Consulta y expone la matriz oficial de planes Whop.
  *   2. `CreatePublicLiveDemoSessionUseCase`: Valida Cloudflare Turnstile, aplica Rate Limit por IP
- *      en Redis (máximo 2 demos de 90 segundos por día) y emite token efímero de sesión de voz.
+ *      en Redis con el límite gobernable por el SuperAdmin (defecto 2 demos/día y 90 s) y emite token
+ *      efímero de sesión de voz con la voz real elegida (`&voice=` en la URL del WebSocket).
  *   3. `ValidateSandboxActionUseCase`: Valida y simula acciones físicas en el Sandbox de Docs.
  *
  * @resumen_contenido
@@ -45,6 +46,7 @@ import type {
   SandboxSimulationResultEntity,
   PublicVolumeDiscountTier,
 } from '../domain/public-commercial.entities';
+import { readPublicDemoConfig } from '../../06-superadmin-governance/application/public-demo-config.use-case';
 
 /** Planes canónicos oficiales Whop utilizados como base y respaldo. */
 const CANONICAL_PUBLIC_PLANS: readonly PublicPricingPlanEntity[] = [
@@ -57,6 +59,9 @@ const CANONICAL_PUBLIC_PLANS: readonly PublicPricingPlanEntity[] = [
     overageAllowed: true,
     volumeDiscountEligible: false,
     volumeDiscountTiers: [],
+    // Respaldo sin pasarela detras: no hay bruto que anunciar ni plan contratable.
+    whopGrossPriceUsd: null,
+    isProvisioned: false,
     isActive: true,
   },
   {
@@ -68,6 +73,9 @@ const CANONICAL_PUBLIC_PLANS: readonly PublicPricingPlanEntity[] = [
     overageAllowed: true,
     volumeDiscountEligible: false,
     volumeDiscountTiers: [],
+    // Respaldo sin pasarela detras: no hay bruto que anunciar ni plan contratable.
+    whopGrossPriceUsd: null,
+    isProvisioned: false,
     isActive: true,
   },
   {
@@ -79,6 +87,9 @@ const CANONICAL_PUBLIC_PLANS: readonly PublicPricingPlanEntity[] = [
     overageAllowed: true,
     volumeDiscountEligible: false,
     volumeDiscountTiers: [],
+    // Respaldo sin pasarela detras: no hay bruto que anunciar ni plan contratable.
+    whopGrossPriceUsd: null,
+    isProvisioned: false,
     isActive: true,
   },
   {
@@ -90,6 +101,9 @@ const CANONICAL_PUBLIC_PLANS: readonly PublicPricingPlanEntity[] = [
     overageAllowed: true,
     volumeDiscountEligible: false,
     volumeDiscountTiers: [],
+    // Respaldo sin pasarela detras: no hay bruto que anunciar ni plan contratable.
+    whopGrossPriceUsd: null,
+    isProvisioned: false,
     isActive: true,
   },
   {
@@ -106,6 +120,9 @@ const CANONICAL_PUBLIC_PLANS: readonly PublicPricingPlanEntity[] = [
       { minMinutes: 25000, discountPercentage: 35 },
       { minMinutes: 50000, discountPercentage: 50 },
     ],
+    // Respaldo sin pasarela detras: no hay bruto que anunciar ni plan contratable.
+    whopGrossPriceUsd: null,
+    isProvisioned: false,
     isActive: true,
   },
 ];
@@ -157,10 +174,12 @@ export class GetPublicPricingMatrixUseCase {
           volume_discount_eligible: boolean;
           volume_discount_tiers_json: unknown;
           is_active: boolean;
+          whop_gross_price_usd: string | null;
+          whop_plan_is_live: boolean;
         }>(
           `SELECT plan_code, display_name, monthly_fixed_price_usd, included_minutes,
                   base_overage_rate_per_minute_usd, overage_allowed, volume_discount_eligible,
-                  volume_discount_tiers_json, is_active
+                  volume_discount_tiers_json, is_active, whop_gross_price_usd, whop_plan_is_live
            FROM pricing_plans_config
            WHERE is_active = true
            ORDER BY monthly_fixed_price_usd::numeric ASC`
@@ -174,6 +193,11 @@ export class GetPublicPricingMatrixUseCase {
           planCode: row.plan_code,
           displayName: row.display_name,
           monthlyFixedPriceUsd: row.monthly_fixed_price_usd,
+          // El bruto es lo que cobra el checkout. Si el plan todavia no esta aprovisionado en la
+          // pasarela no hay bruto que anunciar: se deja null y la interfaz lo dice en vez de
+          // inventar una cifra o ofrecer un plan que no se puede contratar.
+          whopGrossPriceUsd: row.whop_gross_price_usd,
+          isProvisioned: row.whop_plan_is_live === true,
           includedMinutes: row.included_minutes,
           baseOverageRatePerMinuteUsd: row.base_overage_rate_per_minute_usd,
           overageAllowed: row.overage_allowed,
@@ -210,7 +234,8 @@ export class GetPublicPricingMatrixUseCase {
 const LUA_ATOMIC_DEMO_RATE_LIMIT = `
 local current = redis.call('GET', KEYS[1])
 local n = current and tonumber(current) or 0
-if n >= 2 then
+local max = tonumber(ARGV[2]) or 2
+if n >= max then
   return n + 1
 end
 local nextVal = redis.call('INCR', KEYS[1])
@@ -220,9 +245,32 @@ end
 return nextVal
 `;
 
+/**
+ * Allowlist de voces REALES por motor. Los nombres coinciden EXACTAMENTE con `DEMO_VOICE_CATALOG`
+ * del frontend: GEMINI usa las nominales de la **Live API**; QWEN, las de **Omni-Realtime** (default
+ * Tina). No se aceptan IDs de Cloud TTS (`es-XX-Polyglot-N`) ni de Qwen-TTS (`qwen-voice-*`): no
+ * existen en los protocolos Live/Omni-Realtime que usamos y el proveedor los rechazaria.
+ */
+const DEMO_VOICE_ALLOWLIST: Readonly<Record<'QWEN' | 'GEMINI', readonly string[]>> = {
+  QWEN: ['Tina', 'Serena', 'Cici', 'Maia', 'Ryan', 'Evan', 'Jennifer', 'Sonrisa', 'Bodega', 'Andre'],
+  GEMINI: ['Kore', 'Aoede', 'Leda', 'Despina', 'Sulafat', 'Callirrhoe', 'Zephyr', 'Puck', 'Charon', 'Orus', 'Algieba'],
+};
+
+/** Voz por defecto de cada motor cuando el visitante no elige una válida (defectos oficiales del proveedor). */
+const DEMO_VOICE_DEFAULTS: Readonly<Record<'QWEN' | 'GEMINI', string>> = { QWEN: 'Tina', GEMINI: 'Kore' };
+
+/**
+ * Resuelve la voz real de la demostración: acepta únicamente nombres de la allowlist del motor
+ * elegido; cualquier otro valor (o ausencia) cae al defecto del proveedor. Evita filtrar cadenas
+ * arbitrarias a la API del motor y garantiza que la voz exista realmente en ese proveedor.
+ */
+function resolveDemoVoiceName(voiceModel: 'QWEN' | 'GEMINI', preferred: string | undefined): string {
+  const trimmed = (preferred ?? '').trim();
+  return DEMO_VOICE_ALLOWLIST[voiceModel].includes(trimmed) ? trimmed : DEMO_VOICE_DEFAULTS[voiceModel];
+}
+
 /** Dependencias para la emisión de sesiones de demo en vivo. */
-export interface PublicLiveDemoDependencies {
-  readonly redisClient?: RedisClusterClient | undefined;
+export interface PublicLiveDemoDependencies {  readonly redisClient?: RedisClusterClient | undefined;
   readonly turnstileSecretKey?: string | undefined;
   readonly isProduction?: boolean | undefined;
   readonly websocketBaseUrl?: string | undefined;
@@ -240,7 +288,7 @@ export class CreatePublicLiveDemoSessionUseCase {
       // 1. Verificación Cloudflare Turnstile Anti-Bot
       await this.verifyTurnstile(input.turnstileToken, clientIp);
 
-      // 2. Control de Frecuencia Estricto por IP en Redis (Máx 2 demos de 90s por 24 horas)
+      // 2. Control de Frecuencia por IP en Redis (límite gobernable por el SuperAdmin, por defecto 2/24h)
       // C1-13: Fallar cerrado si el limitador de Redis no está disponible
       if (!this.deps.redisClient) {
         throw new ProviderUnavailableError(
@@ -249,31 +297,36 @@ export class CreatePublicLiveDemoSessionUseCase {
         );
       }
 
+      // Configuración gobernable: duración máxima y demos por IP/día (defectos 90 s y 2 si no hay config).
+      const config = await readPublicDemoConfig(this.deps.redisClient);
       const ipHash = CryptoUtils.sha256Hex(clientIp);
       const rateLimitKey = `oa:demo:ip:${ipHash}`;
 
-      // Incremento atómico en Redis vía script Lua para evitar carreras (C1-13)
+      // Incremento atómico en Redis vía script Lua para evitar carreras (C1-13). ARGV[2] = tope por IP.
       const currentCount = await this.deps.redisClient.runScript(
         LUA_ATOMIC_DEMO_RATE_LIMIT,
         [rateLimitKey],
-        [86400]
+        [86400, String(config.demosPerIpPerDay)]
       );
 
-      if (Number(currentCount) > 2) {
+      if (Number(currentCount) > config.demosPerIpPerDay) {
         throw new RateLimitExceededError(
           86400,
           `demo:ip:${ipHash}`,
-          { details: { message: 'Has alcanzado el límite diario de 2 demostraciones interactivas por IP. Regístrate para acceso ilimitado.' } }
+          { details: { message: `Has alcanzado el límite diario de ${config.demosPerIpPerDay} demostraciones interactivas por IP. Regístrate para acceso ilimitado.` } }
         );
       }
 
-      // 3. Generar identificador de sesión efímera y token temporal (90s de duración)
+      // 3. Generar identificador de sesión efímera y token temporal (duración gobernable, def. 90s)
       const sessionId = `demo_${CryptoUtils.generateCsprngToken(16)}`;
       const ephemeralToken = `demo_tok_${CryptoUtils.generateCsprngToken(32)}`;
       const voiceModel = input.preferredVoiceModel ?? 'GEMINI';
-      const durationSeconds = 90;
+      const voiceName = resolveDemoVoiceName(voiceModel, input.preferredVoiceName);
+      const durationSeconds = config.maxDurationSeconds;
       const now = new Date();
       const expiresAt = new Date(now.getTime() + durationSeconds * 1000);
+      // TTL del descriptor con margen sobre la duración gobernable (escala si el SuperAdmin sube los segundos).
+      const descriptorTtlSeconds = durationSeconds + 30;
 
       // 4. Guardar descriptor de sesión en Redis con hash de IP y descriptor de token para WebSocket
       const sessionPayload = {
@@ -281,6 +334,7 @@ export class CreatePublicLiveDemoSessionUseCase {
         clientIp,
         clientIpHash: ipHash,
         voiceModel,
+        voiceName,
         ephemeralToken,
         maxDurationSeconds: durationSeconds,
         expiresAtIso: expiresAt.toISOString(),
@@ -290,17 +344,18 @@ export class CreatePublicLiveDemoSessionUseCase {
       await this.deps.redisClient.json.setJson(
         `oa:demo:session:${sessionId}`,
         sessionPayload,
-        120 // TTL con margen de seguridad
+        descriptorTtlSeconds
       );
       await this.deps.redisClient.json.setJson(
         `oa:demo:token:${ephemeralToken}`,
         sessionPayload,
-        120
+        descriptorTtlSeconds
       );
 
       const wsBase = this.deps.websocketBaseUrl ?? 'wss://voice.plataforma.com/ws/v1/realtime';
-      // C1-14: Alinear nombres de contrato tanto para SDK (?sessionId=...&nonce=...&handshakeNonce=...) como Gateway
-      const websocketUrl = `${wsBase}?token=${ephemeralToken}&sessionId=${sessionId}&nonce=${ephemeralToken}&handshakeNonce=${ephemeralToken}&demo=true`;
+      // C1-14: Alinear nombres de contrato tanto para SDK (?sessionId=...&nonce=...&handshakeNonce=...) como Gateway.
+      // `voice` viaja la voz real elegida; el borde del socket la lee como `voicePersonaCode` y la entrega al motor.
+      const websocketUrl = `${wsBase}?token=${ephemeralToken}&sessionId=${sessionId}&nonce=${ephemeralToken}&handshakeNonce=${ephemeralToken}&demo=true&voice=${encodeURIComponent(voiceName)}`;
 
       return Result.ok({
         sessionId,
@@ -310,6 +365,7 @@ export class CreatePublicLiveDemoSessionUseCase {
         websocketUrl,
         maxDurationSeconds: durationSeconds,
         voiceModel,
+        voiceName,
         expiresAtIso: expiresAt.toISOString(),
       });
     } catch (error) {

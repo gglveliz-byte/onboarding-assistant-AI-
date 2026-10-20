@@ -260,12 +260,41 @@ export const rawEnvironmentSchema = z.object({
     .pipe(z.array(z.string().trim().min(1)).min(1, 'WEBAUTHN_ALLOWED_ORIGINS debe declarar al menos un origen')),
 
   // --- Cobros y suscripciones -------------------------------------------------
+  //
+  // `WHOP_API_KEY` es la clave de APLICACION (`apik_` emitido por el listing del app). NO sirve para
+  // operar la pasarela: la API de cobros responde `403 App API key is not authorized for the scope`
+  // y `400 Missing required parameter: company_id` cuando se llama con ella. Se conserva porque el
+  // front la necesita como identificador publico del app, pero ningun adapter de cobros debe usarla.
   WHOP_API_KEY: strongSecretSchema(16, 'WHOP_API_KEY'),
+  /**
+   * Clave de API de la EMPRESA (`apik_` del dashboard de la compania). Es la UNICA credencial con
+   * permisos reales sobre `checkout_configurations`, `plans`, `memberships` y `webhooks`, y la que
+   * debe usarse en todas las llamadas server-side de cobro.
+   */
+  WHOP_COMPANY_API_KEY: strongSecretSchema(16, 'WHOP_COMPANY_API_KEY'),
+  /**
+   * Identificador de la cuenta/empresa en la pasarela, con prefijo `biz_`. La API v1 lo exige en
+   * casi todas las operaciones; omitirlo produce `400 parameter_missing: company_id`.
+   */
+  WHOP_COMPANY_ID: z.string().trim().regex(/^biz_[A-Za-z0-9_]+$/u, 'WHOP_COMPANY_ID debe tener el formato biz_...').default('biz_'),
+  /** Identificador del producto al que se asociaran los planes creados por la plataforma (`prod_...`). */
+  WHOP_PRODUCT_ID: z.string().trim().regex(/^prod_[A-Za-z0-9_]+$/u, 'WHOP_PRODUCT_ID debe tener el formato prod_...').optional(),
   WHOP_WEBHOOK_SECRET: strongSecretSchema(24, 'WHOP_WEBHOOK_SECRET'),
   INTERNAL_CHECKOUT_HMAC_SECRET: strongSecretSchema(32, 'INTERNAL_CHECKOUT_HMAC_SECRET'),
   WHOP_API_BASE_URL: absoluteUrlSchema.default('https://api.whop.com'),
   WHOP_CHECKOUT_BASE_URL: absoluteUrlSchema.default('https://whop.com/checkout'),
   WHOP_WEBHOOK_TOLERANCE_SECONDS: z.coerce.number().int().min(30).max(3600).default(300),
+  /**
+   * Porcentaje de comision de la pasarela sobre cada transaccion, expresado en tanto por uno (0.035
+   * = 3.5%). Composicion verificada contra la tarifa real de la cuenta: 2.7% de procesado de tarjeta
+   * nacional mas 0.8% de orquestacion, que en esta cuenta esta habilitada.
+   *
+   * Se usa unicamente para recalcular el precio BRUTO que ve el cliente, de modo que el importe NETO
+   * que liquida en el panel de la empresa coincida con el precio de lista del plan.
+   */
+  WHOP_PLATFORM_FEE_PERCENT: z.coerce.number().min(0).max(0.30).default(0.035),
+  /** Comision fija por transaccion en USD que la pasarela descuenta del importe bruto ($0.30). */
+  WHOP_PLATFORM_FEE_FIXED_USD: z.coerce.number().min(0).max(10).default(0.30),
 
   // --- Motores de voz en tiempo real -----------------------------------------
   QWEN_REALTIME_WS_URL: webSocketUrlSchema,

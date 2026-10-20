@@ -51,14 +51,17 @@ import {
   ForceGlobalLogoutOrganizationUseCase,
   ListGovernanceOrganizationsUseCase,
 } from './application/tenant-lifecycle-governance.use-case';
+import { DeleteOrganizationUseCase } from './application/delete-organization.use-case';
 import {
   UpdateGlobalPricingMatrixUseCase,
+  DeleteGlobalPricingPlanUseCase,
   SetTenantPricingOverrideUseCase,
   RemoveTenantPricingOverrideUseCase,
   GrantPromotionalMinutesUseCase,
   SwitchVoiceAiKillSwitchUseCase,
 } from './application/pricing-matrix-and-overrides.use-case';
 import { registerGovernanceHttpRoutes } from './infrastructure/governance-http.routes';
+import { GetPublicDemoConfigUseCase, UpdatePublicDemoConfigUseCase } from './application/public-demo-config.use-case';
 
 /**
  * Adaptador que implementa el contrato oficial `ISuperAdminGovernancePort`.
@@ -136,9 +139,45 @@ export class SuperAdminGovernancePortAdapter implements ISuperAdminGovernancePor
   public async updateGlobalPricingPlan(
     params: UpdateGlobalPricingPlanParams
   ): Promise<{ readonly ok: true; readonly updatedPlanCode: string } | PortFailure> {
+    // Proteccion contra el defecto que dejo la pasarela sin cobrar: esta funcion inventaba un
+    // identificador (`whop_plan_5`) y sobrescribia el `plan_...` real de la pasarela, con lo que el
+    // checkout volvia a fallar. Regla nueva: el identificador se acepta solo con el prefijo de la
+    // pasarela; si no se declara, se CONSERVA el vigente, y si el plan no existe aun se exige que
+    // quien lo crea aporte su identificador real.
+    const declaredPlanId = (params.whopPlanId ?? '').trim();
+    if (declaredPlanId.length > 0 && !/^plan_[A-Za-z0-9]+$/u.test(declaredPlanId)) {
+      return {
+        ok: false,
+        code: 'RESOURCE_NOT_FOUND',
+        reason:
+          `whopPlanId "${declaredPlanId}" no es un identificador de la pasarela (se espera el prefijo plan_). ` +
+          'Aprovisione el plan con npm run whop:provision antes de gobernar su precio.',
+        retryable: false,
+      };
+    }
+
+    const existing = await this.updatePricingUseCase.readProvisionedPlanIdentity(params.planCode, params.superAdminUserId);
+    if (existing === null && declaredPlanId.length === 0) {
+      return {
+        ok: false,
+        code: 'RESOURCE_NOT_FOUND',
+        reason:
+          `El plan ${params.planCode} no existe en la matriz y no puede crearse sin identificador de la pasarela. ` +
+          'Aprovisionelo con npm run whop:provision o declare su whopPlan_ real en la operacion.',
+        retryable: false,
+      };
+    }
+
+    // Sin identificador declarado se conserva el vigente: gobernar minutos o tarifa no debe romper
+    // nunca el vinculo con la pasarela.
+    const resolvedWhopPlanId = declaredPlanId.length > 0 ? declaredPlanId : String(existing?.whopPlanId ?? '');
+    const resolvedDisplayName = (params.displayName ?? '').trim().length > 0
+      ? (params.displayName as string)
+      : String(existing?.displayName ?? params.planCode);
+
     const res = await this.updatePricingUseCase.execute(params.superAdminUserId, params.planCode, {
-      whopPlanId: `whop_${params.planCode.toLowerCase()}`,
-      displayName: params.planCode,
+      whopPlanId: resolvedWhopPlanId,
+      displayName: resolvedDisplayName,
       monthlyFixedPriceUsd: params.monthlyFixedPriceUsd,
       includedMinutes: params.includedMinutes,
       baseOverageRatePerMinuteUsd: params.baseOverageRatePerMinuteUsd,
@@ -267,6 +306,15 @@ export function registerSuperAdminGovernanceModule(
     auditRepo,
   });
 
+  const deleteOrgUseCase = new DeleteOrganizationUseCase({
+    rlsPool,
+    adminRepo,
+    auditRepo,
+    redisClient,
+    eventBus,
+    voiceGatewayControl,
+  });
+
   const pricingDeps = {
     rlsPool,
     adminRepo,
@@ -278,6 +326,7 @@ export function registerSuperAdminGovernanceModule(
   };
 
   const updatePricingUseCase = new UpdateGlobalPricingMatrixUseCase(pricingDeps);
+  const deletePricingUseCase = new DeleteGlobalPricingPlanUseCase(pricingDeps);
   const setOverrideUseCase = new SetTenantPricingOverrideUseCase(pricingDeps);
   const removeOverrideUseCase = new RemoveTenantPricingOverrideUseCase(pricingDeps);
   const grantMinutesUseCase = new GrantPromotionalMinutesUseCase(pricingDeps);
@@ -302,20 +351,29 @@ export function registerSuperAdminGovernanceModule(
     auditRepo
   );
 
+  // Gobierno de la demo pública (Redis `oa:demo:config`); el Módulo 07 la lee al emitir sesiones.
+  const getDemoConfigUseCase = new GetPublicDemoConfigUseCase({ redisClient });
+  const updateDemoConfigUseCase = new UpdatePublicDemoConfigUseCase({ redisClient });
+
   // Registro modular de endpoints REST
   registerGovernanceHttpRoutes(router, {
     rlsPool,
     adminRepo,
+    auditRepo,
     getKillSwitchState,
     getKillSwitchReason,
     suspendOrgUseCase,
     reactivateOrgUseCase,
     forceLogoutUseCase,
     listOrgsUseCase,
+    deleteOrgUseCase,
     updatePricingUseCase,
+    deletePricingUseCase,
     setOverrideUseCase,
     removeOverrideUseCase,
     grantMinutesUseCase,
     killSwitchUseCase,
+    getDemoConfigUseCase,
+    updateDemoConfigUseCase,
   });
 }

@@ -45,6 +45,14 @@ export interface DualProviderOrchestratorOptions {
   readonly failoverBudgetMs?: number;
 }
 
+/** Traza de servidor para auditoria de seleccion/failover de motor. Silenciable con `VOICE_DEBUG=0`. */
+const ORCH_DEBUG_ON = (process.env['VOICE_DEBUG'] ?? '1') !== '0';
+function orchLog(event: string, meta?: Record<string, unknown>): void {
+  if (!ORCH_DEBUG_ON) return;
+  // eslint-disable-next-line no-console
+  console.info(`[voice-gw orquestador] ${event}${meta ? ' ' + JSON.stringify(meta) : ''}`);
+}
+
 /**
  * Orquestador dual con soporte de Failover automatico en tiempo sub-segundo (<800ms).
  */
@@ -124,6 +132,7 @@ export class DualProviderOrchestrator {
     }
 
     // 3. Intento de apertura con el primer candidato dentro del presupuesto de tiempo
+    orchLog('intentando proveedor', { intento: firstChoice.providerKind, respaldo: secondChoice.providerKind, preferido: preferredProviderKind ?? '(entorno)', presupuestoMs: this.failoverBudgetMs });
     const openPromise = firstChoice.openStream(request, handlers);
     const timeoutPromise = new Promise<{ readonly ok: false; readonly isTimeout: true }>((resolve) => {
       setTimeout(() => resolve({ ok: false, isTimeout: true }), this.failoverBudgetMs);
@@ -132,7 +141,8 @@ export class DualProviderOrchestrator {
     const primaryAttempt = await Promise.race([openPromise, timeoutPromise]);
 
     if ('isTimeout' in primaryAttempt) {
-      // Expiro el presupuesto de 800ms: activar Failover Dual hacia el segundo candidato
+      // Expiro el presupuesto: activar Failover Dual hacia el segundo candidato
+      orchLog('TIMEOUT de apertura: FAILOVER al respaldo', { intento: firstChoice.providerKind, presupuestoMs: this.failoverBudgetMs, iraA: secondChoice.providerKind });
       return this.tryOpenStream(
         secondChoice,
         request,
@@ -145,6 +155,7 @@ export class DualProviderOrchestrator {
 
     if (primaryAttempt.ok) {
       const elapsed = Date.now() - startTime;
+      orchLog('proveedor activo OK', { proveedor: firstChoice.providerKind, latenciaMs: elapsed });
       return {
         ok: true,
         stream: primaryAttempt.stream,

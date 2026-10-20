@@ -33,6 +33,7 @@
  */
 
 import { getEnvConfig } from '../../config/env.schema';
+import { DecimalMath } from '../../shared/kernel/decimal.util';
 import { DependencyContainer, DI_TOKENS } from '../../shared/container/di-container';
 import { RlsDatabasePool } from '../../shared/infrastructure/database/rls-pool';
 import type { RedisClusterClient } from '../../shared/infrastructure/redis/redis-cluster.client';
@@ -46,7 +47,12 @@ import {
 } from '../../shared/infrastructure/http/http-server.types';
 import { UnauthorizedError, ValidationError } from '../../shared/kernel/result-and-errors';
 import { PostgresBillingRepository } from './infrastructure/postgres-billing.repository';
-import { WhopApiAndHmacAdapter, type WhopWebhookHeaders } from './infrastructure/whop-api-and-hmac.adapter';
+import { createWhopReconciliationSweeper } from './infrastructure/whop-reconciliation.sweeper';
+import {
+  createWhopApiAdapterFromEnv,
+  type WhopApiAndHmacAdapter,
+  type WhopWebhookHeaders,
+} from './infrastructure/whop-api-and-hmac.adapter';
 import { BillingWhopPortAdapter } from './billing-whop.port-adapter';
 import {
   createWhopCheckoutUseCase,
@@ -60,6 +66,7 @@ import {
   MAX_LEDGER_PAGE_SIZE,
 } from './application/billing-dashboard-queries.use-case';
 import { createProcessWhopWebhookUseCase } from './application/process-whop-webhook.use-case';
+import { createBillingAccountActionsUseCase } from './application/billing-account-actions.use-case';
 import type { CheckoutUseCaseDependencies } from './application/checkout-use-case.dependencies';
 
 /** Nombre con el que el modulo se identifica en las rutas y en los diagnosticos. */
@@ -113,6 +120,11 @@ function readBoundedInteger(rawValue: string | undefined, fallbackValue: number,
 /**
  * Extrae las cabeceras de firma del webhook entrante.
  *
+ * La pasarela entrega sus webhooks con el estandar Standard Webhooks: `webhook-id`,
+ * `webhook-timestamp` y `webhook-signature`, sin prefijo `whop-` ni `x-`. NO existe cabecera de tipo
+ * de evento: el nombre viaja en el campo `type` del cuerpo, y el identificador del evento es el campo
+ * `id` del sobre, igual que el valor de `webhook-id`.
+ *
  * @param request - Solicitud HTTP normalizada.
  * @returns Cabeceras de firma del webhook.
  * @throws ValidationError cuando falta alguna cabecera obligatoria.
@@ -126,33 +138,30 @@ function buildWebhookHeaders(request: HttpRequestLike): WhopWebhookHeaders {
     if (Array.isArray(value) && value.length > 0) {
       return value[0] as string;
     }
+    // El estandar fija nombres en minusculas, pero un proxy intermedio puede re-estilizarlos.
+    const alternateKey = Object.keys(request.headers).find((key) => key.toLowerCase() === headerName);
+    const alternateValue = alternateKey === undefined ? undefined : request.headers[alternateKey];
+    if (typeof alternateValue === 'string' && alternateValue.length > 0) {
+      return alternateValue;
+    }
     throw new ValidationError(`El webhook no declara la cabecera obligatoria "${headerName}".`);
   };
 
   return {
-    eventId: readHeader('x-whop-event-id'),
-    timestampHeader: readHeader('x-whop-timestamp'),
-    signatureHeader: readHeader('x-whop-signature'),
-    eventNameHeader: readHeader('x-whop-event-type'),
+    eventId: readHeader('webhook-id'),
+    timestampHeader: readHeader('webhook-timestamp'),
+    signatureHeader: readHeader('webhook-signature'),
   };
 }
 
 /**
  * Construye el adaptador de la pasarela desde las variables de entorno ya validadas.
  *
- * @returns Adaptador configurado con las credenciales y los endpoints del entorno.
+ * @returns Adaptador configurado con la credencial de empresa y los endpoints del entorno.
  * @throws Error cuando el entorno no declara las credenciales de cobro.
  */
 function createGatewayFromEnvironment(): WhopApiAndHmacAdapter {
-  const environment = getEnvConfig();
-  return new WhopApiAndHmacAdapter({
-    apiKey: environment.WHOP_API_KEY,
-    webhookSecret: environment.WHOP_WEBHOOK_SECRET,
-    checkoutHmacSecret: environment.INTERNAL_CHECKOUT_HMAC_SECRET,
-    apiBaseUrl: environment.WHOP_API_BASE_URL,
-    checkoutBaseUrl: environment.WHOP_CHECKOUT_BASE_URL,
-    webhookToleranceSeconds: environment.WHOP_WEBHOOK_TOLERANCE_SECONDS,
-  });
+  return createWhopApiAdapterFromEnv();
 }
 
 /**
@@ -230,10 +239,15 @@ export function registerBillingWhopModule(container: DependencyContainer, router
 
   const repository = new PostgresBillingRepository(pool);
   const gateway = createGatewayFromEnvironment();
+  const runtimeEnvironment = getEnvConfig();
   const dependencies: CheckoutUseCaseDependencies = {
     gateway,
     billingRepository: repository,
     redisClient,
+    platformFee: {
+      percent: DecimalMath.fromNumber(runtimeEnvironment.WHOP_PLATFORM_FEE_PERCENT, 'comision porcentual de la pasarela'),
+      fixedUsd: DecimalMath.fromNumber(runtimeEnvironment.WHOP_PLATFORM_FEE_FIXED_USD, 'comision fija de la pasarela'),
+    },
     dpaVerifier: {
       isDpaSigned: async (organizationId: string) => {
         const signedAtIso = await readDpaSignature(pool, organizationId);
@@ -248,6 +262,7 @@ export function registerBillingWhopModule(container: DependencyContainer, router
   const deductMinutes = createDeductSessionMinutesUseCase(dependencies);
   const dashboardQueries = createBillingDashboardQueriesUseCase(dependencies);
   const processWebhook = createProcessWhopWebhookUseCase(dependencies);
+  const accountActions = createBillingAccountActionsUseCase(pool, repository, gateway);
 
   container.registerInstance(
     DI_TOKENS.BillingDeductionPort,
@@ -341,4 +356,70 @@ export function registerBillingWhopModule(container: DependencyContainer, router
       return { status: 202, body: outcome };
     }),
   });
+
+  // PUT /api/v1/billing/spend-cap — Tope de gasto duro del periodo vigente.
+  router.register({
+    method: 'PUT',
+    path: '/api/v1/billing/spend-cap',
+    access: 'TENANT_SESSION',
+    requiredScopes: ['billing:manage_sub'],
+    ownerModule: OWNER_MODULE,
+    requiresRawBody: false,
+    handler: wrapHandler(async (request: HttpRequestLike, context: AuthenticatedRequestContext): Promise<HttpHandlerResult> => {
+      const principal = assertPrincipal(context);
+      const body = (request.body ?? {}) as Record<string, unknown>;
+      const rawCap = body['hardSpendCapUsd'];
+      if (rawCap !== null && typeof rawCap !== 'string' && typeof rawCap !== 'number') {
+        throw new ValidationError('Se exige hardSpendCapUsd (cadena numerica, numero o null para desactivar el tope).');
+      }
+      const cap = rawCap === null || rawCap === undefined ? null : DecimalMath.formatFixed6(String(rawCap), 'tope de gasto');
+      return { status: 200, body: await accountActions.updateHardSpendCap(principal.organizationId, principal.userId, cap) };
+    }),
+  });
+
+  // POST /api/v1/billing/customer-portal — Enlace de autogestion de la pasarela.
+  router.register({
+    method: 'POST',
+    path: '/api/v1/billing/customer-portal',
+    access: 'TENANT_SESSION',
+    requiredScopes: ['billing:manage_sub'],
+    ownerModule: OWNER_MODULE,
+    requiresRawBody: false,
+    handler: wrapHandler(async (_request: HttpRequestLike, context: AuthenticatedRequestContext): Promise<HttpHandlerResult> => {
+      const principal = assertPrincipal(context);
+      return { status: 200, body: await accountActions.openCustomerPortal(principal.organizationId) };
+    }),
+  });
+
+  // POST /api/v1/billing/reconcile — Conciliacion del estado local contra la pasarela.
+  router.register({
+    method: 'POST',
+    path: '/api/v1/billing/reconcile',
+    access: 'TENANT_SESSION',
+    requiredScopes: ['billing:read'],
+    ownerModule: OWNER_MODULE,
+    requiresRawBody: false,
+    handler: wrapHandler(async (_request: HttpRequestLike, context: AuthenticatedRequestContext): Promise<HttpHandlerResult> => {
+      const principal = assertPrincipal(context);
+      return { status: 200, body: await accountActions.reconcileSubscription(principal.organizationId) };
+    }),
+  });
+
+  // Barrendero de conciliacion: el webhook puede perderse (endpoint caido, rewrite sin resolver,
+  // reinicio del plano de control) y entonces el estado local queda desincronizado sin aviso.
+  // Se arma solo cuando el logger y Redis ya estan disponibles en el contenedor, para no imponer un
+  // orden de arranque a los demas modulos. Los 3 Node Pools registran este manifiesto, asi que el
+  // barrido se protege con un candado de lider en Redis para que no se dupliquen las lecturas.
+  if (container.has(DI_TOKENS.LoggerPort) && container.has(DI_TOKENS.EnvironmentConfig)) {
+    const logger = container.get(DI_TOKENS.LoggerPort) as Parameters<typeof createWhopReconciliationSweeper>[2];
+    const runtimeConfig = container.get(DI_TOKENS.EnvironmentConfig) as { SERVICE_INSTANCE_ID: string };
+    const sweeper = createWhopReconciliationSweeper(
+      pool,
+      gateway,
+      logger,
+      redisClient,
+      runtimeConfig.SERVICE_INSTANCE_ID
+    );
+    sweeper.start();
+  }
 }

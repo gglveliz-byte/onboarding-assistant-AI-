@@ -53,12 +53,12 @@ const PAYG_PLAN_CODE = 'PAYG';
 const PLAN_50_CODE = 'PLAN_50';
 
 /** Proyeccion inicial de usuarios guiados por mes y limites del control. */
-const GUIDED_USERS_DEFAULT = 25;
+const GUIDED_USERS_DEFAULT = 1;
 const GUIDED_USERS_MIN = 1;
 const GUIDED_USERS_MAX = 500;
 
 /** Proyeccion inicial de minutos de asistencia por usuario al mes y limites del control. */
-const MINUTES_PER_USER_DEFAULT = 60;
+const MINUTES_PER_USER_DEFAULT = 25;
 const MINUTES_PER_USER_MIN = 5;
 const MINUTES_PER_USER_MAX = 2000;
 
@@ -82,6 +82,14 @@ export interface PlanQuote {
   readonly planCode: string;
   readonly displayName: string;
   readonly monthlyFixedPriceUsd: number;
+  /**
+   * Importe que el checkout va a cobrar realmente (bruto con la comision de la pasarela).
+   * Es la cifra que debe anunciarse: el neto del plan es lo que liquida en la empresa, no lo que
+   * paga el cliente.
+   */
+  readonly chargeAmountUsd: number;
+  /** `false` cuando el plan ainda no existe en la pasarela y por tanto no puede contratarse. */
+  readonly isProvisioned: boolean;
   readonly includedMinutes: number;
   readonly overageMinutes: number;
   readonly appliedDiscountPercentage: number;
@@ -123,6 +131,10 @@ interface RawPlanShape {
   readonly display_name?: string;
   readonly monthlyFixedPriceUsd?: unknown;
   readonly monthly_fixed_price_usd?: unknown;
+  readonly whopGrossPriceUsd?: unknown;
+  readonly whop_gross_price_usd?: unknown;
+  readonly isProvisioned?: boolean;
+  readonly is_provisioned?: boolean;
   readonly includedMinutes?: unknown;
   readonly included_minutes?: unknown;
   readonly baseOverageRatePerMinuteUsd?: unknown;
@@ -202,6 +214,16 @@ function buildBaseQuote(
   const planCode = plan.planCode ?? plan.plan_code ?? 'UNKNOWN';
   const displayName = plan.displayName ?? plan.display_name ?? planCode;
   const monthlyFixedPriceUsd = parseDecimal(plan.monthlyFixedPriceUsd ?? plan.monthly_fixed_price_usd);
+  const isProvisioned = Boolean(plan.isProvisioned ?? plan.is_provisioned ?? false);
+  // El checkout cobra el BRUTO (neto + comision de la pasarela trasladada). Si la pasarela aun no
+  // tiene el plan, no hay bruto: se muestra el neto y la tarjeta lo marca como no contratable.
+  const grossRaw = plan.whopGrossPriceUsd ?? plan.whop_gross_price_usd;
+  const parsedGross = grossRaw === null || grossRaw === undefined ? null : parseDecimal(grossRaw);
+  const chargeAmountUsd = planCode === PAYG_PLAN_CODE
+    ? 0
+    : parsedGross !== null && parsedGross > 0
+      ? parsedGross
+      : monthlyFixedPriceUsd;
   const includedMinutes = parseDecimal(plan.includedMinutes ?? plan.included_minutes);
   const baseOverageRatePerMinuteUsd = parseDecimal(plan.baseOverageRatePerMinuteUsd ?? plan.base_overage_rate_per_minute_usd);
   const volumeDiscountEligible = plan.volumeDiscountEligible ?? plan.volume_discount_eligible ?? false;
@@ -214,13 +236,17 @@ function buildBaseQuote(
   const effectiveRatePerMinuteUsd = isPayAsYouGo
     ? paygRatePerMinuteUsd
     : baseOverageRatePerMinuteUsd * (1 - appliedDiscountPercentage / 100);
+  // La proyeccion mensual arranca del importe que efectivamente se cobra, no del neto que liquida
+  // en la empresa: si no, la calculadora prometeria un total menor del que llega al recibo.
   const estimatedMonthlyTotalUsd = isPayAsYouGo
     ? monthlyMinutes * effectiveRatePerMinuteUsd
-    : monthlyFixedPriceUsd + overageMinutes * effectiveRatePerMinuteUsd;
+    : chargeAmountUsd + overageMinutes * effectiveRatePerMinuteUsd;
   return {
     planCode,
     displayName,
     monthlyFixedPriceUsd,
+    chargeAmountUsd,
+    isProvisioned,
     includedMinutes,
     overageMinutes,
     appliedDiscountPercentage,

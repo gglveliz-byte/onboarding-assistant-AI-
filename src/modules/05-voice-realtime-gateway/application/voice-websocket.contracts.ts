@@ -29,7 +29,7 @@
  */
 
 import type { RlsDatabasePool } from '../../../shared/infrastructure/database/rls-pool';
-import type { VoiceSessionStatus } from '../../../shared/ports/billing-voice-admin.ports';
+import type { VoiceProviderKind, VoiceSessionStatus } from '../../../shared/ports/billing-voice-admin.ports';
 import type { IApiKeyAndHandshakePort, IVisualRagAndPromptPort } from '../../../shared/ports/core-modules.ports';
 import type { DispatchDomToolUseCase } from './dispatch-dom-tool.use-case';
 import type { VoiceSessionMeteringService } from './voice-session-metering.service';
@@ -89,6 +89,12 @@ export interface VoiceWebSocketOpenRequest {
   readonly sampleRateHz: number;
   /** Persona de voz configurada por el proyecto. */
   readonly voicePersonaCode: string;
+  /**
+   * Motor de voz preferido por quien abre la sesion (demo: el selector de la landing). Si se omite,
+   * el orquestador usa el primario configurado por entorno y su respaldo; sin este campo el toggle
+   * `VOZ ULTRA-RAPIDA / ULTRA-PRECISA` no llegaba al proveedor y siempre terminaba en el mismo motor.
+   */
+  readonly preferredVoiceModel?: VoiceProviderKind;
 }
 
 /** Puertos y casos de uso que el gateway necesita para atender una sesion. */

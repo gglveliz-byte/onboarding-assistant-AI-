@@ -29,8 +29,8 @@
  * @notas
  *   - Desviación: `discover-tenant` y `sso/saml/start` no existen aún en el backend sellado de
  *     la Parte 5; la interfaz los sondea y degrada sin ruido.
- *   - El bloqueo legal 403 (sin sesión) NO reutiliza el modal del Subagente 2.5 (exige sesión):
- *     se informa con enlaces a `/legal/*`.
+ *   - El consentimiento legal se renueva sin sesión con un reto efímero (`LEGAL_CONSENT_REQUIRED`)
+ *     y el panel interactivo `LegalConsentRenewalPanel`; el 403 heredado conserva su fallback.
  */
 
 'use client';
@@ -38,6 +38,12 @@
 import type { CSSProperties, FormEvent, ReactElement } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { AtelierPrimaryButton } from '../../../../components/atelier-primitives/AtelierUiPrimitives';
+import {
+  LegalConsentBlockedPanel,
+  LegalConsentRenewalPanel,
+  type LegalConsentChallenge,
+  type PendingLegalDocument,
+} from '../../../../components/auth-legal/LegalConsentRenewalPanel';
 import { MfaChallengeAndEnrollmentModal } from '../../../../components/auth-legal/MfaChallengeAndEnrollmentModal';
 import { Logo } from '../../../../components/common/Logo';
 import type { AuthApiResult, AuthSessionUserProfile, BackendPublicOrganization, BackendPublicUser } from '../../../../components/auth-legal/auth-api-client';
@@ -84,8 +90,17 @@ interface LoginAuthenticatedPayload { readonly status?: undefined; readonly acce
 /** Cuerpo 202 de `POST /api/v1/auth/login` (reto de segundo factor requerido). */
 interface LoginMfaRequiredPayload { readonly status: 'MFA_REQUIRED'; readonly userId: string; readonly mfaChallengeToken: string; readonly availableFactors: readonly MfaAvailableFactor[]; }
 
-/** Unión de las dos respuestas posibles del login. */
-type LoginPayload = LoginAuthenticatedPayload | LoginMfaRequiredPayload;
+/** Cuerpo 202 de `POST /api/v1/auth/login` (renovación legal previa a la sesión). */
+interface LoginLegalConsentRequiredPayload {
+  readonly status: 'LEGAL_CONSENT_REQUIRED';
+  readonly userId: string;
+  readonly consentChallengeToken: string;
+  readonly pendingDocuments: readonly PendingLegalDocument[];
+  readonly expiresInSeconds: number;
+}
+
+/** Unión de las respuestas posibles del login. */
+type LoginPayload = LoginAuthenticatedPayload | LoginMfaRequiredPayload | LoginLegalConsentRequiredPayload;
 
 /** Cuerpo tentativo del descubrimiento de inquilino por dominio. */
 interface DiscoveryPayload { readonly sso_enforced?: boolean; readonly organizationSlug?: string | null; }
@@ -128,7 +143,7 @@ function resolvePostAuthenticationPath(role: string, orgSlug: string, nextParam:
     return CLI_DEVICE_PATH;
   }
   if (role === 'SUPERADMIN') {
-    return '/superadmin';
+    return nextParam && nextParam.startsWith('/superadmin') ? nextParam : '/superadmin';
   }
   return orgSlug.length > 0 ? `/dashboard/org/${encodeURIComponent(orgSlug)}` : '/docs';
 }
@@ -247,27 +262,6 @@ function SsoFederationPanel(props: { readonly orgSlugHint: string | null; readon
   );
 }
 
-/** Bloqueo legal 403 (sin sesión): enlaces al visor legal público y nota de renovación. */
-function LegalConsentBlockedPanel(props: { readonly errorCode: 'LEGAL_CONSENT_OUTDATED' | 'DPA_NOT_SIGNED' }): ReactElement {
-  return (
-    <section className="atelier-card" role="alert" style={{ borderColor: 'var(--color-crimson)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-      <p className="atelier-eyebrow" style={{ color: 'var(--color-crimson)', margin: 0 }}>Consentimiento legal pendiente</p>
-      <h2 className="atelier-heading-sm" style={{ color: 'var(--color-crimson)' }}>Tu organización debe renovar el consentimiento</h2>
-      <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-driftwood)' }}>
-        Para continuar, tu organización necesita aceptar la versión vigente de los documentos legales. Puedes consultarlos aquí:
-      </p>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px' }}>
-        <a className="atelier-link" href="/legal/tos-b2b">Condiciones del servicio B2B</a>
-        <a className="atelier-link" href="/legal/privacy-policy">Política de privacidad</a>
-        {props.errorCode === 'DPA_NOT_SIGNED' ? <a className="atelier-link" href="/legal/dpa-enterprise">Acuerdo de tratamiento de datos (DPA)</a> : null}
-      </div>
-      <p className="atelier-help-text" style={{ margin: 0 }}>
-        Un responsable de tu organización debe firmar la renovación; después podrás iniciar sesión con normalidad.
-      </p>
-    </section>
-  );
-}
-
 /* ---------- Frontera de autenticación y página ---------- */
 
 /** Frontera B2B: formulario, descubrimiento SSO, bloqueos, reto MFA y destino final. */
@@ -280,6 +274,7 @@ function B2BAuthenticationBoundary(): ReactElement {
   const [ssoOrgSlugHint, setSsoOrgSlugHint] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [legalBlockedCode, setLegalBlockedCode] = useState<'LEGAL_CONSENT_OUTDATED' | 'DPA_NOT_SIGNED' | null>(null);
+  const [legalChallenge, setLegalChallenge] = useState<LegalConsentChallenge | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isMfaModalOpen, setIsMfaModalOpen] = useState<boolean>(false);
   const [mfaFactors, setMfaFactors] = useState<readonly MfaAvailableFactor[]>([]);
@@ -310,37 +305,13 @@ function B2BAuthenticationBoundary(): ReactElement {
     setErrorMessage(result.status === 401 ? 'Correo o contraseña incorrectos.' : result.errorMessage ?? 'No fue posible iniciar sesión. Inténtalo de nuevo.');
   };
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
-    event.preventDefault();
-    if (isSubmitting) {
-      return;
-    }
-    setErrorMessage(null);
-    setLegalBlockedCode(null);
-    const normalizedEmail = emailValue.trim().toLowerCase();
-    if (!isEmailLike(normalizedEmail)) {
-      setErrorMessage('Ingresa un correo electrónico válido.');
-      return;
-    }
-    if (passwordValue.length === 0) {
-      setErrorMessage('Ingresa tu contraseña.');
-      return;
-    }
-    const advancedOrganizationSlug = advancedSlug.trim();
-    const body: Record<string, string> = { email: normalizedEmail, password: passwordValue };
-    if (advancedOrganizationSlug.length > 0) {
-      body['organizationSlug'] = advancedOrganizationSlug;
-    }
-    setIsSubmitting(true);
-    const result = await authApiFetch<LoginPayload>(LOGIN_PATH, { method: 'POST', body });
-    setIsSubmitting(false);
-    if (!result.ok) {
-      applyLoginFailure(result, advancedOrganizationSlug);
-      return;
-    }
-    const payload = result.data;
-    if (payload === null) {
-      setErrorMessage('El servidor devolvió una respuesta vacía. Inténtalo de nuevo.');
+  const completeLoginPayload = (payload: LoginPayload): void => {
+    if (payload.status === 'LEGAL_CONSENT_REQUIRED') {
+      setLegalBlockedCode(null);
+      setLegalChallenge({
+        consentChallengeToken: payload.consentChallengeToken,
+        pendingDocuments: payload.pendingDocuments,
+      });
       return;
     }
     if (payload.status === 'MFA_REQUIRED') {
@@ -352,6 +323,60 @@ function B2BAuthenticationBoundary(): ReactElement {
     const profile = buildSessionProfile({ user: payload.user, organization: toSessionOrganization(payload.organization), role: payload.role, mfaSatisfied: false });
     session.completeAuthentication(payload.accessToken, profile);
     window.location.assign(resolvePostAuthenticationPath(profile.role, profile.orgSlug, requestedNext));
+  };
+
+  const performLogin = async (normalizedEmail: string, password: string, organizationSlug: string): Promise<void> => {
+    if (isSubmitting) {
+      return;
+    }
+    const body: Record<string, string> = { email: normalizedEmail, password };
+    if (organizationSlug.length > 0) {
+      body['organizationSlug'] = organizationSlug;
+    }
+    setIsSubmitting(true);
+    const result = await authApiFetch<LoginPayload>(LOGIN_PATH, { method: 'POST', body });
+    setIsSubmitting(false);
+    if (!result.ok) {
+      applyLoginFailure(result, organizationSlug);
+      return;
+    }
+    const payload = result.data;
+    if (payload === null) {
+      setErrorMessage('El servidor devolvió una respuesta vacía. Inténtalo de nuevo.');
+      return;
+    }
+    completeLoginPayload(payload);
+  };
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    if (isSubmitting) {
+      return;
+    }
+    setErrorMessage(null);
+    setLegalBlockedCode(null);
+    setLegalChallenge(null);
+    const normalizedEmail = emailValue.trim().toLowerCase();
+    if (!isEmailLike(normalizedEmail)) {
+      setErrorMessage('Ingresa un correo electrónico válido.');
+      return;
+    }
+    if (passwordValue.length === 0) {
+      setErrorMessage('Ingresa tu contraseña.');
+      return;
+    }
+    await performLogin(normalizedEmail, passwordValue, advancedSlug.trim());
+  };
+
+  /** Tras aceptar el reto legal, reintenta el login con las credenciales ya verificadas. */
+  const handleLegalRenewed = (): void => {
+    const normalizedEmail = emailValue.trim().toLowerCase();
+    if (!isEmailLike(normalizedEmail) || passwordValue.length === 0) {
+      setLegalChallenge(null);
+      setErrorMessage('Ingresa tus credenciales para reintentar el inicio de sesión.');
+      return;
+    }
+    void performLogin(normalizedEmail, passwordValue, advancedSlug.trim());
   };
 
   const handleMfaVerified = (verified: { readonly accessToken: string; readonly user: AuthSessionUserProfile }): void => {
@@ -372,7 +397,17 @@ function B2BAuthenticationBoundary(): ReactElement {
   return (
     <div style={COLUMN_STACK_STYLE}>
       {requestedNext === 'cli-device' ? <p className="atelier-badge-ember" style={{ alignSelf: 'flex-start', margin: 0 }}>Inicia sesión para autorizar tu terminal CLI</p> : null}
-      {legalBlockedCode === null ? null : <LegalConsentBlockedPanel errorCode={legalBlockedCode} />}
+      {legalChallenge === null ? (
+        legalBlockedCode === null ? null : <LegalConsentBlockedPanel errorCode={legalBlockedCode} />
+      ) : (
+        <LegalConsentRenewalPanel
+          key={legalChallenge.consentChallengeToken}
+          challenge={legalChallenge}
+          isRetrying={isSubmitting}
+          onAccepted={handleLegalRenewed}
+          onCancel={(): void => setLegalChallenge(null)}
+        />
+      )}
       <LockedAccountCountdown lockedUntilEpochMs={session.lockedUntilEpochMs} />
       <form
         className="atelier-card"

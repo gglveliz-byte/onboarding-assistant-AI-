@@ -410,6 +410,14 @@ export interface UpdateGlobalPricingPlanParams {
   readonly volumeDiscountEligible: boolean;
   readonly volumeDiscountTiersJson: readonly unknown[];
   readonly superAdminUserId: string;
+  /**
+   * Identificador REAL del plan en la pasarela (prefijo `plan_`). Se omite para conservar el que ya
+   * esta aprovisionado: el adaptador JAMAS inventa uno, porque un identificador fabricado convierte
+   * el checkout en un fallo garantido de la pasarela.
+   */
+  readonly whopPlanId?: string;
+  /** Nombre comercial mostrado en la landing y los paneles. Se omite para conservar el vigente. */
+  readonly displayName?: string;
 }
 
 /**

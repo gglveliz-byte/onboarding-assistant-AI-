@@ -33,8 +33,14 @@ import type { PhysicalVoiceToolName } from '../domain/voice-session-and-tools.ty
 /** Tipo MIME con el que el motor alterno espera el audio del usuario final. */
 export const QWEN_AUDIO_MIME_TYPE = 'audio/pcm';
 
-/** Voz predeterminada del motor alterno cuando el proyecto no declara una persona propia. */
-export const QWEN_DEFAULT_VOICE = 'Cherry';
+/** Voz predeterminada del motor alterno cuando el proyecto no declara una persona propia (defecto de Qwen3.8-Omni-Realtime). */
+export const QWEN_DEFAULT_VOICE = 'Tina';
+
+/** Frecuencia nativa de SALIDA de audio de Qwen3.8-Omni-Realtime (24 kHz PCM16). */
+export const QWEN_NATIVE_OUTPUT_RATE_HZ = 24000;
+
+/** Frecuencia que espera el navegador/gateway en la bajada (16 kHz). Se remuestrea 24→16 en el mapper. */
+export const QWEN_TARGET_OUTPUT_RATE_HZ = 16000;
 
 /**
  * Limite de caracteres del prompt de sistema que acepta el motor alterno.
@@ -106,7 +112,12 @@ export const QWEN_TOOL_DECLARATIONS: readonly QwenFunctionDeclaration[] = [
   },
 ];
 
-/** Trama de configuracion de sesion enviada al abrir el canal. */
+/**
+ * Trama de configuracion de sesion enviada al abrir el canal.
+ * Qwen3.8-Omni-Flash-Realtime usa la forma ANIDADA `session.audio` (voz en `audio.output.voice`,
+ * entrada a 16 kHz y SALIDA a 24 kHz) y `turn_detection: semantic_vad`. Se conserva `voice` de
+ * compatibilidad en la raiz: si ambos existen, el proveedor usa `audio.output.voice`.
+ */
 export interface QwenSessionUpdatePayload {
   readonly type: 'session.update';
   readonly session: {
@@ -115,13 +126,27 @@ export interface QwenSessionUpdatePayload {
     readonly instructions: string;
     readonly voice: string;
     readonly temperature: number;
-    readonly input_audio_format: string;
-    readonly output_audio_format: string;
     readonly turn_detection: {
       readonly type: string;
       readonly threshold: number;
       readonly prefix_padding_ms: number;
       readonly silence_duration_ms: number;
+    };
+    readonly audio: {
+      readonly input: {
+        readonly format: {
+          readonly type: 'pcm';
+          readonly sample_rate: number;
+          readonly sample_format: 's16le';
+          readonly channels: number;
+          readonly packing: 'interleaved';
+          readonly channel_layout: 'mono';
+        };
+      };
+      readonly output: {
+        readonly voice: string;
+        readonly format: { readonly type: 'pcm'; readonly sample_rate: number };
+      };
     };
     readonly tools: readonly { readonly type: 'function'; readonly function: QwenFunctionDeclaration }[];
     readonly tool_choice: string;

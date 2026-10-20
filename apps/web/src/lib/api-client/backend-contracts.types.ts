@@ -114,6 +114,14 @@ export interface PublicPricingPlanDto {
   readonly planCode: string;
   readonly displayName: string;
   readonly monthlyFixedPriceUsd: string;
+  /**
+   * Importe BRUTO que cobra el checkout, con la comision de la pasarela trasladada al cliente.
+   * Es la cifra que va a figurar en el recibo: anunciar solo `monthlyFixedPriceUsd` (el neto que
+   * liquida en la empresa) mostraria un precio inferior al que el comprador paga realmente.
+   */
+  readonly whopGrossPriceUsd: string | null;
+  /** `false` mientras el plan no exista en la pasarela: no debe ofrecerse como contratable. */
+  readonly isProvisioned: boolean;
   readonly includedMinutes: string;
   readonly baseOverageRatePerMinuteUsd: string;
   readonly overageAllowed: boolean;
@@ -145,6 +153,9 @@ export const CANONICAL_PUBLIC_PLANS_FALLBACK: readonly PublicPricingPlanDto[] = 
     overageAllowed: true,
     volumeDiscountEligible: false,
     volumeDiscountTiers: [],
+    // Respaldo sin pasarela detras: sin bruto que anunciar y sin plan contratable.
+    whopGrossPriceUsd: null,
+    isProvisioned: false,
     isActive: true,
   },
   {
@@ -156,6 +167,9 @@ export const CANONICAL_PUBLIC_PLANS_FALLBACK: readonly PublicPricingPlanDto[] = 
     overageAllowed: true,
     volumeDiscountEligible: false,
     volumeDiscountTiers: [],
+    // Respaldo sin pasarela detras: sin bruto que anunciar y sin plan contratable.
+    whopGrossPriceUsd: null,
+    isProvisioned: false,
     isActive: true,
   },
   {
@@ -167,6 +181,9 @@ export const CANONICAL_PUBLIC_PLANS_FALLBACK: readonly PublicPricingPlanDto[] = 
     overageAllowed: true,
     volumeDiscountEligible: false,
     volumeDiscountTiers: [],
+    // Respaldo sin pasarela detras: sin bruto que anunciar y sin plan contratable.
+    whopGrossPriceUsd: null,
+    isProvisioned: false,
     isActive: true,
   },
   {
@@ -178,6 +195,9 @@ export const CANONICAL_PUBLIC_PLANS_FALLBACK: readonly PublicPricingPlanDto[] = 
     overageAllowed: true,
     volumeDiscountEligible: false,
     volumeDiscountTiers: [],
+    // Respaldo sin pasarela detras: sin bruto que anunciar y sin plan contratable.
+    whopGrossPriceUsd: null,
+    isProvisioned: false,
     isActive: true,
   },
   {
@@ -194,6 +214,9 @@ export const CANONICAL_PUBLIC_PLANS_FALLBACK: readonly PublicPricingPlanDto[] = 
       { minMinutes: 25000, discountPercentage: 35 },
       { minMinutes: 50000, discountPercentage: 50 },
     ],
+    // Respaldo sin pasarela detras: sin bruto que anunciar y sin plan contratable.
+    whopGrossPriceUsd: null,
+    isProvisioned: false,
     isActive: true,
   },
 ];
@@ -220,13 +243,15 @@ export interface DemoVoiceOption {
 export const DEMO_VOICE_CATALOG: Readonly<Record<VoiceModelId, readonly DemoVoiceOption[]>> = {
   QWEN: [
     { voiceName: 'Tina', label: 'Tina · clara y asistencial' },
-    { voiceName: 'Cherry', label: 'Cherry · soleada y cercana' },
-    { voiceName: 'Serena', label: 'Serena · suave y dulce' },
-    { voiceName: 'Ethan', label: 'Ethan · cálido y enérgico' },
-    { voiceName: 'Chelsie', label: 'Chelsie · juvenil expresiva' },
-    { voiceName: 'Kiki', label: 'Kiki · dinámica' },
+    { voiceName: 'Serena', label: 'Serena · suave' },
     { voiceName: 'Cici', label: 'Cici · dulce' },
-    { voiceName: 'Dylan', label: 'Dylan · con carácter' },
+    { voiceName: 'Maia', label: 'Maia · inteligente y cálida' },
+    { voiceName: 'Ryan', label: 'Ryan · enérgico' },
+    { voiceName: 'Evan', label: 'Evan · juvenil' },
+    { voiceName: 'Jennifer', label: 'Jennifer · cinematográfica' },
+    { voiceName: 'Sonrisa', label: 'Sonrisa · latina' },
+    { voiceName: 'Bodega', label: 'Bodega · español cálido' },
+    { voiceName: 'Andre', label: 'Andre · estable' },
   ],
   GEMINI: [
     { voiceName: 'Kore', label: 'Kore · firme' },

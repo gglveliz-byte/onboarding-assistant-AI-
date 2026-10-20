@@ -19,6 +19,7 @@
     "verify:production": "tsx scripts/verify-production-readiness.ts",
     "test:unit": "tsx tests/unit/env-contract.test.ts",
     "test:scopes": "tsx tests/unit/route-scope-catalog.test.ts",
+    "test:pricing-guard": "tsx tests/unit/pricing-plan-identity-guard.test.ts",
     "test:kernel": "tsx tests/unit/kernel.test.ts",
     "test:contracts": "tsx tests/unit/infrastructure-contracts.test.ts",
     "test:ssrf": "tsx tests/unit/anti-ssrf.test.ts",
@@ -36,6 +37,8 @@
     "test:training": "tsx tests/integration/training-session.test.ts",
     "test:webhook": "tsx tests/unit/webhook-signing.test.ts",
     "test:billing": "tsx tests/integration/whop-billing.test.ts",
+    "whop:provision": "tsx scripts/provision-whop-plans.ts",
+    "whop:webhook": "tsx scripts/provision-whop-webhook.ts",
     "test:rates": "tsx tests/unit/billing-rate-engine.test.ts",
     "test:deduction": "tsx tests/integration/billing-deduction.test.ts",
     "test:qwen-audio": "tsx tests/integration/voice-qwen-audio.test.ts",
@@ -70,6 +73,7 @@
     "verify:part15": "npm run check:lines && npm run typecheck && npm run test:public-sdk"
   },
   "dependencies": {
+    "@whop/sdk": "2.6.0",
     "argon2": "^0.45.1",
     "fastify": "^5.12.7",
     "fastify-raw-body": "^6.0.2",
@@ -88,4 +92,3 @@
     "typescript": "^5.9.3"
   }
 }
-

@@ -27,6 +27,7 @@
  */
 
 import type { Fixed6String } from '../../../shared/kernel/decimal.util';
+import type { PlatformFeeConfig } from '../domain/whop-fee.util';
 import type { RedisClusterClient } from '../../../shared/infrastructure/redis/redis-cluster.client';
 import type { BillingRepositoryPort } from '../infrastructure/postgres-billing.repository';
 import type { WhopApiAndHmacAdapter } from '../infrastructure/whop-api-and-hmac.adapter';
@@ -63,4 +64,10 @@ export interface CheckoutUseCaseDependencies {
   readonly redisClient: RedisClusterClient;
   /** Verificador del acuerdo de procesamiento de datos de la organizacion. */
   readonly dpaVerifier: DpaVerifierPort;
+  /**
+   * Comision de la pasarela, para convertir el importe BRUTO que declara el webhook en el NETO que
+   * debe acreditarse. Cuando se omite, el cobro se acredita por su importe bruto (comportamiento de
+   * las pruebas sin pasarela real).
+   */
+  readonly platformFee?: PlatformFeeConfig;
 }

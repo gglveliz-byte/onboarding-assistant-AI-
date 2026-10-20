@@ -40,6 +40,8 @@ export default function SuperAdminPricingMatrixPage(): ReactElement {
     isLoading,
     error,
     updateGlobalPricingPlan,
+    createGlobalPricingPlan,
+    deleteGlobalPricingPlan,
     simulateFinancialImpact,
   } = useSuperAdminPricingAndOverrides();
 
@@ -67,11 +69,11 @@ export default function SuperAdminPricingMatrixPage(): ReactElement {
               letterSpacing: '-0.015em',
             }}
           >
-            Matriz Global de Precios Whop ($5 - $50 USD)
+            Gestión de Planes Fijos y Pago por Uso (Whop)
           </h1>
           <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-driftwood, #84847e)' }}>
-            Modifique en caliente las tarifas base de los planes activos, minutos incluidos y defina los
-            tramos de descuento por volumen (10% a 50%) sincronizados con el checkout de la plataforma.
+            Cree, edite o elimine paquetes cerrados de minutos fijos (sin excedentes) y configure la tarifa
+            base y tramos escalonados de descuento por volumen para Pago por Uso (PAYG).
           </p>
         </header>
 
@@ -97,8 +99,10 @@ export default function SuperAdminPricingMatrixPage(): ReactElement {
           plans={plans}
           isLoading={isLoading}
           onSavePlan={updateGlobalPricingPlan}
-          onSimulate={(minutes, baseRate, discount) =>
-            simulateFinancialImpact(minutes, baseRate, discount)
+          onCreatePlan={createGlobalPricingPlan}
+          onDeletePlan={deleteGlobalPricingPlan}
+          onSimulate={(minutes, baseRate, discount, customRate, monthlyFixed, incMins) =>
+            simulateFinancialImpact(minutes, baseRate, discount, customRate, monthlyFixed, incMins)
           }
         />
       </div>

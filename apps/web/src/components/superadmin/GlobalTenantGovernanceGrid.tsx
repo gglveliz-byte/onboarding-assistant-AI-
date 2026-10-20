@@ -32,6 +32,7 @@ export interface GlobalTenantGovernanceGridProps {
   readonly onOpenSuspendModal: (org: TenantGovernanceRecord) => void;
   readonly onOpenReactivateModal: (org: TenantGovernanceRecord) => void;
   readonly onForceLogout: (org: TenantGovernanceRecord) => void;
+  readonly onOpenDeleteModal: (org: TenantGovernanceRecord) => void;
   readonly onRefresh: () => void;
 }
 
@@ -39,6 +40,7 @@ const STATUS_BADGES: Record<string, { label: string; bg: string; color: string }
   ACTIVE: { label: 'ACTIVO', bg: 'rgba(52, 120, 92, 0.1)', color: 'var(--color-forest, #34785c)' },
   SUSPENDED: { label: 'SUSPENDIDO', bg: 'rgba(207, 45, 86, 0.1)', color: 'var(--color-crimson, #cf2d56)' },
   PENDING_DELETION: { label: 'ELIMINACIÓN', bg: 'rgba(192, 133, 50, 0.1)', color: 'var(--color-amber, #c08532)' },
+  DELETED: { label: 'ELIMINADO', bg: 'rgba(132, 132, 126, 0.15)', color: 'var(--color-driftwood, #84847e)' },
 };
 
 /**
@@ -50,6 +52,7 @@ export function GlobalTenantGovernanceGrid({
   onOpenSuspendModal,
   onOpenReactivateModal,
   onForceLogout,
+  onOpenDeleteModal,
   onRefresh,
 }: GlobalTenantGovernanceGridProps): ReactElement {
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -127,6 +130,7 @@ export function GlobalTenantGovernanceGrid({
             <option value="ALL">Todos los Estados</option>
             <option value="ACTIVE">Activas</option>
             <option value="SUSPENDED">Suspendidas</option>
+            <option value="DELETED">Eliminadas</option>
             <option value="PENDING_DELETION">Pendientes de Eliminación</option>
           </select>
 
@@ -264,56 +268,82 @@ export function GlobalTenantGovernanceGrid({
 
                     {/* Acciones */}
                     <td style={{ padding: '10px 12px', textAlign: 'right' }}>
-                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                        {org.status === 'ACTIVE' ? (
-                          <button
-                            type="button"
-                            onClick={() => onOpenSuspendModal(org)}
-                            style={{
-                              backgroundColor: 'transparent',
-                              border: '1px solid var(--color-crimson, #cf2d56)',
-                              borderRadius: '4px',
-                              padding: '4px 8px',
-                              fontSize: '11px',
-                              color: 'var(--color-crimson, #cf2d56)',
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Suspender
-                          </button>
+                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', alignItems: 'center' }}>
+                        {org.status === 'DELETED' ? (
+                          <span style={{ fontSize: '11px', color: 'var(--color-driftwood, #84847e)', fontStyle: 'italic' }}>
+                            Purgada
+                          </span>
                         ) : (
-                          <button
-                            type="button"
-                            onClick={() => onOpenReactivateModal(org)}
-                            style={{
-                              backgroundColor: 'transparent',
-                              border: '1px solid var(--color-forest, #34785c)',
-                              borderRadius: '4px',
-                              padding: '4px 8px',
-                              fontSize: '11px',
-                              color: 'var(--color-forest, #34785c)',
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Reactivar
-                          </button>
-                        )}
+                          <>
+                            {org.status === 'ACTIVE' ? (
+                              <button
+                                type="button"
+                                onClick={() => onOpenSuspendModal(org)}
+                                style={{
+                                  backgroundColor: 'transparent',
+                                  border: '1px solid var(--color-crimson, #cf2d56)',
+                                  borderRadius: '4px',
+                                  padding: '4px 8px',
+                                  fontSize: '11px',
+                                  color: 'var(--color-crimson, #cf2d56)',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Suspender
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => onOpenReactivateModal(org)}
+                                style={{
+                                  backgroundColor: 'transparent',
+                                  border: '1px solid var(--color-forest, #34785c)',
+                                  borderRadius: '4px',
+                                  padding: '4px 8px',
+                                  fontSize: '11px',
+                                  color: 'var(--color-forest, #34785c)',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Reactivar
+                              </button>
+                            )}
 
-                        <button
-                          type="button"
-                          onClick={() => onForceLogout(org)}
-                          style={{
-                            backgroundColor: 'transparent',
-                            border: '1px solid var(--color-stone, #cdcdc9)',
-                            borderRadius: '4px',
-                            padding: '4px 8px',
-                            fontSize: '11px',
-                            color: 'var(--color-ink, #26251e)',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Force Logout
-                        </button>
+                            <button
+                              type="button"
+                              onClick={() => onForceLogout(org)}
+                              style={{
+                                backgroundColor: 'transparent',
+                                border: '1px solid var(--color-stone, #cdcdc9)',
+                                borderRadius: '4px',
+                                padding: '4px 8px',
+                                fontSize: '11px',
+                                color: 'var(--color-ink, #26251e)',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Force Logout
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => onOpenDeleteModal(org)}
+                              title={`Eliminar definitivamente a ${org.name}`}
+                              style={{
+                                backgroundColor: 'transparent',
+                                border: '1px solid var(--color-crimson, #cf2d56)',
+                                borderRadius: '4px',
+                                padding: '4px 8px',
+                                fontSize: '11px',
+                                fontWeight: 500,
+                                color: 'var(--color-crimson, #cf2d56)',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Eliminar
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
