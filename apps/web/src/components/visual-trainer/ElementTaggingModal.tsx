@@ -37,7 +37,7 @@ export interface ElementTaggingModalProps {
 
 export function ElementTaggingModal({
   inspectedElement,
-  urlRoutePattern = '/dashboard',
+  urlRoutePattern = '/',
   onSave,
   onClose,
   onTestHighlight,

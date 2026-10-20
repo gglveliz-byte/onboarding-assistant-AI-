@@ -231,7 +231,7 @@ export function InteractiveDomOverlayCanvas({
                       <span>Ingresa la URL</span>
                     </div>
                     <p className="text-[11px] font-sans text-[#7a7974]">
-                      Escribe la dirección de tu web arriba (ej: <code className="font-mono text-[#26251e]">https://neurochat.com.ec/</code>) y pulsa <strong>Ir</strong>.
+                      Escribe la dirección de tu web arriba (ej: <code className="font-mono text-[#26251e]">https://tu-aplicacion.com</code>) y pulsa <strong>Ir</strong>.
                     </p>
                   </div>
 

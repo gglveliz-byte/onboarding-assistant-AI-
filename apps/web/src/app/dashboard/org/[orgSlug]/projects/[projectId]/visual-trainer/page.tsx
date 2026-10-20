@@ -255,6 +255,18 @@ export default function VisualTrainerPage() {
         {activeModalElement && (
           <ElementTaggingModal
             inspectedElement={activeModalElement}
+            urlRoutePattern={(() => {
+              try {
+                const rawUrl = state.validatedUrl || state.targetUrl;
+                if (rawUrl) {
+                  const parsed = new URL(rawUrl);
+                  return parsed.pathname || '/';
+                }
+              } catch {
+                // URL no parseable
+              }
+              return '/';
+            })()}
             onSave={(payload: TaggedElementPayload) => {
               void saveTaggedElement(payload)
                 .then(() => setActiveModalElement(null))

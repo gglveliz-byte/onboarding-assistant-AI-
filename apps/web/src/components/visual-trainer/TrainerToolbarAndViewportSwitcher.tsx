@@ -116,7 +116,7 @@ export function TrainerToolbarAndViewportSwitcher({
                 setInputUrl(e.target.value);
                 onUrlChange(e.target.value);
               }}
-              placeholder={currentHost ? `${currentHost} o ruta /auth/login` : 'https://app.tuempresa.com o /login'}
+              placeholder={currentHost ? `Navegar en ${currentHost}...` : 'Ingresa la URL (ej: https://mi-web.com)...'}
               className="flex-1 min-w-0 text-xs font-mono bg-transparent text-[#26251e] placeholder:text-[#a1a19f] focus:outline-none"
             />
             {sessionState.pinnedIp && (
@@ -148,41 +148,6 @@ export function TrainerToolbarAndViewportSwitcher({
             </svg>
           </button>
         </form>
-
-        {/* Atajos de Rutas Rápidas (Login, Registro, Inicio) sin romper el contenedor */}
-        {currentHost && (
-          <div className="hidden md:flex items-center gap-1 shrink-0">
-            <button
-              type="button"
-              onClick={() => onReload('/auth/login')}
-              className="px-2 py-0.5 text-[11px] font-sans font-medium bg-[#ffffff] hover:bg-[#e6e5e0] text-[#26251e] border border-[#cdcdc9] rounded transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
-              style={{ borderRadius: '3px' }}
-              title="Cargar página de inicio de sesión (/auth/login)"
-            >
-              <span>🔑</span>
-              <span>Login</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onReload('/auth/register')}
-              className="px-2 py-0.5 text-[11px] font-sans font-medium bg-[#ffffff] hover:bg-[#e6e5e0] text-[#26251e] border border-[#cdcdc9] rounded transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
-              style={{ borderRadius: '3px' }}
-              title="Cargar página de registro (/auth/register)"
-            >
-              <span>📝</span>
-              <span>Registro</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onReload('/')}
-              className="px-1.5 py-0.5 text-[11px] font-sans font-medium bg-[#ffffff] hover:bg-[#e6e5e0] text-[#7a7974] hover:text-[#26251e] border border-[#cdcdc9] rounded transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
-              style={{ borderRadius: '3px' }}
-              title="Regresar al inicio (/)"
-            >
-              <span>🏠</span>
-            </button>
-          </div>
-        )}
 
         {/* Conmutador de Modo: Navegación vs Captura */}
         <div
