@@ -248,7 +248,7 @@ return nextVal
 /**
  * Allowlist de voces REALES por motor. Los nombres coinciden EXACTAMENTE con `DEMO_VOICE_CATALOG`
  * del frontend: GEMINI usa las nominales de la **Live API**; QWEN, las de **Omni-Realtime** (default
- * Tina). No se aceptan IDs de Cloud TTS (`es-XX-Polyglot-N`) ni de Qwen-TTS (`qwen-voice-*`): no
+ * Tina). El defecto QWEN lo decide el producto: «Sonrisa», la persona latina del catalogo oficial. No se aceptan IDs de Cloud TTS (`es-XX-Polyglot-N`) ni de Qwen-TTS (`qwen-voice-*`): no
  * existen en los protocolos Live/Omni-Realtime que usamos y el proveedor los rechazaria.
  */
 const DEMO_VOICE_ALLOWLIST: Readonly<Record<'QWEN' | 'GEMINI', readonly string[]>> = {
@@ -256,8 +256,8 @@ const DEMO_VOICE_ALLOWLIST: Readonly<Record<'QWEN' | 'GEMINI', readonly string[]
   GEMINI: ['Kore', 'Aoede', 'Leda', 'Despina', 'Sulafat', 'Callirrhoe', 'Zephyr', 'Puck', 'Charon', 'Orus', 'Algieba'],
 };
 
-/** Voz por defecto de cada motor cuando el visitante no elige una válida (defectos oficiales del proveedor). */
-const DEMO_VOICE_DEFAULTS: Readonly<Record<'QWEN' | 'GEMINI', string>> = { QWEN: 'Tina', GEMINI: 'Kore' };
+/** Voz por defecto de cada motor cuando el visitante no elige una valida (QWEN: decision de producto; GEMINI: defecto del proveedor). */
+const DEMO_VOICE_DEFAULTS: Readonly<Record<'QWEN' | 'GEMINI', string>> = { QWEN: 'Sonrisa', GEMINI: 'Kore' };
 
 /**
  * Resuelve la voz real de la demostración: acepta únicamente nombres de la allowlist del motor

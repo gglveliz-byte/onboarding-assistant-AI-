@@ -236,12 +236,13 @@ export interface DemoVoiceOption {
  * Catalogo de voces REALES por motor que la demo publica puede usar. El `voiceName` se envia tal
  * cual al proveedor segun el protocolo que efectivamente usamos:
  *   - GEMINI → Gemini **Live API** (`prebuiltVoiceConfig.voiceName`, 30 voces nominales multilingues).
- *   - QWEN   → Qwen **Omni-Realtime** (`session.update.voice`, voz nominal multilingue; default Tina).
+ *   - QWEN   → Qwen **Omni-Realtime** (`session.update.voice`, voz nominal multilingue; defecto Sonrisa).
  * NO son IDs de Cloud Text-to-Speech (`es-XX-Polyglot-N`) ni de Qwen-TTS (`qwen-voice-*`): esos
  * productos tienen otra API y serian rechazados por los endpoints Live/Omni-Realtime que usamos.
  */
 export const DEMO_VOICE_CATALOG: Readonly<Record<VoiceModelId, readonly DemoVoiceOption[]>> = {
   QWEN: [
+    { voiceName: 'Sonrisa', label: 'Sonrisa · latina' },
     { voiceName: 'Tina', label: 'Tina · clara y asistencial' },
     { voiceName: 'Serena', label: 'Serena · suave' },
     { voiceName: 'Cici', label: 'Cici · dulce' },
@@ -249,7 +250,6 @@ export const DEMO_VOICE_CATALOG: Readonly<Record<VoiceModelId, readonly DemoVoic
     { voiceName: 'Ryan', label: 'Ryan · enérgico' },
     { voiceName: 'Evan', label: 'Evan · juvenil' },
     { voiceName: 'Jennifer', label: 'Jennifer · cinematográfica' },
-    { voiceName: 'Sonrisa', label: 'Sonrisa · latina' },
     { voiceName: 'Bodega', label: 'Bodega · español cálido' },
     { voiceName: 'Andre', label: 'Andre · estable' },
   ],
