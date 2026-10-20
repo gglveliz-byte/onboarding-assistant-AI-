@@ -51,6 +51,7 @@ import { DI_TOKENS } from '../shared/container/di-container';
 import type { IVisualRagAndPromptPort } from '../shared/ports/core-modules.ports';
 import {
   createPublicDemoVoiceIntegration,
+  PUBLIC_DEMO_GREETING_PROMPT,
   PUBLIC_DEMO_TIMEUP_MESSAGE,
   type PublicDemoVoiceIntegration,
 } from './public-demo-voice-support';
@@ -319,6 +320,9 @@ async function handleIncomingVoiceConnection(
         // El selector de la landing (VOZ ULTRA-RAPIDA/ULTRA-PRECISA) solo existe en la demo publica:
         // se propaga al orquestador para que respete el motor elegido en lugar del primario del entorno.
         ...(demoOpening === null ? {} : { preferredVoiceModel: demoOpening.voiceModel }),
+        // La demo publica saluda sola apenas el motor confirma el canal: sin este turno inicial el
+        // asistente nace mudo y solo reacciona si el visitante habla primero (defecto de la demo).
+        ...(demoOpening === null ? {} : { introductorySpokenPrompt: PUBLIC_DEMO_GREETING_PROMPT }),
       },
       (frame: Buffer) => {
         if (socket.readyState === socket.OPEN) {
@@ -366,7 +370,7 @@ async function handleIncomingVoiceConnection(
       void session.handleIncomingBytes(Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer));
     });
 
-    socket.on('close', () => {
+    socket.on('close', (cierreCode: number, cierreMotivo: Buffer | string) => {
       clearTimeout(handshakeTimer);
       if (voiceGatewayControl) {
         voiceGatewayControl.unregisterLiveSession(voiceSessionId);
@@ -376,7 +380,14 @@ async function handleIncomingVoiceConnection(
         if (session.isSessionOpen()) {
           await session.close('COMPLETED_NORMAL', 'El navegador cerro el canal.');
         }
-        log('Sesion de voz cerrada.', { voiceSessionId, bargeInCount: session.getBargeInCount() });
+        // El codigo y el motivo del cierre son la traza que distingue un cierre normal de un
+        // fallo del motor o del navegador: sin ellos un corte silencioso es indistinguible.
+        log('Sesion de voz cerrada.', {
+          voiceSessionId,
+          bargeInCount: session.getBargeInCount(),
+          closeCode: cierreCode,
+          closeReason: cierreMotivo.toString().slice(0, 120),
+        });
       })();
     });
 

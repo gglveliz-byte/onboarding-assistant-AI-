@@ -7,8 +7,10 @@
  *   las tres herramientas fisicas, transmite el audio del usuario final a traves del buffer circular
  *   volatil, actualiza el contexto de ruta en caliente cuando el usuario navega, y ejecuta la
  *   interrupcion inmediata enviando la cancelacion de respuesta seguida del vaciado del buffer de
- *   salida. La cancelacion mide su propia latencia y la reporta: el presupuesto de interrupcion es
- *   una promesa de producto, no una intencion.
+ *   salida. A demanda de la sesion (demo publica) enuncia ademas un turno inicial de saludo
+ *   (`buildInitialSpokenTurnMessages`) sin esperar audio previo del usuario. La cancelacion mide
+ *   su propia latencia y la reporta: el presupuesto de interrupcion es una promesa de producto,
+ *   no una intencion.
  *
  * @resumen_contenido
  *   - Interface `Qwen38OmniAdapterOptions` y `BargeInLatencyReport`.
@@ -362,6 +364,16 @@ export class Qwen38OmniAdapter implements IVoiceRealtimeProvider {
           request.pcmSampleRateHz
         )
       );
+
+      // Turno inicial hablado (saludo de la demo): el motor lo procesa justo despues del
+      // `session.update` porque el protocolo respeta el orden de llegada; el usuario aun no
+      // ha hablado y el asistente igual expone su primera frase audible.
+      const introductoryPrompt = request.introductorySpokenPrompt;
+      if (introductoryPrompt !== undefined && introductoryPrompt.length > 0) {
+        for (const spokenFrame of QwenProtocolMapper.buildInitialSpokenTurnMessages(introductoryPrompt)) {
+          ws.send(spokenFrame);
+        }
+      }
 
       const streamId = `qwen_stream_${request.voiceSessionId}_${Date.now()}`;
       return {

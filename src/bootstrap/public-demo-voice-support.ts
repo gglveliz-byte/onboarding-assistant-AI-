@@ -14,7 +14,7 @@
  *   SDK normal no cambia en absoluto: conserva sus puertos reales.
  *
  * @resumen_contenido
- *   - Constantes `PUBLIC_DEMO_*`: identidad sintetica y aviso de tiempo agotado.
+ *   - Constantes `PUBLIC_DEMO_*`: identidad sintetica, aviso de tiempo agotado y saludo inicial hablado.
  *   - Interfaces `PublicDemoOpening` y `PublicDemoVoiceIntegration`.
  *   - Funcion `createPublicDemoVoiceIntegration()`: puertos demo y puerta de validacion.
  *   - Funciones `resolvePublicDemoOpening()`, `createPublicDemoHandshakePort()` y
@@ -86,6 +86,18 @@ export const PUBLIC_DEMO_ORGANIZATION_ID = 'public-demo';
 /** Aviso de cierre que el navegador recibe cuando la demostracion agota su duracion maxima. */
 export const PUBLIC_DEMO_TIMEUP_MESSAGE =
   'La demostración pública llegó a su duración máxima. Crea tu cuenta para seguir conversando sin límite.';
+
+/**
+ * Turno inicial hablado de la demostracion publica.
+ * El gateway lo pide a enunciar al motor (Qwen `conversation.item.create` + `response.create`;
+ * Gemini `clientContent` de texto) apenas el canal queda listo, de modo que la demo SALUDA sola:
+ * antes de este turno el asistente nacia mudo y solo reaccionaba si el visitante hablaba primero,
+ * lo que en la demo publica con Qwen se leia como «no hace nada».
+ */
+export const PUBLIC_DEMO_GREETING_PROMPT =
+  'Da la bienvenida en voz alta al visitante con una única frase breve y natural, en español neutro. ' +
+  'Preséntate como su asistente del CRM de ejemplo e invítalo a decirte en voz alta qué quiere que hagas ' +
+  '(por ejemplo: «abre el formulario de trato»). Por ahora no uses ninguna herramienta ni menciones pasos.';
 
 /** Duracion por omision de la demostracion cuando el descriptor no la declara. */
 const DEMO_DEFAULT_MAX_SECONDS = 90;

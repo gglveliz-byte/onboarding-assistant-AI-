@@ -13,7 +13,8 @@
  * @resumen_contenido
  *   - Clase `QwenProtocolMapper`:
  *       * Construccion: `buildSessionUpdateMessage()`, `buildAudioAppendMessage()`,
- *         `buildDynamicRouteContextMessage()`, `buildBargeInMessages()` y `buildToolResultMessage()`.
+ *         `buildInitialSpokenTurnMessages()`, `buildDynamicRouteContextMessage()`,
+ *         `buildBargeInMessages()` y `buildToolResultMessage()`.
  *       * Deserializacion: `parseServerMessage()` y `dispatchToHandlers()`.
  *       * Normalizacion: `normalizeTemperature()` y `truncateInstructions()`.
  *       * Auxiliares privados: decodificacion de audio y armado de invocaciones de herramienta.
@@ -43,6 +44,7 @@ import {
   type QwenAudioAppendPayload,
   type QwenConversationItemPayload,
   type QwenSessionUpdatePayload,
+  type QwenUserTextItemPayload,
 } from './qwen-protocol.types';
 
 /** Temperatura de muestreo aplicada cuando el proyecto no declara una valida. */
@@ -133,6 +135,28 @@ export class QwenProtocolMapper {
         ],
       },
     });
+  }
+
+  /**
+   * Construye el par de tramas que pide al motor enunciar un texto de introduccion sin esperar
+   * audio del usuario final. Se usa para el saludo de la demostracion: `conversation.item.create`
+   * con un mensaje de usuario en texto (el item entra al contexto igual que una frase del
+   * visitante) seguido de `response.create`, que dispara la respuesta con audio. Ambas tramas se
+   * envian seguidas al `session.update`: el motor las aplica en el orden de recepcion.
+   *
+   * @param spokenInstruction - Instrucion de texto que el motor debe enunciar en voz alta.
+   * @returns Par de tramas serializadas, en el orden exacto en que deben enviarse.
+   */
+  public static buildInitialSpokenTurnMessages(spokenInstruction: string): readonly string[] {
+    const turn: QwenUserTextItemPayload = {
+      type: 'conversation.item.create',
+      item: {
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'input_text', text: spokenInstruction }],
+      },
+    };
+    return [JSON.stringify(turn), JSON.stringify({ type: 'response.create' })];
   }
 
   /**

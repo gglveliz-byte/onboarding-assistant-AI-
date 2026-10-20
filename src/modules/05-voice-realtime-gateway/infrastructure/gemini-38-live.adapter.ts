@@ -254,6 +254,15 @@ export class Gemini38LiveAdapter implements IVoiceRealtimeProvider {
       );
       ws.send(setupMsg);
 
+      // Saludo inicial (turno de introduccion de la demo): la Live API ignora los turnos que
+      // llegan antes del aviso `setupComplete`, asi que se aguarda (con tope de seguridad)
+      // para que la primera frase audible salga SIEMPRE, aunque el usuario aun no hable.
+      const introductoryPrompt = request.introductorySpokenPrompt;
+      if (introductoryPrompt !== undefined && introductoryPrompt.length > 0) {
+        await Gemini38LiveAdapter.awaitSetupConfirmation(ws);
+        ws.send(GeminiProtocolMapper.buildClientTextTurnMessage(introductoryPrompt));
+      }
+
       const activeStream = new Gemini38LiveStream(
         streamId,
         this.providerRole,
@@ -275,6 +284,27 @@ export class Gemini38LiveAdapter implements IVoiceRealtimeProvider {
         retryable: true,
       };
     }
+  }
+
+  /**
+   * Espera la confirmacion `setupComplete` del servidor con un tope de seguridad.
+   * Al expirar el tope se devuelve el control igualmente (best-effort): un saludo emitido un
+   * instante tarde es preferible a una demostracion que se queda muda si el aviso nunca llega.
+   *
+   * @param ws - Socket recien configurado con la trama `setup`.
+   */
+  private static async awaitSetupConfirmation(ws: WebSocket, maxWaitMs = 1500): Promise<void> {
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, maxWaitMs);
+      const onSetupDone = (data: WebSocket.RawData): void => {
+        const text = typeof data === 'string' ? data : data.toString();
+        if (!text.includes('"setupComplete"')) return;
+        clearTimeout(timer);
+        ws.off('message', onSetupDone);
+        resolve();
+      };
+      ws.on('message', onSetupDone);
+    });
   }
 
   private buildFullWsUrl(): string {

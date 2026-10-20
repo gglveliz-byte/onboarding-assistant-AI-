@@ -11,8 +11,8 @@
  * @resumen_contenido
  *   - Constantes `QWEN_AUDIO_MIME_TYPE`, `QWEN_DEFAULT_VOICE` y `QWEN_MAX_SESSION_PROMPT_CHARS`.
  *   - Interface `QwenFunctionDeclaration` y constante `QWEN_TOOL_DECLARATIONS`.
- *   - Interfaces de trama `QwenSessionUpdatePayload`, `QwenAudioAppendPayload` y
- *     `QwenConversationItemPayload`.
+ *   - Interfaces de trama `QwenSessionUpdatePayload`, `QwenAudioAppendPayload`,
+ *     `QwenConversationItemPayload` y `QwenUserTextItemPayload`.
  *   - Interface `ParsedQwenServerMessage`: mensaje deserializado del servidor.
  *
  * @dependencias_internas
@@ -166,6 +166,20 @@ export interface QwenConversationItemPayload {
     readonly type: 'function_call_output';
     readonly call_id: string;
     readonly output: string;
+  };
+}
+
+/**
+ * Trama de elemento de conversacion de USUARIO EN TEXTO, usada para el turno inicial hablado.
+ * El item entra al contexto igual que una frase dictada por el visitante: seguido de
+ * `response.create` hace que el motor enuncie en voz alta la introduccion pedida.
+ */
+export interface QwenUserTextItemPayload {
+  readonly type: 'conversation.item.create';
+  readonly item: {
+    readonly type: 'message';
+    readonly role: 'user';
+    readonly content: readonly { readonly type: 'input_text'; readonly text: string }[];
   };
 }
 

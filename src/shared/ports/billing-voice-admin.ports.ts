@@ -176,6 +176,14 @@ export interface VoiceStreamOpenRequest {
   readonly pcmSampleRateHz: number;
   /** Identificador del usuario final externo, cuando el proyecto lo declara. */
   readonly externalEndUserId: string | null;
+  /**
+   * Turno inicial hablado, cuando la sesion lo pide (demo publica).
+   * Instrucion de texto que el motor enunciara apenas el canal quede listo, para que la
+   * demostracion salude sin esperar el primer audio del usuario final; si se omite, el motor
+   * permanece en escucha pasiva (comportamiento normal de producto). Ninguna de las dos formas
+   * invoca herramientas: el pedido explicito de no usarlas va incluido en la instruccion.
+   */
+  readonly introductorySpokenPrompt?: string;
 }
 
 /** Canal activo contra un motor de voz, con el contrato minimo de streaming. */

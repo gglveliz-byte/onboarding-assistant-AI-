@@ -5,6 +5,8 @@
  *   Serializa y deserializa las tramas JSON y binarias del protocolo WebSocket bidireccional
  *   `BidiGenerateContent` de Gemini 3.8 Live. Convierte frames PCM16 a Base64, extrae
  *   llamadas a herramientas Function Calling y calcula la latencia Time-To-First-Audio (TTFA).
+ *   A demanda de la sesion (demo publica) enuncia tambien un turno inicial de saludo
+ *   (`buildClientTextTurnMessage`) una vez confirmado el `setupComplete`.
  *
  * @resumen_contenido
  *   - Interfaces del protocolo BidiGenerateContent de Gemini.
@@ -147,6 +149,24 @@ export class GeminiProtocolMapper {
     };
 
     return JSON.stringify(payload);
+  }
+
+  /**
+   * Serializa un turno de texto del lado del cliente (`clientContent`) que pide al motor enunciar
+   * un texto sin esperar audio del usuario final. Se usa para el saludo inicial de la demostracion:
+   * la Live API exige que el `setup` haya sido confirmado (`setupComplete`) antes de recibir el
+   * turno, de modo que el adaptador aguarda ese aviso antes de enviar este mensaje.
+   *
+   * @param spokenInstruction - Instrucion de texto que el motor debe enunciar en voz alta.
+   * @returns Trama `clientContent` serializada con el turno completo y `turnComplete: true`.
+   */
+  public static buildClientTextTurnMessage(spokenInstruction: string): string {
+    return JSON.stringify({
+      clientContent: {
+        turns: [{ parts: [{ text: spokenInstruction }], role: 'user' as const }],
+        turnComplete: true,
+      },
+    });
   }
 
   /**
