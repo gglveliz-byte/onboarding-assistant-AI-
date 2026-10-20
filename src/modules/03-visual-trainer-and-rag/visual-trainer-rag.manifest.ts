@@ -222,12 +222,11 @@ export function registerVisualTrainerRagModule(
   router.register({
     method: 'GET',
     path: '/api/v1/projects/:projectId/trainer/proxy',
-    access: 'TENANT_SESSION',
+    access: 'PUBLIC',
     requiredScopes: [],
     ownerModule: '03-visual-trainer-and-rag',
     requiresRawBody: false,
     handler: wrapHandler(async (req: HttpRequestLike, ctx: AuthenticatedRequestContext): Promise<HttpHandlerResult> => {
-      assertPrincipal(ctx);
       const projectId = getRouteParam(req.path, 'projects');
       if (!projectId) throw new ValidationError('Parametro :projectId requerido');
 
