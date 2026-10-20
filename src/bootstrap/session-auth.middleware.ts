@@ -83,24 +83,31 @@ export async function evaluateRouteAccess(
     return { allowed: true, principal: null, organizationId: null };
   }
 
-  // 3. Rutas autenticadas (TENANT_SESSION o SUPERADMIN): exigen cabecera Authorization: Bearer <token>
+  // 3. Rutas autenticadas (TENANT_SESSION o SUPERADMIN):
+  // Extraer token desde cabecera Authorization: Bearer, parametro ?token= (iframes/media) o cookies
+  let token: string | null = null;
   const authorizationHeader = request.headers['authorization'];
-  if (typeof authorizationHeader !== 'string' || !authorizationHeader.startsWith('Bearer ')) {
+
+  if (typeof authorizationHeader === 'string' && authorizationHeader.startsWith('Bearer ')) {
+    token = authorizationHeader.slice(7).trim();
+  } else if (typeof request.query['token'] === 'string' && request.query['token'].trim().length > 0) {
+    token = request.query['token'].trim();
+  } else {
+    const cookieHeader = request.headers['cookie'];
+    if (typeof cookieHeader === 'string') {
+      const match = cookieHeader.match(/(?:^|;\s*)(?:oa_access_token|__Host-oa_at)=([^;]+)/);
+      if (match && match[1]) {
+        token = decodeURIComponent(match[1]);
+      }
+    }
+  }
+
+  if (!token || token.length === 0) {
     return {
       allowed: false,
       status: HTTP_STATUS.UNAUTHORIZED,
       code: 'UNAUTHORIZED',
       message: 'Esta operacion exige una sesion autenticada.',
-    };
-  }
-
-  const token = authorizationHeader.slice(7).trim();
-  if (token.length === 0) {
-    return {
-      allowed: false,
-      status: HTTP_STATUS.UNAUTHORIZED,
-      code: 'UNAUTHORIZED',
-      message: 'Token de autorizacion vacio.',
     };
   }
 

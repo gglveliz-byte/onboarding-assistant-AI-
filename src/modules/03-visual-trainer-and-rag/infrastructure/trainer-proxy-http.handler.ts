@@ -185,7 +185,9 @@ export async function handleTrainerProxyRequest(
     const rawContentType = upstreamResponse.headers.get('content-type') || 'text/html; charset=utf-8';
     const isHtml = rawContentType.toLowerCase().includes('text/html');
 
-    const proxyBase = `/api/v1/projects/${encodeURIComponent(projectId)}/trainer/proxy?url=`;
+    const rawToken = req.query['token'];
+    const tokenPart = typeof rawToken === 'string' && rawToken.length > 0 ? `token=${encodeURIComponent(rawToken)}&` : '';
+    const proxyBase = `/api/v1/projects/${encodeURIComponent(projectId)}/trainer/proxy?${tokenPart}url=`;
 
     if (isHtml) {
       const htmlText = await upstreamResponse.text();

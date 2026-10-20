@@ -26,7 +26,7 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { BackendHttpError, backendFetch } from '../../lib/api-client/http-client';
+import { BackendHttpError, backendFetch, getAccessToken } from '../../lib/api-client/http-client';
 
 export type TrainingSessionMode = 'ACTIVE_NAVIGATION_MODE' | 'ACTIVE_CAPTURE_OVERLAY_MODE';
 
@@ -202,8 +202,10 @@ export function useRemoteTrainerSession(
         return;
       }
 
-      // Construir la URL proxificada a través del gateway del backend
-      const proxiedUrl = `/api/v1/projects/${encodeURIComponent(cleanProjectId)}/trainer/proxy?url=${encodeURIComponent(formattedUrl)}`;
+      // Construir la URL proxificada a través del gateway del backend con token de sesión para el iframe
+      const token = getAccessToken();
+      const tokenParam = token ? `&token=${encodeURIComponent(token)}` : '';
+      const proxiedUrl = `/api/v1/projects/${encodeURIComponent(cleanProjectId)}/trainer/proxy?url=${encodeURIComponent(formattedUrl)}${tokenParam}`;
 
       setState((prev) => ({
         ...prev,
