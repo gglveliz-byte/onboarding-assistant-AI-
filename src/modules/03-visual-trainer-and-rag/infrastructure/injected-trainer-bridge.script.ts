@@ -40,6 +40,7 @@ export function buildInjectedTrainerBridgeScript(proxyEndpointBase: string, targ
   if (window.__OA_TRAINER_BRIDGE_INSTALLED__) { return; }
   window.__OA_TRAINER_BRIDGE_INSTALLED__ = true;
 
+  var DASHBOARD_PARENT = window.parent;
   var PROXY_BASE = ${safeProxyBase};
   var TARGET_ORIGIN = ${safeTargetOrigin};
   var currentMode = 'NAVIGATION';
@@ -48,10 +49,6 @@ export function buildInjectedTrainerBridgeScript(proxyEndpointBase: string, targ
   try {
     if (window.top !== window.self) {
       Object.defineProperty(window, 'top', {
-        get: function () { return window.self; },
-        configurable: false,
-      });
-      Object.defineProperty(window, 'parent', {
         get: function () { return window.self; },
         configurable: false,
       });
@@ -240,15 +237,33 @@ export function buildInjectedTrainerBridgeScript(proxyEndpointBase: string, targ
     badgeTag.innerHTML = '<span>🎯</span><span>' + primary + '</span><span style="color:#52be7f;margin-left:4px">Clic para etiquetar</span>';
   }, { passive: true });
 
-  // 6. Captura de Elementos al hacer Clic en Modo Captura
+  // 6. Captura de Elementos al hacer Clic en Modo Captura e Intercepción de Enlaces en Modo Navegación
   document.addEventListener('click', function (e) {
     if (currentMode !== 'CAPTURE') {
-      // En modo navegación: interceptar enlaces para que naveguen a través del proxy
       var anchor = e.target && e.target.closest ? e.target.closest('a') : null;
-      if (anchor && anchor.href && !anchor.href.startsWith('javascript:') && !anchor.href.startsWith('#')) {
-        e.preventDefault();
-        e.stopPropagation();
-        var targetDestination = anchor.href;
+      if (!anchor) { return; }
+
+      var rawHref = anchor.getAttribute('href') || '';
+      if (!rawHref || rawHref === '#' || rawHref.indexOf('#') === 0 || rawHref.indexOf('javascript:') === 0 || rawHref.indexOf('mailto:') === 0 || rawHref.indexOf('tel:') === 0) {
+        return;
+      }
+
+      // Neutralizar target="_blank" o target="_top" para que no escape del visor
+      if (anchor.target && anchor.target !== '_self') {
+        anchor.target = '_self';
+      }
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      var targetDestination = '';
+      try {
+        targetDestination = new URL(rawHref, TARGET_ORIGIN || window.location.href).href;
+      } catch (uErr) {
+        targetDestination = anchor.href;
+      }
+
+      if (targetDestination) {
         var proxiedUrl = PROXY_BASE + encodeURIComponent(targetDestination);
         window.location.href = proxiedUrl;
       }
@@ -293,10 +308,12 @@ export function buildInjectedTrainerBridgeScript(proxyEndpointBase: string, targ
 
     // Notificar al Dashboard
     try {
-      window.parent.postMessage({
-        type: 'OA_ELEMENT_SELECTED',
-        payload: payload,
-      }, '*');
+      if (DASHBOARD_PARENT && DASHBOARD_PARENT !== window) {
+        DASHBOARD_PARENT.postMessage({
+          type: 'OA_ELEMENT_SELECTED',
+          payload: payload,
+        }, '*');
+      }
     } catch (postErr) {
       // Ignorar fallo de envío
     }
@@ -313,16 +330,18 @@ export function buildInjectedTrainerBridgeScript(proxyEndpointBase: string, targ
       if (match && match[1]) {
         try { rawTarget = decodeURIComponent(match[1]); } catch (pErr) {}
       } else if (TARGET_ORIGIN) {
-        var cleanOrigin = TARGET_ORIGIN.replace(/\/+$/, '');
+        var cleanOrigin = TARGET_ORIGIN.endsWith('/') ? TARGET_ORIGIN.slice(0, -1) : TARGET_ORIGIN;
         var path = window.location.pathname || '/';
         rawTarget = cleanOrigin + path + window.location.search + window.location.hash;
       }
 
-      window.parent.postMessage({
-        type: 'OA_ROUTE_CHANGED',
-        url: rawTarget,
-        pathname: window.location.pathname,
-      }, '*');
+      if (DASHBOARD_PARENT && DASHBOARD_PARENT !== window) {
+        DASHBOARD_PARENT.postMessage({
+          type: 'OA_ROUTE_CHANGED',
+          url: rawTarget,
+          pathname: window.location.pathname,
+        }, '*');
+      }
     } catch (rErr) {}
   }
 

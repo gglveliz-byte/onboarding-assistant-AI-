@@ -52,6 +52,7 @@ const PROXY_FETCH_HEADERS: Record<string, string> = {
 
 /**
  * Inyecta la etiqueta `<base>` y el script puente del entrenador antes de devolver el HTML al iframe.
+ * Neutraliza escapes de navegación y proxifica iframes embebidos.
  */
 function injectBridgeAndBase(html: string, targetOrigin: string, proxyBase: string): string {
   const baseTag = `<base href="${targetOrigin}/">`;
@@ -62,17 +63,33 @@ function injectBridgeAndBase(html: string, targetOrigin: string, proxyBase: stri
 
   let modified = html;
 
-  // Remover cualquier <base> previo del sitio para evitar desvíos
+  // 1. Neutralizar target="_top", target="_parent" y target="_blank" en todos los enlaces
+  modified = modified.replace(/target\s*=\s*["'](?:_top|_parent|_blank)["']/gi, 'target="_self"');
+
+  // 2. Proxificar iframes embebidos dentro de la página (ej: landing/index.html dentro de Next.js)
+  modified = modified.replace(/<iframe\b([^>]*\bsrc=["'])([^"']+)(["'][^>]*)>/gi, (match, prefix, srcVal, suffix) => {
+    if (srcVal.startsWith('data:') || srcVal.startsWith('about:') || srcVal.includes('/trainer/proxy')) {
+      return match;
+    }
+    try {
+      const fullIframeUrl = new URL(srcVal, targetOrigin).href;
+      return `<iframe${prefix}${proxyBase}${encodeURIComponent(fullIframeUrl)}${suffix}>`;
+    } catch {
+      return match;
+    }
+  });
+
+  // 3. Remover cualquier <base> previo del sitio para evitar desvíos
   modified = modified.replace(/<base[^>]*>/gi, '');
 
-  // 1. Inyectar <base> al inicio de <head>
+  // 4. Inyectar <base> al inicio de <head>
   if (/<head[^>]*>/i.test(modified)) {
     modified = modified.replace(/(<head[^>]*>)/i, `$1\n  ${baseTag}`);
   } else {
     modified = `${baseTag}\n${modified}`;
   }
 
-  // 2. Inyectar el script puente antes del cierre de </body> o </html>
+  // 5. Inyectar el script puente antes del cierre de </body> o </html>
   if (/<\/body>/i.test(modified)) {
     modified = modified.replace(/<\/body>/i, `  ${bridgeScript}\n</body>`);
   } else if (/<\/html>/i.test(modified)) {
@@ -127,7 +144,31 @@ export async function handleTrainerProxyRequest(
   projectId: string,
   ssrfGuard: PinnedDnsSsrfGuard
 ): Promise<HttpHandlerResult> {
-  const targetUrl = (req.query['url'] ?? '').trim();
+  let targetUrl = (req.query['url'] ?? '').trim();
+
+  // Si no se proporcionó ?url= en la query, intentar recuperarla desde el encabezado Referer
+  if (!targetUrl) {
+    const rawReferer = req.headers['referer'] || req.headers['Referer'] || '';
+    const refererStr = Array.isArray(rawReferer) ? rawReferer[0] : rawReferer;
+    if (typeof refererStr === 'string' && refererStr.includes('/trainer/proxy')) {
+      try {
+        const refObj = new URL(refererStr);
+        const recoveredUrl = refObj.searchParams.get('url');
+        if (recoveredUrl) {
+          const destObj = new URL(recoveredUrl);
+          // Incorporar query params adicionales enviados a este endpoint
+          for (const [key, val] of Object.entries(req.query)) {
+            if (key !== 'url' && key !== 'token' && typeof val === 'string') {
+              destObj.searchParams.set(key, val);
+            }
+          }
+          targetUrl = destObj.href;
+        }
+      } catch {
+        // Fallback silencioso
+      }
+    }
+  }
 
   if (!targetUrl) {
     return {

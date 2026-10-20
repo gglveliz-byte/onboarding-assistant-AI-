@@ -146,14 +146,18 @@ export function useRemoteTrainerSession(
         options?.onElementSelected?.(payload);
       }
 
-      if (event.data.type === 'OA_ROUTE_CHANGED' && typeof event.data.url === 'string') {
-        const navigatedUrl = event.data.url;
+      if (event.data.type === 'OA_ROUTE_CHANGED' && typeof event.data.url === 'string' && event.data.url.trim().length > 0) {
+        const navigatedUrl = event.data.url.trim();
         setState((prev) => {
           if (prev.targetUrl === navigatedUrl) return prev;
+          const token = getAccessToken();
+          const tokenParam = token ? `&token=${encodeURIComponent(token)}` : '';
+          const proxiedUrl = `/api/v1/projects/${encodeURIComponent(cleanProjectId)}/trainer/proxy?url=${encodeURIComponent(navigatedUrl)}${tokenParam}`;
           return {
             ...prev,
             targetUrl: navigatedUrl,
             validatedUrl: navigatedUrl,
+            proxiedUrl: proxiedUrl,
           };
         });
       }
