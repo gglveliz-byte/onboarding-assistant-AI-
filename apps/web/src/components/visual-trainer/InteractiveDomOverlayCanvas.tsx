@@ -30,55 +30,19 @@ import { ViewportPreset, VIEWPORT_CONFIGS } from './TrainerToolbarAndViewportSwi
 export interface InteractiveDomOverlayCanvasProps {
   readonly sessionState: TrainingSessionState;
   readonly viewport: ViewportPreset;
-  readonly inspectedElement: InspectedElementMetadata | null;
-  readonly onPointerMove: (clientX: number, clientY: number, containerRect: DOMRect) => void;
-  readonly onSelectElement: (element: InspectedElementMetadata) => void;
+  readonly inspectedElement?: InspectedElementMetadata | null;
+  readonly onPointerMove?: (clientX: number, clientY: number, containerRect: DOMRect) => void;
+  readonly onSelectElement?: (element: InspectedElementMetadata) => void;
 }
 
 export function InteractiveDomOverlayCanvas({
   sessionState,
   viewport,
-  inspectedElement,
-  onPointerMove,
-  onSelectElement,
 }: InteractiveDomOverlayCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewportConfig = VIEWPORT_CONFIGS[viewport];
   const isCaptureMode = sessionState.currentMode === 'ACTIVE_CAPTURE_OVERLAY_MODE';
   const activeUrl = sessionState.validatedUrl || sessionState.targetUrl;
-
-  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!containerRef.current || !isCaptureMode) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    onPointerMove(e.clientX, e.clientY, rect);
-  };
-
-  const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isCaptureMode) return;
-    e.stopPropagation();
-    if (!containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    const clickX = Math.round(e.clientX - rect.left);
-    const clickY = Math.round(e.clientY - rect.top);
-
-    const selected: InspectedElementMetadata = inspectedElement ?? {
-      tagName: 'button',
-      primarySelector: `button, a, [data-action], input`,
-      structuralCssSelector: `main > div:hover`,
-      xpathFallback: `//button | //a`,
-      selectorStabilityScore: 98,
-      boundingBox: {
-        x: Math.max(10, clickX - 60),
-        y: Math.max(10, clickY - 20),
-        width: 120,
-        height: 40,
-      },
-      isSensitive: false,
-      textSnippet: 'Elemento de Interfaz',
-    };
-
-    onSelectElement(selected);
-  };
 
   // Alerta Crítica Anti-SSRF
   if (sessionState.ssrfBlockedMessage) {
@@ -115,7 +79,6 @@ export function InteractiveDomOverlayCanvas({
       {/* Marco de Ventana de Navegador Real fluido que se adapta al 100% de la pantalla */}
       <div
         ref={containerRef}
-        onPointerMove={handlePointerMove}
         className={`relative bg-[#ffffff] overflow-hidden transition-all duration-200 flex flex-col w-full h-full ${
           viewport === 'DESKTOP' ? 'border-0 shadow-none' : 'border border-[#cdcdc9] shadow-2xl'
         }`}
@@ -149,61 +112,26 @@ export function InteractiveDomOverlayCanvas({
         <div className="relative flex-1 w-full h-full bg-[#fcfcfa] overflow-hidden">
           {activeUrl ? (
             <>
-              {/* Iframe Real de la Aplicación del Usuario con navegación e interacción libre y blindaje anti-escape */}
+              {/* Iframe Real de la Aplicación con navegación e interacción libre a través del proxy inverso */}
               <iframe
-                src={activeUrl}
+                src={sessionState.proxiedUrl || activeUrl}
                 title="Aplicación Web en Entrenamiento"
                 className="w-full h-full border-0 bg-white"
                 scrolling="yes"
                 style={{
-                  pointerEvents: isCaptureMode ? 'none' : 'auto',
+                  pointerEvents: 'auto',
                 }}
                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads"
                 allow="accelerometer; autoplay; clipboard-read; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
               />
 
-              {/* Capa de Inspección Vectorial sobre la Web Real */}
+              {/* Banner Flotante de Instrucción en Modo Captura (sin bloquear la interacción directa con el DOM) */}
               {isCaptureMode && (
-                <div
-                  onClick={handleOverlayClick}
-                  className="absolute inset-0 z-20 cursor-crosshair bg-black/5 hover:bg-black/10 transition-colors flex flex-col justify-between p-4"
-                  title="Haz clic sobre cualquier elemento de tu web para etiquetarlo"
-                >
-                  {/* Banner Flotante de Instrucción */}
-                  <div className="self-center px-4 py-1.5 bg-[#26251e] text-[#f7f7f4] text-xs font-sans rounded-full shadow-xl flex items-center gap-2 border border-[#f54e00]/40">
+                <div className="absolute inset-x-0 top-3 z-20 pointer-events-none flex justify-center px-4">
+                  <div className="px-4 py-1.5 bg-[#26251e] text-[#f7f7f4] text-xs font-sans rounded-full shadow-xl flex items-center gap-2 border border-[#f54e00]/40">
                     <span className="w-2.5 h-2.5 rounded-full bg-[#f54e00] animate-pulse" />
-                    <span className="font-medium">Modo Captura Activo:</span>
-                    <span>Haz clic sobre el botón, campo o enlace que deseas registrar</span>
-                  </div>
-
-                  {/* Superposición Vectorial si hay un elemento inspeccionado */}
-                  {inspectedElement && (
-                    <div
-                      className="absolute pointer-events-none transition-all duration-75"
-                      style={{
-                        left: `${inspectedElement.boundingBox.x}px`,
-                        top: `${inspectedElement.boundingBox.y}px`,
-                        width: `${inspectedElement.boundingBox.width}px`,
-                        height: `${inspectedElement.boundingBox.height}px`,
-                        border: '2px solid #f54e00',
-                        backgroundColor: 'rgba(245, 78, 0, 0.12)',
-                        boxShadow: '0 0 12px rgba(245, 78, 0, 0.35)',
-                      }}
-                    >
-                      <div
-                        className="absolute -top-7 left-0 px-2 py-0.5 text-[11px] font-mono text-[#f7f7f4] bg-[#26251e] rounded shadow-md whitespace-nowrap flex items-center gap-1.5"
-                        style={{ borderRadius: '3px' }}
-                      >
-                        <span className="text-[#f54e00]">🎯</span>
-                        <span>{inspectedElement.primarySelector}</span>
-                        <span className="text-[#84847e]">·</span>
-                        <span className="text-[#52be7f]">Clic para etiquetar</span>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="self-end text-[11px] font-mono text-[#26251e] bg-[#f7f7f4]/90 backdrop-blur-xs px-2.5 py-1 rounded border border-[#cdcdc9] shadow-xs">
-                    💡 Modo Captura activo · Haz clic en cualquier parte de tu web
+                    <span className="font-medium text-[#f54e00]">Modo Captura Activo:</span>
+                    <span>Pasa el cursor sobre la web y haz clic sobre cualquier elemento para etiquetarlo</span>
                   </div>
                 </div>
               )}

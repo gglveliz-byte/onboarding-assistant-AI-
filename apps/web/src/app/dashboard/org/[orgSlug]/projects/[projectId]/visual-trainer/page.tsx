@@ -25,7 +25,7 @@
 
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { DeveloperDashboardShell } from '@/components/dashboard-dev/DeveloperDashboardShell';
@@ -50,6 +50,13 @@ export default function VisualTrainerPage() {
   const rawProjectId = String(params?.['projectId'] ?? 'proj_default_live');
   const projectId = rawProjectId.replace(/\/+$/, '');
 
+  const [activeModalElement, setActiveModalElement] = useState<InspectedElementMetadata | null>(null);
+  const [isElementsDrawerOpen, setIsElementsDrawerOpen] = useState<boolean>(false);
+
+  const handleSelectElement = useCallback((element: InspectedElementMetadata) => {
+    setActiveModalElement(element);
+  }, []);
+
   const {
     state,
     inspectedElement,
@@ -62,7 +69,9 @@ export default function VisualTrainerPage() {
     removeTaggedElement,
     endSession,
     operationError,
-  } = useRemoteTrainerSession(projectId);
+  } = useRemoteTrainerSession(projectId, {
+    onElementSelected: handleSelectElement,
+  });
 
   const [currentViewport, setCurrentViewport] = useState<ViewportPreset>('DESKTOP');
   const [autoRecalculate, setAutoRecalculate] = useState<boolean>(true);
@@ -72,12 +81,7 @@ export default function VisualTrainerPage() {
   const userRole = session.role ?? 'DEVELOPER';
   const { projects } = useResolvedProjectId(projectId);
   const environment = projects.find((project) => project.id === projectId || project.slug === projectId)?.environment ?? 'LIVE';
-  const [activeModalElement, setActiveModalElement] = useState<InspectedElementMetadata | null>(null);
-  const [isElementsDrawerOpen, setIsElementsDrawerOpen] = useState<boolean>(false);
 
-  const handleSelectElement = (element: InspectedElementMetadata) => {
-    setActiveModalElement(element);
-  };
 
   const handleAddManualElement = () => {
     setActiveModalElement({

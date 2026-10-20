@@ -66,12 +66,17 @@ export interface TaggedElementPayload {
   readonly mobileBbox: BoundingBox;
 }
 
+export interface RemoteTrainerSessionOptions {
+  readonly onElementSelected?: (element: InspectedElementMetadata) => void;
+}
+
 export interface TrainingSessionState {
   readonly sessionId: string | null;
   readonly containerId: string | null;
   readonly currentMode: TrainingSessionMode;
   readonly targetUrl: string;
   readonly validatedUrl: string | null;
+  readonly proxiedUrl: string | null;
   readonly pinnedIp: string | null;
   readonly isConnected: boolean;
   readonly isConnecting: boolean;
@@ -82,7 +87,10 @@ export interface TrainingSessionState {
   readonly simulationMessage: string | null;
 }
 
-export function useRemoteTrainerSession(projectId: string) {
+export function useRemoteTrainerSession(
+  projectId: string,
+  options?: RemoteTrainerSessionOptions
+) {
   const cleanProjectId = (projectId || 'proj_default_live').replace(/\/+$/, '');
 
   const [state, setState] = useState<TrainingSessionState>({
@@ -91,6 +99,7 @@ export function useRemoteTrainerSession(projectId: string) {
     currentMode: 'ACTIVE_NAVIGATION_MODE',
     targetUrl: '',
     validatedUrl: null,
+    proxiedUrl: null,
     pinnedIp: null,
     isConnected: false,
     isConnecting: false,
@@ -126,9 +135,39 @@ export function useRemoteTrainerSession(projectId: string) {
   const stateRef = useRef(state);
   stateRef.current = state;
 
+  // Escuchar eventos emitidos por el script puente dentro del iframe proxificado
+  useEffect(() => {
+    function handleBridgeMessage(event: MessageEvent) {
+      if (!event || !event.data || typeof event.data !== 'object') return;
+
+      if (event.data.type === 'OA_ELEMENT_SELECTED' && event.data.payload) {
+        const payload = event.data.payload as InspectedElementMetadata;
+        setInspectedElement(payload);
+        options?.onElementSelected?.(payload);
+      }
+
+      if (event.data.type === 'OA_ROUTE_CHANGED' && typeof event.data.url === 'string') {
+        const navigatedUrl = event.data.url;
+        setState((prev) => {
+          if (prev.targetUrl === navigatedUrl) return prev;
+          return {
+            ...prev,
+            targetUrl: navigatedUrl,
+            validatedUrl: navigatedUrl,
+          };
+        });
+      }
+    }
+
+    window.addEventListener('message', handleBridgeMessage);
+    return () => {
+      window.removeEventListener('message', handleBridgeMessage);
+    };
+  }, [options]);
+
   /**
    * Inicia la sesión de entrenamiento remoto validando previamente la URL.
-   * Soporta URLs absolutas y rutas relativas (ej: /auth/login) ancladas al dominio actual.
+   * Soporta URLs absolutas y relativas canalizadas a través del proxy inverso con inyector DOM.
    */
   const startSession = useCallback(
     async (urlToTrain: string) => {
@@ -150,15 +189,7 @@ export function useRemoteTrainerSession(projectId: string) {
         }
       }
 
-      setState((prev) => ({
-        ...prev,
-        isConnecting: true,
-        ssrfBlockedMessage: null,
-        targetUrl: formattedUrl,
-        validatedUrl: formattedUrl,
-      }));
-
-      // Verificación preventiva estricta solo para metadatos de nube hostil
+      // Verificación preventiva estricta para metadatos de nube
       const lower = formattedUrl.toLowerCase();
       if (lower.includes('169.254.169.254') || lower.includes('metadata.google')) {
         setState((prev) => ({
@@ -171,45 +202,23 @@ export function useRemoteTrainerSession(projectId: string) {
         return;
       }
 
-      try {
-        const sessionData = await backendFetch<{
-          readonly trainingSessionId?: string;
-          readonly containerId?: string;
-          readonly validatedUrl?: string;
-          readonly pinnedIp?: string;
-        }>(`/api/v1/projects/${cleanProjectId}/training-sessions`, {
-          method: 'POST',
-          body: {
-            initialUrl: formattedUrl,
-            accessChannel: 'DASHBOARD_UI',
-          },
-        });
+      // Construir la URL proxificada a través del gateway del backend
+      const proxiedUrl = `/api/v1/projects/${encodeURIComponent(cleanProjectId)}/trainer/proxy?url=${encodeURIComponent(formattedUrl)}`;
 
-        setState((prev) => ({
-          ...prev,
-          sessionId: sessionData.trainingSessionId ?? `sess_${Date.now()}`,
-          containerId: sessionData.containerId ?? null,
-          validatedUrl: sessionData.validatedUrl ?? formattedUrl,
-          pinnedIp: sessionData.pinnedIp ?? null,
-          isConnected: true,
-          isConnecting: false,
-          simulationMode: false,
-          simulationMessage: null,
-        }));
-      } catch {
-        // En entorno local o sin Docker remoto: conectar directamente en modo asistido
-        setState((prev) => ({
-          ...prev,
-          sessionId: `sess_${Date.now()}`,
-          containerId: null,
-          validatedUrl: formattedUrl,
-          pinnedIp: null,
-          isConnected: true,
-          isConnecting: false,
-          simulationMode: false,
-          simulationMessage: null,
-        }));
-      }
+      setState((prev) => ({
+        ...prev,
+        sessionId: `sess_${Date.now()}`,
+        containerId: null,
+        targetUrl: formattedUrl,
+        validatedUrl: formattedUrl,
+        proxiedUrl: proxiedUrl,
+        pinnedIp: null,
+        isConnected: true,
+        isConnecting: false,
+        ssrfBlockedMessage: null,
+        simulationMode: false,
+        simulationMessage: null,
+      }));
     },
     [cleanProjectId]
   );
@@ -222,6 +231,18 @@ export function useRemoteTrainerSession(projectId: string) {
       setState((prev) => ({ ...prev, currentMode: mode }));
       if (mode === 'ACTIVE_NAVIGATION_MODE') {
         setInspectedElement(null);
+      }
+
+      // Notificar al script puente inyectado dentro del iframe
+      if (typeof window !== 'undefined') {
+        try {
+          const iframes = document.querySelectorAll('iframe');
+          iframes.forEach((ifr) => {
+            ifr.contentWindow?.postMessage({ type: 'OA_SET_MODE', mode }, '*');
+          });
+        } catch {
+          // Iframe no accesible
+        }
       }
 
       if (state.sessionId) {
@@ -377,6 +398,7 @@ export function useRemoteTrainerSession(projectId: string) {
       isConnecting: false,
       targetUrl: '',
       validatedUrl: null,
+      proxiedUrl: null,
       simulationMode: false,
       simulationMessage: null,
     }));

@@ -48,6 +48,8 @@ import {
   UpdateAssistantPromptUseCase,
 } from './application/prompt-studio-and-slimming.use-case';
 import { VisualRagAndPromptPortAdapter } from './infrastructure/visual-rag-prompt-port.adapter';
+import { createPinnedDnsSsrfGuardFromEnv } from './infrastructure/pinned-dns-ssrf.guard';
+import { handleTrainerProxyRequest } from './infrastructure/trainer-proxy-http.handler';
 
 export { VisualRagAndPromptPortAdapter };
 
@@ -214,4 +216,23 @@ export function registerVisualTrainerRagModule(
       return { status: 200, body: result.value };
     }),
   });
+
+  // GET /api/v1/projects/:projectId/trainer/proxy
+  const ssrfGuard = createPinnedDnsSsrfGuardFromEnv();
+  router.register({
+    method: 'GET',
+    path: '/api/v1/projects/:projectId/trainer/proxy',
+    access: 'TENANT_SESSION',
+    requiredScopes: [],
+    ownerModule: '03-visual-trainer-and-rag',
+    requiresRawBody: false,
+    handler: wrapHandler(async (req: HttpRequestLike, ctx: AuthenticatedRequestContext): Promise<HttpHandlerResult> => {
+      assertPrincipal(ctx);
+      const projectId = getRouteParam(req.path, 'projects');
+      if (!projectId) throw new ValidationError('Parametro :projectId requerido');
+
+      return handleTrainerProxyRequest(req, ctx, projectId, ssrfGuard);
+    }),
+  });
 }
+

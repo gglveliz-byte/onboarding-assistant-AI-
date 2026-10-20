@@ -395,11 +395,24 @@ function respondJson(
   if (response.writableEnded) {
     return;
   }
-  const serialized = typeof body === 'string' ? body : JSON.stringify(body ?? {});
+  const isBuffer = Buffer.isBuffer(body);
+  const serialized: Buffer | string = isBuffer
+    ? (body as Buffer)
+    : typeof body === 'string'
+      ? body
+      : JSON.stringify(body ?? {});
+  const byteLength = isBuffer ? (serialized as Buffer).length : Buffer.byteLength(serialized as string);
+  const defaultContentType = typeof body === 'string'
+    ? 'text/plain; charset=utf-8'
+    : isBuffer
+      ? 'application/octet-stream'
+      : 'application/json; charset=utf-8';
+
   response.writeHead(status, {
-    'content-type': typeof body === 'string' ? 'text/plain; charset=utf-8' : 'application/json; charset=utf-8',
-    'content-length': Buffer.byteLength(serialized),
+    'content-type': defaultContentType,
+    'content-length': byteLength,
     ...(extraHeaders ?? {}),
   });
   response.end(serialized);
 }
+
