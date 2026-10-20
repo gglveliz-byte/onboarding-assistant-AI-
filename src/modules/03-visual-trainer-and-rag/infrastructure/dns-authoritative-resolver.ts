@@ -210,6 +210,26 @@ export class AuthoritativeDnsResolver {
       collected.push({ address: parsed, riskLabel: this.allowPrivateNetworks ? null : classifyBlockedAddress(parsed) });
     }
 
+    // Fallback resiliente: Si los resolutores externos UDP 53 no respondieron o fueron bloqueados por firewall/ISP,
+    // consultar el resolutor del sistema operativo preservando la clasificacion estricta de rangos prohibidos.
+    if (collected.length === 0) {
+      try {
+        const systemLookups = await dns.promises.lookup(hostname, { all: true });
+        for (const entry of systemLookups) {
+          const parsed = parseIpAddress(entry.address);
+          if (parsed === null) {
+            continue;
+          }
+          if (collected.some((existing) => existing.address.value === parsed.value && existing.address.version === parsed.version)) {
+            continue;
+          }
+          collected.push({ address: parsed, riskLabel: this.allowPrivateNetworks ? null : classifyBlockedAddress(parsed) });
+        }
+      } catch {
+        // Fallback silencioso si el host no existe en absoluto
+      }
+    }
+
     return Object.freeze(collected);
   }
 
