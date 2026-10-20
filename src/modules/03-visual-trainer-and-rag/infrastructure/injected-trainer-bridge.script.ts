@@ -31,9 +31,14 @@
  * @param targetOrigin - Origen real de la web inspeccionada (ej: `https://mi-web.com`).
  * @returns Cadena JavaScript lista para embeber dentro de `<script>...</script>`.
  */
-export function buildInjectedTrainerBridgeScript(proxyEndpointBase: string, targetOrigin: string = ''): string {
+export function buildInjectedTrainerBridgeScript(
+  proxyEndpointBase: string,
+  targetOrigin: string = '',
+  initialTargetUrl: string = ''
+): string {
   const safeProxyBase = JSON.stringify(proxyEndpointBase);
   const safeTargetOrigin = JSON.stringify(targetOrigin);
+  const safeInitialUrl = JSON.stringify(initialTargetUrl || targetOrigin);
 
   return `
 (function initOnboardingAssistantBridge() {
@@ -43,6 +48,8 @@ export function buildInjectedTrainerBridgeScript(proxyEndpointBase: string, targ
   var DASHBOARD_PARENT = window.parent;
   var PROXY_BASE = ${safeProxyBase};
   var TARGET_ORIGIN = ${safeTargetOrigin};
+  var INITIAL_TARGET_URL = ${safeInitialUrl};
+  var LAST_VALID_TARGET_URL = INITIAL_TARGET_URL;
   var currentMode = 'NAVIGATION';
 
   // 1. Blindaje Anti Frame-Busting: neutralizar intentos del sitio de secuestrar window.top
@@ -325,17 +332,34 @@ export function buildInjectedTrainerBridgeScript(proxyEndpointBase: string, targ
   function notifyRoute() {
     try {
       var currentHref = window.location.href;
-      var rawTarget = currentHref;
+      var rawTarget = '';
       var match = currentHref.match(/[?&]url=([^&]+)/);
       if (match && match[1]) {
         try { rawTarget = decodeURIComponent(match[1]); } catch (pErr) {}
-      } else if (TARGET_ORIGIN) {
-        var cleanOrigin = TARGET_ORIGIN.endsWith('/') ? TARGET_ORIGIN.slice(0, -1) : TARGET_ORIGIN;
-        var path = window.location.pathname || '/';
-        rawTarget = cleanOrigin + path + window.location.search + window.location.hash;
       }
 
-      if (DASHBOARD_PARENT && DASHBOARD_PARENT !== window) {
+      // Si la URL actual no tiene ?url= (ej: Next.js o SPA router limpió query con replaceState)
+      if (!rawTarget) {
+        var path = window.location.pathname || '/';
+        // Si el pathname contiene '/api/' o 'trainer/proxy', es la ruta de NUESTRO proxy inverso, NO de la web cliente!
+        if (path.indexOf('/api/') >= 0 || path.indexOf('/trainer/proxy') >= 0) {
+          rawTarget = LAST_VALID_TARGET_URL || INITIAL_TARGET_URL || TARGET_ORIGIN;
+        } else if (TARGET_ORIGIN) {
+          var cleanOrigin = TARGET_ORIGIN.endsWith('/') ? TARGET_ORIGIN.slice(0, -1) : TARGET_ORIGIN;
+          rawTarget = cleanOrigin + path + window.location.search + window.location.hash;
+        }
+      }
+
+      // Blindaje de seguridad: si rawTarget termina mezclando TARGET_ORIGIN con rutas internas de nuestro proxy
+      if (rawTarget && (rawTarget.indexOf('/api/v1/projects/') >= 0 || rawTarget.indexOf('/trainer/proxy') >= 0)) {
+        rawTarget = LAST_VALID_TARGET_URL || INITIAL_TARGET_URL || TARGET_ORIGIN;
+      }
+
+      if (rawTarget) {
+        LAST_VALID_TARGET_URL = rawTarget;
+      }
+
+      if (DASHBOARD_PARENT && DASHBOARD_PARENT !== window && rawTarget) {
         DASHBOARD_PARENT.postMessage({
           type: 'OA_ROUTE_CHANGED',
           url: rawTarget,

@@ -148,6 +148,10 @@ export function useRemoteTrainerSession(
 
       if (event.data.type === 'OA_ROUTE_CHANGED' && typeof event.data.url === 'string' && event.data.url.trim().length > 0) {
         const navigatedUrl = event.data.url.trim();
+        // Blindaje contra URLs corruptas que mezclen el dominio cliente con rutas internas del proxy
+        if (!navigatedUrl || navigatedUrl.includes('/trainer/proxy') || navigatedUrl.includes('/api/v1/projects/')) {
+          return;
+        }
         setState((prev) => {
           if (prev.targetUrl === navigatedUrl) return prev;
           const token = getAccessToken();

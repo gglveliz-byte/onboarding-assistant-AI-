@@ -54,11 +54,17 @@ const PROXY_FETCH_HEADERS: Record<string, string> = {
  * Inyecta la etiqueta `<base>` y el script puente del entrenador antes de devolver el HTML al iframe.
  * Neutraliza escapes de navegación y proxifica iframes embebidos.
  */
-function injectBridgeAndBase(html: string, targetOrigin: string, proxyBase: string): string {
+function injectBridgeAndBase(
+  html: string,
+  targetOrigin: string,
+  proxyBase: string,
+  initialTargetUrl: string = ''
+): string {
   const baseTag = `<base href="${targetOrigin}/">`;
   const bridgeScript = `<script id="__oa_trainer_bridge__">\n${buildInjectedTrainerBridgeScript(
     proxyBase,
-    targetOrigin
+    targetOrigin,
+    initialTargetUrl
   )}\n</script>`;
 
   let modified = html;
@@ -232,7 +238,7 @@ export async function handleTrainerProxyRequest(
 
     if (isHtml) {
       const htmlText = await upstreamResponse.text();
-      const transformedHtml = injectBridgeAndBase(htmlText, targetOrigin, proxyBase);
+      const transformedHtml = injectBridgeAndBase(htmlText, targetOrigin, proxyBase, finalUrl);
 
       return {
         status: upstreamResponse.status,
