@@ -147,7 +147,6 @@ npm run verify:part15      # Batería: check:lines + typecheck + public-sdk
 ```powershell
 ssh root@2.31.37.155
 ```
-*(Escribes o pegas la contraseña `NeuroChat2026!Onboarding` y presionas Enter)*
 
 ### 📊 Cómo ver los terminales y procesos en el VPS:
 En el servidor no usamos terminales abiertas una por una porque si cierras la ventana se apagarían. En su lugar, usamos **PM2** (Process Manager 2):

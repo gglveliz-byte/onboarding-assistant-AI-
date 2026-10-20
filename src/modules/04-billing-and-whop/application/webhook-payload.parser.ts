@@ -259,6 +259,19 @@ export class WhopWebhookPayloadParser {
   }
 
   /**
+   * Intenta leer la organizacion acreditada SIN lanzar: devuelve `null` cuando falta.
+   *
+   * Se necesita antes de tocar saldos para poder decidir entre "esto es un error del emisor y hay que
+   * reintentar" y "este evento legitimately no tiene titularidad, acusar recibo y seguir".
+   *
+   * @param data - Objeto de datos del evento ya desanidado.
+   * @returns Identificador de organizacion, o `null` cuando el evento no la declara.
+   */
+  public static readOrganizationIdOrNothing(data: Readonly<Record<string, unknown>>): string | null {
+    return readTextField(data, ['organization_id', 'organizationId', 'org_id', 'orgId']);
+  }
+
+  /**
    * Extrae el identificador de organizacion, obligatorio en los tres eventos soportados.
    *
    * @param data - Objeto de datos del evento ya desanidado.

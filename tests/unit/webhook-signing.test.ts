@@ -37,6 +37,7 @@ import assert from 'node:assert';
 import { CryptoUtils } from '../../src/shared/kernel/crypto.util';
 import { WhopApiAndHmacAdapter, type WhopWebhookHeaders } from '../../src/modules/04-billing-and-whop/infrastructure/whop-api-and-hmac.adapter';
 import { WhopWebhookPayloadParser } from '../../src/modules/04-billing-and-whop/application/webhook-payload.parser';
+import { triageVerifiedWebhook } from '../../src/modules/04-billing-and-whop/application/webhook-intake.triage';
 
 /** Secreto literal de la pasarela usado por las fixtures. */
 const TEST_WEBHOOK_SECRET = 'ws_test_secret_literal_bytes_0123456789';
@@ -293,6 +294,49 @@ function verifyAdapterCredentialGuards(): void {
   check(missingSecretRejected, 'Sin secreto de webhooks no puede verificarse ninguna entrega');
 }
 
+/**
+ * Verifica el triage de eventos ya firmados: que un evento legitimo pero no procesable se ACUSE
+ * RECIBIDO (2xx) en lugar de rechazarse. Esto importa operativamente porque la pasarela reintenta
+ * todo lo que no sea 2xx: un 4xx sobre un evento que esta plataforma nunca procesara se convierte en
+ * una tormenta de reintentos indefinida.
+ */
+function verifyTriageAcknowledges(): void {
+  const sinOrganizacion = {
+    id: 'msg_atribs_1',
+    type: 'payment.succeeded',
+    data: { id: 'pay_1', total: { amount: '10.00', currency: 'usd' }, metadata: {} },
+  };
+  const decisionSinOrg = triageVerifiedWebhook(sinOrganizacion, 'msg_atribs_1');
+  check(decisionSinOrg.kind === 'acknowledge', 'Un pago sin organizacion acreditada debe acusarse recibo, no rechazarse');
+  check(
+    decisionSinOrg.kind === 'acknowledge' && decisionSinOrg.appliedAction === 'EVENTO_SIN_ORGANIZACION_ACUSE_RECIBIDO',
+    'El acuse debe declarar la causa de falta de titularidad'
+  );
+
+  const desconocido = { id: 'msg_unk_1', type: 'invoice.paid', data: { metadata: { organization_id: 'org-1' } } };
+  const decisionDesconocido = triageVerifiedWebhook(desconocido, 'msg_unk_1');
+  check(
+    decisionDesconocido.kind === 'acknowledge' && decisionDesconocido.appliedAction.startsWith('EVENTO_NO_RECONOCIDO:'),
+    'Un evento de nombre no contratado debe acusarse recibo con la causa'
+  );
+
+  const atribuible = {
+    id: 'msg_ok_2',
+    type: 'membership.activated',
+    data: { id: 'mem_2', status: 'active', metadata: { organization_id: 'org-2', internal_plan_code: 'PLAN_5' } },
+  };
+  const decisionOk = triageVerifiedWebhook(atribuible, 'msg_ok_2');
+  check(decisionOk.kind === 'process', 'Un evento firmado, conocido y con titularidad debe procesarse');
+
+  let sinIdRejected = false;
+  try {
+    triageVerifiedWebhook({ type: 'payment.succeeded', data: { metadata: { organization_id: 'org-3' } } }, '');
+  } catch {
+    sinIdRejected = true;
+  }
+  check(sinIdRejected, 'Un evento sin identificador debe fallar: sin el no existe idempotencia posible');
+}
+
 /** Ejecuta la bateria de verificaciones. */
 function main(): void {
   console.log('PRUEBA DE FIRMA REAL DE WEBHOOKS DE LA PASARELA (Standard Webhooks)');
@@ -305,6 +349,7 @@ function main(): void {
   verifyMoneyAndSubstatus();
   verifyMembershipUpdatedDecidesByStatus();
   verifyAdapterCredentialGuards();
+  verifyTriageAcknowledges();
   console.log(`\nRESULTADO: OK — ${passedAssertions} aserciones superadas.`);
 }
 

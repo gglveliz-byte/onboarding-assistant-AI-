@@ -53,6 +53,7 @@ import {
   type CheckoutUseCaseDependencies,
 } from './checkout-use-case.dependencies';
 import { WhopWebhookPayloadParser } from './webhook-payload.parser';
+import { triageVerifiedWebhook } from './webhook-intake.triage';
 
 /** Resultado del procesamiento de un webhook. */
 export interface WebhookProcessingOutcome {
@@ -101,14 +102,17 @@ export class ProcessWhopWebhookUseCase {
 
     // El tipo de evento NO viaja en cabecera: es el campo `type` del sobre. La identificacion del
     // evento es el campo `id` (`msg_...`), que coincide con la cabecera `webhook-id`.
-    const rawEventName = typeof envelope['type'] === 'string' ? envelope['type'] : '';
-    const eventName = WhopWebhookPayloadParser.normalizeEventName(rawEventName);
-    const eventId = headers.eventId.length > 0
-      ? headers.eventId
-      : (typeof envelope['id'] === 'string' ? envelope['id'] : '');
-    if (eventId.length === 0) {
-      throw new ValidationError('El webhook no declara identificador de evento; no puede aplicarse idempotencia.');
+    const decision = triageVerifiedWebhook(envelope, headers.eventId);
+    if (decision.kind === 'acknowledge') {
+      return {
+        eventId: decision.eventId,
+        eventName: decision.eventName,
+        wasDuplicate: false,
+        ledgerEntryId: null,
+        appliedAction: decision.appliedAction,
+      };
     }
+    const { eventName, eventId } = decision;
 
     const idempotencyKey = this.dependencies.redisClient.keyNamespaces.webhookEventSeen(eventId);
     const reserved = await this.dependencies.redisClient.keys.setIfAbsent(idempotencyKey, 'PROCESSING', WEBHOOK_IDEMPOTENCY_TTL_SECONDS);
@@ -124,8 +128,7 @@ export class ProcessWhopWebhookUseCase {
     }
 
     try {
-      const eventData = WhopWebhookPayloadParser.flattenVerifiedPayload(envelope);
-      const outcome = await this.dispatchEvent(eventName, eventId, eventData);
+      const outcome = await this.dispatchEvent(eventName, eventId, decision.eventData);
       await this.dependencies.redisClient.json.setText(idempotencyKey, 'PROCESSED', WEBHOOK_IDEMPOTENCY_TTL_SECONDS);
       return outcome;
     } catch (error) {
