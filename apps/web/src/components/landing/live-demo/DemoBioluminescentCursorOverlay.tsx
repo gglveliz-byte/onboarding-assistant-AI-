@@ -47,6 +47,9 @@ export interface DemoBioluminescentCursorOverlayProps {
   readonly className?: string;
 }
 
+/** Milisegundos del vuelo del cursor hasta el ancla: pausado a propósito (el guion narra «el mouse se moverá lentamente»). */
+const CURSOR_TRAVEL_MS = 900;
+
 /** Milisegundos visibles de la pastilla de acuse antes de desvanecerse. */
 const ACK_BADGE_VISIBLE_MS = 1500;
 
@@ -144,7 +147,7 @@ export function DemoBioluminescentCursorOverlay(props: DemoBioluminescentCursorO
     width: 0,
     height: 0,
     opacity: screen.isVisible ? 1 : 0,
-    transition: isReducedMotion ? 'opacity 160ms linear' : 'left 480ms cubic-bezier(0.22, 1, 0.36, 1), top 480ms cubic-bezier(0.22, 1, 0.36, 1), opacity 160ms linear',
+    transition: isReducedMotion ? 'opacity 160ms linear' : `left ${CURSOR_TRAVEL_MS}ms cubic-bezier(0.22, 1, 0.36, 1), top ${CURSOR_TRAVEL_MS}ms cubic-bezier(0.22, 1, 0.36, 1), opacity 160ms linear`,
   };
   /** Halo bioluminiscente pulsante centrado sobre el punto caliente: aura en turquesa #43E7DB y violeta #8052FF. */
   const haloStyle: CSSProperties = {

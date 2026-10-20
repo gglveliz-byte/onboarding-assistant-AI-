@@ -5,7 +5,7 @@
  *   Verifica en 5 fases rigurosas los contratos, seguridad y comportamiento del Módulo 07
  *   y del paquete cliente `@onboarding-assistant/sdk`:
  *   1. Matriz pública de precios Whop con fallback resiliente y esquemas Zod estrictos.
- *   2. Creación de sesiones de demostración efímeras de 90s con Turnstile y WebSocket seguro.
+ *   2. Creación de sesiones de demostración efímeras de 150s con Turnstile y WebSocket seguro.
  *   3. Rate limiting estricto por IP en Redis (bloqueo al superar 2 demos en 24h).
  *   4. Scrubber de privacidad del SDK bloqueando contraseñas, tarjetas y selectores protegidos.
  *   5. Ejecutor de acciones DOM en cascada, despacho de eventos y simulador de Sandbox.
@@ -235,9 +235,9 @@ async function runPublicCommercialAndSdkSuite(): Promise<void> {
   }
 
   // ---------------------------------------------------------------------------
-  // FASE 2: Creación de Sesión de Demostración Efímera (90s)
+  // FASE 2: Creación de Sesión de Demostración Efímera (150s)
   // ---------------------------------------------------------------------------
-  console.log('\n--- Fase 2: Creación de Sesión de Demostración Efímera (90s) ---');
+  console.log('\n--- Fase 2: Creación de Sesión de Demostración Efímera (150s) ---');
   {
     const redisClient = new FakeRedisClusterClient();
     const useCase = new CreatePublicLiveDemoSessionUseCase({
@@ -259,7 +259,7 @@ async function runPublicCommercialAndSdkSuite(): Promise<void> {
     const session = result.value;
     assert.ok(session.sessionId.startsWith('demo_'), 'El sessionId debe tener prefijo demo_');
     assert.ok(session.ephemeralToken.startsWith('demo_tok_'), 'El token debe tener prefijo demo_tok_');
-    assert.strictEqual(session.maxDurationSeconds, 90, 'La demo debe durar exactamente 90 segundos');
+    assert.strictEqual(session.maxDurationSeconds, 150, 'La demo debe durar exactamente 150 segundos');
     assert.strictEqual(session.voiceModel, 'GEMINI');
     assert.ok(session.websocketUrl.includes('sessionId='), 'La URL WebSocket debe contener el sessionId');
     assert.ok(session.websocketUrl.includes('demo=true'), 'La URL WebSocket debe contener la marca demo=true');
@@ -271,7 +271,7 @@ async function runPublicCommercialAndSdkSuite(): Promise<void> {
     const parsedStored = JSON.parse(storedSessionJson!);
     assert.strictEqual(parsedStored.sessionId, session.sessionId);
     assert.strictEqual(parsedStored.clientIp, '203.0.113.45');
-    console.log('  [PASS] Sesión efímera de 90s y persistencia en Redis validadas.');
+    console.log('  [PASS] Sesión efímera de 150s y persistencia en Redis validadas.');
   }
 
   // ---------------------------------------------------------------------------

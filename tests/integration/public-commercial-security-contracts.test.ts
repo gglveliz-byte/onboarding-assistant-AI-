@@ -35,6 +35,12 @@ async function runPublicCommercialSecurityContractsSuite(): Promise<void> {
 
   const testIp = `198.51.${Math.floor(Math.random() * 240) + 1}.${Math.floor(Math.random() * 240) + 1}`;
 
+  // HERMETICIDAD C1-13: el tope de la demo es configurable en vivo (oa:demo:config en Redis). El
+  // test asume los DEFECTOS de plataforma, así que esta suite guarda el valor que rige hoy, siembra
+  // los defectos para su corrida y los RESTAURA tal cual (o la ausencia del valor) en el finally.
+  const governedConfigKey = 'oa:demo:config';
+  let governedConfigOriginal: unknown = null;
+
   const routes: HttpRouteRegistration[] = [];
   const router: HttpRouterRegistry = {
     register: (reg) => routes.push(reg),
@@ -88,6 +94,10 @@ async function runPublicCommercialSecurityContractsSuite(): Promise<void> {
   });
 
   try {
+    // Hermetización en acción: snapshot del valor gobernable vigente + siembra de los defectos.
+    governedConfigOriginal = await redisClient.json.getJson<unknown>(governedConfigKey);
+    await redisClient.json.setJson(governedConfigKey, { maxDurationSeconds: 150, demosPerIpPerDay: 2 }, 0);
+
     // -------------------------------------------------------------------------
     // TEST C1-13: Límite de Demostración Pública (Anti-Spoofing y Fail-Closed)
     // -------------------------------------------------------------------------
@@ -294,6 +304,17 @@ async function runPublicCommercialSecurityContractsSuite(): Promise<void> {
     }
 
   } finally {
+    // Reversión de la configuración gobernable: vuelve el valor exacto que regía antes de la
+    // corrida; si la clave no existía, se elimina para devolver el comportamiento por defecto.
+    try {
+      if (governedConfigOriginal === null) {
+        await redisClient.nativeClient.del(governedConfigKey);
+      } else {
+        await redisClient.json.setJson(governedConfigKey, governedConfigOriginal, 0);
+      }
+    } catch {
+      // La reversión de configuración jamás debe tapar el resultado real del suite.
+    }
     await rlsPool.close();
     await redisClient.close();
   }

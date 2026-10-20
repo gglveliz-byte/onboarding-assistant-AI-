@@ -20,7 +20,8 @@
  *   - Ninguna.
  *
  * @tablas_bd_o_redis
- *   - Redis: `oa:demo:session:<sessionId>` y `oa:demo:token:<ephemeralToken>` (TTL 120 s, con
+ *   - Redis: `oa:demo:session:<sessionId>` y `oa:demo:token:<ephemeralToken>` (TTL =
+ *     `maxDurationSeconds` + 30, con
  *     `isDemo: true`, `ephemeralToken`, `maxDurationSeconds` y `expiresAtIso`).
  */
 

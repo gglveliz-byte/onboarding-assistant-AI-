@@ -2,7 +2,7 @@
  * @archivo apps/web/src/components/landing/live-demo/usePublicVoiceDemoSession.ts
  * @modulo apps/web/src/components/landing/live-demo (demostración de voz pública de la landing)
  * @proposito
- *   Hook de la demostración de voz en vivo: permiso de micrófono, sesión efímera de 90 s contra el
+ *   Hook de la demostración de voz en vivo: permiso de micrófono, sesión efímera gobernable (def. 150 s) contra el
  *   plano de control, canal binario, barge-in local <50 ms, vúmetro de 24 barras y contrato congelado.
  *   Optimizado para Safari iOS (desbloqueo síncrono de AudioContext, buffer mudo) y móviles (buffer 2048,
  *   channelCount ideal 1, reloj absoluto contra expiresAtMs y AudioContext unificado).
@@ -337,7 +337,7 @@ export function usePublicVoiceDemoSession(): PublicVoiceDemoSessionHandle {
       default: dbg('control no reconocido', { tipo: message['type'] }); return;
     }
   };
-  /** Abre el socket binario de voz y enruta apertura, tramas, cierre y cuenta regresiva de 90 s. */
+  /** Abre el socket binario de voz y enruta apertura, tramas, cierre y cuenta regresiva de la ventana. */
   const connectSocket = (runtime: DemoRuntime, serverUrl: string): void => {
     const socket = new WebSocket(resolveSocketUrl(serverUrl)); socket.binaryType = 'arraybuffer'; runtime.socket = socket;
     dbg('conectando al gateway de voz', { url: resolveSocketUrl(serverUrl).split('?')[0] });

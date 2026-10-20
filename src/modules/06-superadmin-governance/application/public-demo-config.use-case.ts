@@ -36,8 +36,8 @@ export interface PublicDemoConfig {
   readonly demosPerIpPerDay: number;
 }
 
-/** Defectos equivalentes al antiguo hardcodeo (90 s y 2 demos por IP al día). */
-export const DEMO_CONFIG_DEFAULTS: PublicDemoConfig = Object.freeze({ maxDurationSeconds: 90, demosPerIpPerDay: 2 });
+/** Defectos equivalentes al hardcodeo histórico gobernable (150 s y 2 demos por IP al día). */
+export const DEMO_CONFIG_DEFAULTS: PublicDemoConfig = Object.freeze({ maxDurationSeconds: 150, demosPerIpPerDay: 2 });
 
 /** Clave Redis única (sin caducidad) que guarda la configuración de la demo pública. */
 export const PUBLIC_DEMO_CONFIG_KEY = 'oa:demo:config';

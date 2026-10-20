@@ -297,7 +297,7 @@ export class CreatePublicLiveDemoSessionUseCase {
         );
       }
 
-      // Configuración gobernable: duración máxima y demos por IP/día (defectos 90 s y 2 si no hay config).
+      // Configuración gobernable: duración máxima y demos por IP/día (defectos 150 s y 2 si no hay config).
       const config = await readPublicDemoConfig(this.deps.redisClient);
       const ipHash = CryptoUtils.sha256Hex(clientIp);
       const rateLimitKey = `oa:demo:ip:${ipHash}`;
@@ -317,7 +317,7 @@ export class CreatePublicLiveDemoSessionUseCase {
         );
       }
 
-      // 3. Generar identificador de sesión efímera y token temporal (duración gobernable, def. 90s)
+      // 3. Generar identificador de sesión efímera y token temporal (duración gobernable, def. 150 s)
       const sessionId = `demo_${CryptoUtils.generateCsprngToken(16)}`;
       const ephemeralToken = `demo_tok_${CryptoUtils.generateCsprngToken(32)}`;
       const voiceModel = input.preferredVoiceModel ?? 'GEMINI';

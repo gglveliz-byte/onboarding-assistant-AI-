@@ -4,14 +4,15 @@
  * @proposito
  *   Declara el mapa funcional reducido que gobierna la demostracion publica de la landing: los
  *   elementos reales del CRM simulado (abrir el formulario de trato, capturar nombre, empresa y
- *   valor, guardarlo en el pipeline, pasar a facturacion y validar el CFDI) con sus selectores
- *   estables, el prompt operativo con el guion que el asistente narra y ejecuta, y la barrera de
- *   seguridad que solo autoriza esos elementos. Sustituye al mapa vacio que degradaba la demo a
+ *   valor, guardarlo en el pipeline, pasar a facturacion, validar el CFDI y crear un servicio)
+ *   con sus selectores estables, el prompt operativo del RECORRIDO GUIADO con portones («sí»
+ *   confirmados entre fases) y la barrera de seguridad que solo autoriza esos elementos. Sustituye al mapa vacio que degradaba la demo a
  *   conversacion pura: ahora la visita anonima VE al asistente operar la interfaz de verdad, tal
  *   como promete la landing comercial.
  *
  * @resumen_contenido
- *   - Interfaz `PublicDemoMapElement` y constante `PUBLIC_DEMO_MAP_ELEMENTS` (guion de 7 pasos).
+ *   - Interfaz `PublicDemoMapElement` y constante `PUBLIC_DEMO_MAP_ELEMENTS` (guion de 9 elementos,
+ *     incluidas la pestaña y el botón de servicios).
  *   - Constantes `PUBLIC_DEMO_MAP_METADATA`, `PUBLIC_DEMO_ALLOWED_ACTIONS`,
  *     `PUBLIC_DEMO_STEP_INSTRUCTION` y `PUBLIC_DEMO_SYSTEM_PROMPT`.
  *   - Funcion `validatePublicDemoElementAction()`: barrera del mapa de la demo.
@@ -112,6 +113,22 @@ export const PUBLIC_DEMO_MAP_ELEMENTS: readonly PublicDemoMapElement[] = Object.
     primarySelector: '[data-oa-id="btn-validate-cfdi"]',
     riskLevel: 'LOW',
   },
+  {
+    elementKey: 'nav-services',
+    title: 'Pestaña de servicios',
+    functionalDescription: 'Despliega la sección de servicios donde se asignan o agregan servicios.',
+    actionType: 'CLICK',
+    primarySelector: '[data-oa-id="nav-services"]',
+    riskLevel: 'LOW',
+  },
+  {
+    elementKey: 'btn-create-service',
+    title: 'Crear servicio',
+    functionalDescription: 'Agrega un servicio nuevo al catálogo de servicios del CRM simulado.',
+    actionType: 'CLICK',
+    primarySelector: '[data-oa-id="btn-create-service"]',
+    riskLevel: 'LOW',
+  },
 ]);
 
 /** Metadatos simbolicos del mapa de la demostracion: no carga mapas reales ni persiste nada. */
@@ -140,36 +157,33 @@ export const PUBLIC_DEMO_ALLOWED_ACTIONS: SlimmedRouteContext['allowedActions'] 
   }))
 );
 
-/** Instruccion del paso vigente: el guion operativo que el asistente narra y ejecuta en vivo. */
+/** Instruccion del paso vigente: el recorrido guiado que el asistente narra en reversa con portones. */
 export const PUBLIC_DEMO_STEP_INSTRUCTION =
-  'Demostración operativa: tras presentarte, ejecuta el guion (abrir el formulario, capturar el ' +
-  'trato, guardarlo, pasar a facturación y validar el CFDI) hasta completarlo, y cierra invitando ' +
-  'a crear una cuenta.';
+  'Recorrido guiado por secciones: tras tu saludo y el «sí» del visitante, recorren juntos el pipeline ' +
+  'de tratos, la facturación y los servicios; anuncia cada gesto, espera su afirmación antes de ' +
+  'ejecutarlo, confirma cada acción con el acuse del navegador y cierra invitando a crear una cuenta.';
 
 /**
  * Prompt operativo de la demostracion publica.
  * El mapa funcional sintetico declara los elementos accionables del CRM simulado, de modo que el
- * asistente DEJA de ser solo conversacion: al saludar comienza la demostracion y ejecuta el guion
- * completo con herramientas reales, dentro de la ventana de 90 segundos.
+ * asistente guía un recorrido interactivo por secciones con portones: anuncia cada gesto, espera
+ * el «sí» del visitante, ejecuta con herramientas reales y valida con el acuse del navegador.
  */
 export const PUBLIC_DEMO_SYSTEM_PROMPT = [
-  'Eres el asistente de voz de Onboarding Assistant en una demostración pública de 90 segundos.',
+  'Eres el asistente de voz de Onboarding Assistant en una demostración pública con ventana de tiempo limitada.',
   'Habla en español neutro, con calidez y frases breves: máximo dos oraciones por turno.',
   'Pronuncia con dicción clara y ritmo pausado, entonación cálida y natural; cuida la pronunciación de nombres propios y cifras.',
-  'Preséntate en una sola frase y comienza DE INMEDIATO la demostración, sin esperar a que te la pidan.',
-  'Demuestra en vivo que operas una interfaz real, ejecutando estas acciones en orden:',
-  '1) click_element en "btn-new-deal" para abrir el formulario de trato;',
-  '2) type_text en "demo-input-deal-name" para capturar el nombre del trato (usa el nombre del visitante si lo conoces o «Trato de demostración»);',
-  '3) click_element en "btn-save-deal" para guardarlo en el pipeline;',
-  '4) click_element en "nav-billing" para abrir la facturación del trato;',
-  '5) click_element en "btn-validate-cfdi" para validar el comprobante fiscal como último gesto sorpresa;',
-  'Si el visitante te da la empresa o el valor del trato antes de guardar, captúralos con type_text en "input-company-tax" o "input-deal-value".',
-  'Ejecuta una acción por turno con su llamada de herramienta y confirma cada resultado en una frase muy corta («Listo: formulario abierto», «Trato guardado»).',
-  'Encadena las cinco acciones sin esperar nuevas palabras del visitante: en cuanto recibas el resultado de una acción, emite de inmediato la llamada de la siguiente.',
-  'No pidas permiso antes de ejecutar las acciones de este guion: demuéstralas directamente.',
-  'Usa únicamente los elementos de la pantalla actual; nunca inventes elementos, claves ni acciones fuera de este guion.',
-  'Si piden algo distinto, explica en una frase que la demostración muestra ese flujo y que la operación completa sobre su propio producto se activa al crear una cuenta.',
-  'No cierres la demostración antes de ejecutar las cinco acciones: justo después de validar el CFDI, cierra invitando a crear una cuenta (guion ideal antes de los 75 segundos).',
+  'El CRM simulado se llama «Vortex CRM»: imagina que es el CRM del visitante y que él es un usuario nuevo que tú vas a guiar.',
+  'REGLA DE ORO: jamás ejecutes una acción del tablero sin haberla anunciado antes y haber recibido del visitante un «sí», «claro», «continúa», «vamos» o similar.',
+  'Después de cada acción, di en una frase si quedó confirmada usando el detalle que te devuelve el navegador («Listo: formulario abierto y limpio») y cierra preguntando «¿tienes dudas o podemos continuar?»: espera en silencio su respuesta antes de avanzar.',
+  'El turno de apertura ya preguntó «¿Empiezo?» por ti: cuando el visitante responda que sí, da la bienvenida («Bienvenido al CRM Vortex, soy tu asistente virtual y te guiaré») y pregunta «¿estás listo?», esperando nuevamente su sí.',
+  'Tras ese segundo «sí», presenta que arrancan por el dashboard de ventas (el pipeline de tratos), explica en una frase qué verán ahí y pregunta «¿tienes dudas o podemos continuar?» antes de la primera acción.',
+  'Cada fase se ejecuta así: anuncia el gesto con amabilidad («mira: el mouse se moverá lentamente hasta el botón y le daré click»), ejecútalo, confirma el acuse en una frase y pregunta «¿podemos continuar?».',
+  'Recorrido en orden: (1) click_element en "btn-new-deal" para abrir el formulario de trato; (2) type_text en "demo-input-deal-name" para capturar el nombre del trato (usa el nombre del visitante si ya te lo dio, si no «Trato de demostración»); (3) click_element en "btn-save-deal" para guardarlo en el pipeline; (4) click_element en "nav-billing" para mostrar la facturación del trato; (5) click_element en "btn-validate-cfdi" para validar el comprobante fiscal; (6) click_element en "nav-services" para desplegar la sección de servicios (explica que ahí se asignan o agregan servicios); (7) click_element en "btn-create-service" para crear un servicio de ejemplo.',
+  'Si el visitante aporta empresa o valor del trato durante el recorrido, cáptalos con type_text en "input-company-tax" o "input-deal-value" tocando la fase vigente.',
+  'Usa únicamente los elementos declarados en las acciones permitidas; nunca inventes elementos, claves ni acciones fuera de este recorrido.',
+  'Si piden algo distinto, explica en una frase que la demostración enseña este recorrido guiado y que la operación completa sobre su propio producto se activa al crear una cuenta.',
+  'Al completar las siete fases (o si la ventana está por cerrarse), resume en máximo dos frases lo que mostraron y cierra invitando a crear la cuenta para operarlo con su producto real.',
 ].join(' ');
 
 /** Resultado autorizado o fallido de la barrera de seguridad de la demostracion. */
@@ -247,8 +261,8 @@ export function validatePublicDemoElementAction(
     ok: true,
     primarySelector: element.primarySelector,
     riskLevel: element.riskLevel,
-    // La demo opera un CRM simulado sin datos reales: pedir permiso antes de cada acción solo
-    // alargaria una ventana de 90 segundos pensada para mostrar el flujo completo.
+    // El «sí» del visitante llega por la conversación (portones del guion), no como paso del
+    // despacho: la barrera autoriza al instante los elementos declarados del CRM simulado.
     requiresUserConfirmation: false,
   };
 }

@@ -95,12 +95,13 @@ export const PUBLIC_DEMO_TIMEUP_MESSAGE =
  * lo que en la demo publica con Qwen se leia como «no hace nada».
  */
 export const PUBLIC_DEMO_GREETING_PROMPT =
-  'Da la bienvenida en voz alta al visitante con una única frase breve y natural, en español neutro. ' +
-  'Preséntate como su asistente del CRM de ejemplo e invítalo a decirte en voz alta qué quiere que hagas ' +
-  '(por ejemplo: «abre el formulario de trato»). Por ahora no uses ninguna herramienta ni menciones pasos.';
+  'Da la bienvenida con UNA única frase breve y cálida, en español neutro: preséntate explicando que ' +
+  'va a demostrar en vivo cómo funcionas y cómo puedes presentarte ante los clientes del visitante; ' +
+  'aclara que están en un CRM simulado, que él debe imaginar que es su propio CRM y que es un usuario nuevo; ' +
+  'termina preguntando exactamente «¿Empiezo?» y no uses ninguna herramienta todavía: espera su respuesta.';
 
-/** Duracion por omision de la demostracion cuando el descriptor no la declara. */
-const DEMO_DEFAULT_MAX_SECONDS = 90;
+/** Duracion por omision de la demostracion cuando el descriptor no la declara (sincronizada con el defecto gobernable: 150 s). */
+const DEMO_DEFAULT_MAX_SECONDS = 150;
 
 /** Limites de saneamiento de la duracion declarada por el descriptor (el tope alto deja gobernar hasta 10 min al SuperAdmin). */
 const DEMO_MIN_MAX_SECONDS = 15;

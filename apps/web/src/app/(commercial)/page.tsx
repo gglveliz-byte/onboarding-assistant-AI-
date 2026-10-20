@@ -25,7 +25,7 @@
  *      CTA aurora hacia `#demo-en-vivo`, comando de entrenamiento copiable, selector
  *      de escenarios y tarjeta "Nexo CRM" resuelta por la Esfera Acústica.
  *   2. `LiveInteractiveVoiceDemo` → sección `#demo-en-vivo` (`SECTION_STYLE` propio):
- *      demostración pública de voz de 90 segundos que opera físicamente un CRM
+ *      demostración pública de voz gobernable (150 segundos por omisión) que opera físicamente un CRM
  *      simulado en Shadow DOM con puntero bioluminiscente y acuse de latencia.
  *   3. `RagDomMolecularGraphSection`: encabezado editorial del entrenamiento visual,
  *      tres tarjetas frente al grafo molecular RAG en SVG (escritorio) y explorador

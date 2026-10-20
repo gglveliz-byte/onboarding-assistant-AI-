@@ -4,19 +4,22 @@
  * @proposito
  *   Lienzo visual e interactivo de CRM ("Vortex CRM") ultra-compacto y 100% funcional:
  *   soporta interacción física manual por el usuario (tecleo en inputs, cambio de etapa en selects,
- *   creación y guardado de tratos reales en la tabla, navegación a facturación y validación CFDI)
- *   y ejecución programática dirigida por el asistente de voz a través del contrato `CrmBoardHandle`
- *   (`prepareDirective`, `commitDirective`, `resolveAnchorViewportCenter`).
+ *   creación y guardado de tratos reales en la tabla, navegación entre pestañas, validación CFDI
+ *   y creación de servicios) y ejecución programática dirigida por el asistente de voz a través
+ *   del contrato `CrmBoardHandle` (`prepareDirective`, `commitDirective`, `resolveAnchorViewportCenter`).
  *
  * @resumen_contenido
  *   - `CrmBoardHandle`: Contrato para la orquestación del cursor bioluminiscente y acuse de directivas.
  *   - Tabla de pipeline reactiva: insertar nuevos tratos en tiempo real con animación.
  *   - Formulario de trato con inputs nativos y setters compatibles con React 19.
  *   - Pestaña de facturación interactiva con validación fiscal CFDI y chipslot.
+ *   - Pestaña de servicios: catálogo reactivo con creación delegada en el tablero.
  *   - Widget inferior de ecualizador reactivo a la energía real del micrófono (`barsEnergy`).
  *
  * @dependencias_internas
  *   - `../../../lib/api-client/backend-contracts.types` (`ToolExecuteMessageDto`).
+ *   - `./VortexCrmDealsTable` (`DealRow`, tabla del pipeline, extraída para el tope de líneas).
+ *   - `./VortexCrmServicesPanel` (catálogo de servicios, tercera pestaña del recorrido).
  *
  * @dependencias_externas
  *   - `react` (`useState`, `useRef`, `useImperativeHandle`, `forwardRef`, type `ReactElement`).
@@ -35,17 +38,8 @@ import {
 import type { ToolExecuteMessageDto } from '../../../lib/api-client/backend-contracts.types';
 import { VortexCrmVoiceBar } from './VortexCrmVoiceBar';
 import { VortexCrmBillingPanel } from './VortexCrmBillingPanel';
-
-/** Fila del pipeline de ventas */
-interface DealRow {
-  readonly id: string;
-  readonly name: string;
-  readonly stage: string;
-  readonly value: string;
-  readonly contact: string;
-  readonly date: string;
-  readonly isNew?: boolean;
-}
+import { VortexCrmDealsTable, type DealRow } from './VortexCrmDealsTable';
+import { VortexCrmServicesPanel, type VortexCrmServiceItem } from './VortexCrmServicesPanel';
 
 /** Contrato para interactuar programáticamente con el tablero desde la demo de voz */
 export interface CrmBoardHandle {
@@ -67,6 +61,12 @@ const INITIAL_DEALS: readonly DealRow[] = [
   { id: '2', name: 'Fintech API Integration', stage: 'Negociación', value: '$42,500', contact: 'carlos@finpay.co', date: '28 May' },
 ];
 
+/** Catálogo de servicios inicial del CRM simulado (la creación de la IA agrega servicios al frente). */
+const INITIAL_SERVICES: readonly VortexCrmServiceItem[] = [
+  { name: 'Diagnóstico comercial guiado' },
+  { name: 'Automatización de seguimiento' },
+];
+
 export const VortexCrmSimulatorBoard = forwardRef<CrmBoardHandle, VortexCrmSimulatorBoardProps>(
   function VortexCrmSimulatorBoard({ phase = 'IDLE', isRunning = false, barsEnergy = [], speechText = '' }, ref): ReactElement {
     const isSpeaking = phase === 'AI_SPEAKING';
@@ -80,7 +80,8 @@ export const VortexCrmSimulatorBoard = forwardRef<CrmBoardHandle, VortexCrmSimul
 
     // Estados del CRM interactivo
     const [deals, setDeals] = useState<readonly DealRow[]>(INITIAL_DEALS);
-    const [activeTab, setActiveTab] = useState<'deals' | 'billing'>('deals');
+    const [services, setServices] = useState<readonly VortexCrmServiceItem[]>(INITIAL_SERVICES);
+    const [activeTab, setActiveTab] = useState<'deals' | 'billing' | 'services'>('deals');
     const [dealName, setDealName] = useState('Acuerdo Enterprise Q3');
     const [companyName, setCompanyName] = useState('Acme Corp');
     const [dealValue, setDealValue] = useState('$35,000 USD');
@@ -118,6 +119,12 @@ export const VortexCrmSimulatorBoard = forwardRef<CrmBoardHandle, VortexCrmSimul
       };
       setDeals((prev) => [newRow, ...prev.slice(0, 3)]);
       setDealName('');
+    };
+
+    // Crear servicio en el catálogo (click manual del visitante o directiva física de la IA)
+    const handleCreateService = (): void => {
+      const consecutivo = services.filter((service) => service.isNew).length + 1;
+      setServices((prev) => [{ name: `Servicio Express ${consecutivo}`, isNew: true }, ...prev.slice(0, 5)]);
     };
 
     // Resolver ancla en el contenedor
@@ -172,6 +179,12 @@ export const VortexCrmSimulatorBoard = forwardRef<CrmBoardHandle, VortexCrmSimul
           case 'btn-validate-cfdi':
             setCfdiValidated(true);
             return { success: true, detail: 'Comprobante fiscal CFDI validado.' };
+          case 'nav-services':
+            setActiveTab('services');
+            return { success: true, detail: 'Sección de servicios desplegada.' };
+          case 'btn-create-service':
+            handleCreateService();
+            return { success: true, detail: 'Servicio creado y visible en el catálogo.' };
           default: {
             const el = findAnchorElement(directive.targetElementKey);
             if (el) {
@@ -198,6 +211,7 @@ export const VortexCrmSimulatorBoard = forwardRef<CrmBoardHandle, VortexCrmSimul
       resetBoard(): void {
         setInspectedKey(null);
         setDeals(INITIAL_DEALS);
+        setServices(INITIAL_SERVICES);
         setActiveTab('deals');
         setIsFormOpen(true);
         setCfdiValidated(false);
@@ -250,6 +264,19 @@ export const VortexCrmSimulatorBoard = forwardRef<CrmBoardHandle, VortexCrmSimul
                 </svg>
                 <span>Facturación</span>
               </button>
+              <button
+                type="button"
+                data-oa-id="nav-services"
+                onClick={() => setActiveTab('services')}
+                className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-left transition-colors cursor-pointer ${
+                  activeTab === 'services' ? 'bg-teal-50 text-[#00838f] font-bold' : 'text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path d="M4 4h6v6H4z" /><path d="M14 4h6v6h-6z" /><path d="M4 14h6v6H4z" /><path d="M17 14v6" /><path d="M14 17h6" />
+                </svg>
+                <span>Servicios</span>
+              </button>
             </nav>
           </div>
 
@@ -272,7 +299,7 @@ export const VortexCrmSimulatorBoard = forwardRef<CrmBoardHandle, VortexCrmSimul
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-xs sm:text-sm font-bold text-[#0a252c] leading-tight">
-                    {activeTab === 'deals' ? 'Pipeline de Ventas Global' : 'Módulo Facturación y CFDI'}
+                    {activeTab === 'deals' ? 'Pipeline de Ventas Global' : activeTab === 'services' ? 'Catálogo de Servicios' : 'Módulo Facturación y CFDI'}
                   </h3>
                   {/* Selector rápido móvil (< lg) */}
                   <div className="flex lg:hidden items-center bg-slate-200/80 p-0.5 rounded text-[9px] font-semibold">
@@ -290,10 +317,17 @@ export const VortexCrmSimulatorBoard = forwardRef<CrmBoardHandle, VortexCrmSimul
                     >
                       Factura
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('services')}
+                      className={`px-1.5 py-0.5 rounded transition ${activeTab === 'services' ? 'bg-white text-teal-800 font-bold shadow-xs' : 'text-slate-600'}`}
+                    >
+                      Serv.
+                    </button>
                   </div>
                 </div>
                 <p className="text-[10px] text-slate-400">
-                  {activeTab === 'deals' ? `${deals.length + 30} tratos activos · $542,000 USD` : 'Comprobantes fiscales y RFC'}
+                  {activeTab === 'deals' ? `${deals.length + 30} tratos activos · $542,000 USD` : activeTab === 'services' ? 'Asigna o agrega servicios para tus clientes' : 'Comprobantes fiscales y RFC'}
                 </p>
               </div>
               <div className="flex items-center gap-1.5">
@@ -316,7 +350,7 @@ export const VortexCrmSimulatorBoard = forwardRef<CrmBoardHandle, VortexCrmSimul
                       <span>+</span> Nuevo Trato
                     </button>
                   </>
-                ) : (
+                ) : activeTab === 'billing' ? (
                   <button
                     type="button"
                     data-oa-id="btn-validate-cfdi"
@@ -325,42 +359,16 @@ export const VortexCrmSimulatorBoard = forwardRef<CrmBoardHandle, VortexCrmSimul
                   >
                     Validar CFDI
                   </button>
+                ) : (
+                  <span className="text-[9px] font-semibold text-slate-400 px-1">Catálogo del asistente</span>
                 )}
               </div>
             </div>
 
-            {/* Vista 1: Tabla de tratos interactiva */}
+            {/* Vista 1: Tabla de tratos interactiva (componente extraído por tope de líneas) */}
             {activeTab === 'deals' ? (
               <>
-                <div className="bg-white rounded-lg border border-slate-200/90 shadow-xs overflow-x-auto mb-2">
-                  <table className="w-full text-left text-[11px] text-slate-600 border-collapse min-w-[360px]">
-                    <thead>
-                      <tr className="bg-slate-50/90 border-b border-slate-200 text-slate-400 font-medium text-[9px] sm:text-[10px]">
-                        <th className="py-1 px-2.5">NOMBRE DEL TRATO</th>
-                        <th className="py-1 px-2.5">ETAPA</th>
-                        <th className="py-1 px-2.5">VALOR</th>
-                        <th className="py-1 px-2.5 text-right">CIERRE</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 text-[10px] sm:text-[11px]">
-                      {deals.map((deal) => (
-                        <tr key={deal.id} className={deal.isNew ? 'bg-teal-50/60 font-semibold' : 'hover:bg-slate-50/60'}>
-                          <td className="py-1 px-2.5 font-semibold text-slate-800 flex items-center gap-1.5">
-                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${deal.isNew ? 'bg-[#6d3dfa] animate-ping' : 'bg-emerald-500'}`} />
-                            <span className="truncate max-w-[130px] sm:max-w-none">{deal.name}</span>
-                          </td>
-                          <td className="py-1 px-2.5">
-                            <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-semibold">
-                              {deal.stage}
-                            </span>
-                          </td>
-                          <td className="py-1 px-2.5 font-mono font-bold text-slate-800">{deal.value}</td>
-                          <td className="py-1 px-2.5 text-right text-slate-400 text-[10px]">{deal.date}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <VortexCrmDealsTable deals={deals} />
 
                 {/* Diálogo/Formulario interactivo real */}
                 {isFormOpen && (
@@ -465,6 +473,8 @@ export const VortexCrmSimulatorBoard = forwardRef<CrmBoardHandle, VortexCrmSimul
                   </form>
                 )}
               </>
+            ) : activeTab === 'services' ? (
+              <VortexCrmServicesPanel services={services} inspectedKey={inspectedKey} onCreateService={handleCreateService} />
             ) : (
               <VortexCrmBillingPanel cfdiValidated={cfdiValidated} />
             )}

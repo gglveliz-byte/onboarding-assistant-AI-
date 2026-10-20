@@ -39,7 +39,8 @@ import { FAST_VOICE_MODEL, PRECISE_VOICE_MODEL } from './DemoStepProgressHeader'
 import { usePublicVoiceDemoSession } from './usePublicVoiceDemoSession';
 import { DEMO_VOICE_CATALOG, type VoiceModelId } from '../../../lib/api-client/backend-contracts.types';
 
-const CURSOR_TRAVEL_MS = 450;
+/** Milisegundos del vuelo del cursor hasta el ancla: viaje pausado, pedagógico y con click sincronizado a causa de este mismo valor. */
+const CURSOR_TRAVEL_MS = 900;
 
 /** Clave única del selector de voces: `MOTOR:voz` (p. ej. `GEMINI:Kore`). */
 function voiceKey(engine: VoiceModelId, voiceName: string): string {
