@@ -190,6 +190,7 @@ export class VoiceWebSocketSession {
       systemPrompt: this.buildSystemPrompt(prompt.systemPrompt, slimmedContext.ok ? slimmedContext.context.stepInstruction : '', routeSummary),
       onboardingStepsJson: prompt.onboardingStepsJson,
       voicePersonaCode: this.request.voicePersonaCode,
+      ...(this.request.introductorySpokenPrompt === undefined ? {} : { introductorySpokenPrompt: this.request.introductorySpokenPrompt }),
       modelTemperature: SESSION_INITIAL_TEMPERATURE,
       pcmSampleRateHz: this.request.sampleRateHz,
       externalEndUserId: nonceResult.externalEndUserId,

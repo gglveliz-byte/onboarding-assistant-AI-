@@ -95,6 +95,12 @@ export interface VoiceWebSocketOpenRequest {
    * `VOZ ULTRA-RAPIDA / ULTRA-PRECISA` no llegaba al proveedor y siempre terminaba en el mismo motor.
    */
   readonly preferredVoiceModel?: VoiceProviderKind;
+  /**
+   * Turno inicial hablado que el motor debe enunciar apenas confirme el canal (demo publica: saludo
+   * de bienvenida). Opcional: las sesiones de producto escuchan pasivamente y esperan la primera
+   * palabra del usuario. Omitirlo deja al asistente naciendo mudo hasta que alguien hable.
+   */
+  readonly introductorySpokenPrompt?: string;
 }
 
 /** Puertos y casos de uso que el gateway necesita para atender una sesion. */
